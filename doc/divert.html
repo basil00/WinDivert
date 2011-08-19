@@ -724,13 +724,13 @@ This could be achieved via the following filter.
 <pre>
 HANDLE handle = DivertOpen(
     "outbound and "
-    "data and "
+    "tcp.PayloadLength &gt; 0 and "
     "tcp.DstPort == 80");
 </pre>
 This filter specifies that we should only divert traffic that is
 <ol>
 <li>outbound;</li>
-<li>contains data; and</li>
+<li>contains a non-empty payload; and</li>
 <li>has TCP destination port 80 (i.e. HTTP web traffic).
 </ol>
 </p><p>
