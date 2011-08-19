@@ -1,0 +1,9 @@
+LIBRARY divert
+EXPORTS
+    DivertDllEntry
+    DivertOpen
+    DivertRecv
+    DivertSend
+    DivertClose
+    DivertHelperParse
+    DivertHelperCalcChecksums

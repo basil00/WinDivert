@@ -1,0 +1,938 @@
+<!doctype html>
+<!--
+ divert.html
+ (C) 2011, all rights reserved,
+
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License as published by
+ the Free Software Foundation, either version 3 of the License, or
+ (at your option) any later version.
+
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+
+ You should have received a copy of the GNU General Public License
+ along with this program.  If not, see <http://www.gnu.org/licenses/>.
+-->
+<html>
+<head>
+    <title>Divert Documentation</title>
+</head>
+<body>
+<h1>Divert: Windows Packet Divert</h1>
+<h2>Table of Contents</h2>
+<ul>
+<li><a href="#introduction">1. Introduction</a></li>
+<li><a href="#building">2. Building</a></li>
+<ul>
+<li><a href="#driver_signing">2.2 Driver Signing</a></li>
+</ul>
+<li><a href="#installing">3. Installing</a></li>
+<li><a href="#uninstalling">4. Uninstalling</a></li>
+<li><a href="#programming_api">5. Programming API</a></li>
+<ul>
+<li><a href="#divert_packet">5.1 DIVERT_PACKET</a></li>
+<li><a href="#divert_open">5.2 DivertOpen</a></li>
+<li><a href="#divert_recv">5.3 DivertRecv</a></li>
+<li><a href="#divert_send">5.4 DivertSend</a></li>
+<li><a href="#divert_close">5.5 DivertClose</a></li>
+</ul>
+<li><a href="#helper_programming_api">6. Helper Programming API</a></li>
+<ul>
+<li><a href="#divert_iphdr">6.1 DIVERT_IPHDR</a></li>
+<li><a href="#divert_ipv6hdr">6.2 DIVERT_IPV6HDR</a></li>
+<li><a href="#divert_icmphdr">6.3 DIVERT_ICMPHDR</a></li>
+<li><a href="#divert_icmpv6hdr">6.4 DIVERT_ICMPV6HDR</a></li>
+<li><a href="#divert_tcphdr">6.5 DIVERT_TCPHDR</a></li>
+<li><a href="#divert_udphdr">6.6 DIVERT_UDPHDR</a></li>
+<li><a href="#divert_helper_parse">6.7 DivertHelperParse</a></li>
+<li><a href="#divert_helper_calc_checksums">6.8 DivertHelperCalcChecksums</a></li>
+</ul>
+<li><a href="#filter_language">7. Filter Language</a></li>
+<ul>
+<li><a href="#filter_examples">7.2 Filter Examples</a></li>
+</ul>
+<li><a href="#samples">8. Samples</a></li>
+<li><a href="#known_issues">9. Known Issues</a></li>
+<li><a href="#license">10. License</a></li>
+</ul>
+
+<hr>
+<a name="introduction"><h2>1. Introduction</h2></a>
+<p>
+This package (<tt>divert</tt>) provides user-mode packet
+capture/modification/blocking/re-injection for Windows Vista and later.
+</p>
+<p>
+The main features of the <tt>divert</tt> package are:
+<ul>
+<li> User-mode packet capture, dropping, modification.
+<li> Simple, high-level, programming API.
+<li> Fully documented with sample programs.
+<li> Full IPv6 support.
+<li> Modern WDF/WFP driver implementation, as opposed to an older
+     WDM/NDIS intermediate driver.
+<li> Open source; Licensed under GNU General Public License version 3.
+     See the <a href="#license">License</a> for more information.
+</ul>
+</p><p>
+The functionality provided by <tt>divert</tt> is very similar to
+<tt>DIVERT</tt> sockets in FreeBSD/MacOS and <tt>NETLINK</tt> sockets in Linux,
+as well as some commercial packages, e.g. <tt>WinPktFilter</tt>, for Windows.
+</p>
+
+<hr>
+<a name="building"><h2>2. Building</h2></a>
+<p>
+To build the <tt>divert</tt> package from source, you must follow these
+steps:
+<ol>
+<li> Download and install the latest <a href="http://www.microsoft.com/whdc/devtools/wdk/default.mspx">Windows Driver Kit</a>.
+<li> Open a <i>Free Build Environment</i> console (or
+    <i>Checked Build Environment</i> for debugging).
+<li> In the <tt>divert</tt> root directory, run the command:
+<pre>
+build -cZg
+</pre>
+This will build the following files and place them in the
+<tt>divert\install</tt> subdirectory:
+<ul>
+<li> <tt>divert.dll</tt>: User-mode library.
+<li> <tt>divert.sys</tt>: Kernel-mode WDF/WFP callout driver.
+<li> <tt>divert.inf</tt>: INF file for <tt>divert.sys</tt>.
+<li> <tt>WdfCoInstaller*.dll</tt>: Microsoft WDF co-installer for
+    <tt>divert.sys</tt>.
+<li> <tt>*.exe</tt>: Sample applications from the <tt>divert\examples</tt>
+    directory.
+</ul>
+</ol>
+</p>
+
+<a name="driver_signing"><h3>2.2 Driver Signing</h3></a>
+<p>
+Before the <tt>divert</tt> package can be used, the <tt>divert.sys</tt> driver
+must be digitally signed.
+See <a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487317.aspx">Driver Signing Requirements for Windows</a>
+for more information.
+</p>
+<p>
+Driver signing is <b>not</b> provided by this package, although this is
+something we wish to change in the future.
+If you wish to use this package, you must sign the driver yourself.
+</p>
+<p>
+If you wish to test this package, you can set up a <i>test certificate</i>.
+See <a href="http://msdn.microsoft.com/en-us/library/ff554705.aspx">
+Test-Signing Driver Packages</a> for more information.
+</p>
+
+<hr>
+<a name="installing"><h2>3. Installing</h2></a>
+<p>
+The <tt>divert</tt> package does not require any special installation.
+Simply ensure that the <tt>divert.dll</tt>, <tt>divert.sys</tt>,
+<tt>divert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files are in your
+application's home directory.
+</p>
+<p>
+The <tt>divert</tt> driver is installed on demand, i.e., when your application
+makes a call to <tt>DivertOpen()</tt> from <tt>divert.dll</tt>
+(see programming API below).
+</p>
+<p>
+The <tt>WdfCoInstaller*.dll</tt> file is relatively bloated compared to the
+other files.
+Blame Microsoft.
+</p>
+
+<hr>
+<a name="uninstalling"><h2>4. Uninstalling</h2></a>
+<p>
+To uninstall, simply delete the <tt>divert.dll</tt>, <tt>divert.sys</tt>,
+<tt>divert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files.
+If the <tt>divert</tt> driver was already demand-started, it will be removed
+automatically after the next reboot.
+To immediately remove it, your uninstaller can issue the following commands:
+<pre>
+sc stop divert
+sc delete divert
+</pre>
+Note however this is not recommended, as this may interfere with other
+applications using the <tt>divert</tt> package.
+</p>
+
+<hr>
+<a name="programming_api"><h2>5. Programming API</h2></a>
+<p>
+To use the <tt>divert</tt> package, a program/application must:
+<ol>
+<li> Include the <tt>divert.h</tt> header file
+<pre>
+#include "divert.h"
+</pre>
+<li> Link or dynamically load the <tt>divert.dll</tt> dynamic link library.
+</ol>
+
+<a name="divert_packet"><h3>5.1 DIVERT_PACKET</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT8  Reserved[7];
+    UINT8  Direction;
+    UINT32 IfIdx;
+    UINT32 SubIfIdx;
+} <b>DIVERT_PACKET</b>, *<b>PDIVERT_PACKET</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Fields</b>
+<ul>
+<li> <tt>Reserved</tt>: Reserved for internal use.  This field may be
+    left uninitialized.</li>
+<li> <tt>Direction</tt>: The packet's direction.
+The possible values are
+<ul>
+<li> <tt>DIVERT_PACKET_DIRECTION_OUTBOUND</tt> with value 0 for outbound
+packets.</li>
+<li> <tt>DIVERT_PACKET_DIRECTION_INBOUND</tt> with value 1 for inbound
+packets.</li>
+</ul></li>
+<li> <tt>IfIdx</tt>: The interface index on which the packet arrived
+    (for inbound packets), or is to be sent (for outbound packets).</li>
+<li> <tt>SubIfIdx</tt>: The sub-interface index for <tt>IfIdx</tt>.</li>
+</ul>
+</p><p>
+<b>Remarks</b><br>
+The <tt>DIVERT_PACKET</tt> structure represents a captured or injected packet.
+The packet's contents, i.e., IP/TCP/UDP headers and data, immediately follow
+a DIVERT_PACKET header in memory.
+</p>
+</dd></dl>
+
+<a name="divert_open"><h3>5.2 DivertOpen</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+HANDLE <b>DivertOpen</b>(
+    __in const char *filter
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>filter</tt>: A packet filter string specified in the <tt>divert</tt>
+    <a href="#filter_language">filter language</a>.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+A valid <tt>divert</tt> <tt>HANDLE</tt> on success, or
+<tt>INVALID_HANDLE_VALUE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Opens a <tt>divert</tt> packet capture handle for the given filter.
+Any packet that matches the filter will be diverted to the handle, and
+can be read by calling <tt>DivertRecv()</tt>.
+</p>
+<p>
+A typical application is only interested in a subset of all traffic.
+In this case the filter should <i>match this subset as closely as
+possible</i>.
+This avoids unnecessary overheads introduced by diverting packets to an
+application, only to have the application re-inject them.
+</p>
+<p>
+Calling <tt>DivertOpen()</tt> for the first time will automatically load
+the <tt>divert.sys</tt> driver.
+This driver will remain installed until the next reboot, or if the driver
+is explicitly removed, e.g. by issuing the following commands:
+<pre>
+sc stop divert
+sc delete divert
+</pre>
+This model helps ensure the driver is not loaded unless it is required to be.
+</p>
+</dd></dl>
+
+<a name="divert_recv"><h3>5.3 DivertRecv</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>DivertRecv</b>(
+    __in HANDLE handle,
+    __out PDIVERT_PACKET pPacket,
+    __in UINT packetLen,
+    __out_opt UINT *recvLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>handle</tt>: A valid <tt>divert</tt> handle created by
+     <tt>DivertOpen()</tt>.</li>
+<li> <tt>pPacket</tt>: A pointer to a <tt>DIVERT_PACKET</tt> header and free
+     space to write the captured packet to.
+     The free space is assumed to immediately follow the
+     <tt>DIVERT_PACKET</tt> header.</li>
+<li> <tt>packetLen</tt>: The total length of the <tt>DIVERT_PACKET</tt> 
+     header and the free space.</li>
+<li> <tt>recvLen</tt>: The total number of bytes written to <tt>pPacket</tt>.
+     Can be <tt>NULL</tt> if this information is not required.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if a packet was successfully received, or <tt>FALSE</tt> if
+an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Receives a diverted packet that matches the filter passed to
+<tt>DivertOpen()</tt>.
+The received packet is guaranteed to match the filter.
+</p>
+<p>
+The <tt>pPacket</tt> parameter is intended to be a buffer large enough to
+store a <tt>DIVERT_PACKET</tt> header, and enough space to store the diverted
+packet.
+This would typically be achieved by the following declarations:
+<pre>
+    char packet[MAX_SIZE];                              // packet buffer space
+    PDIVERT_PACKET pPacket = (PDIVERT_PACKET)packet;    // cast packet to a PDIVERT_PACKET
+    ...
+    if (!DivertRecv(handle, pPacket, sizeof(packet), &amp;recvLen))
+    {
+        // Recv error
+    }
+    ...
+</pre>
+</p>
+<p>
+An application should call <tt>DivertRecv()</tt> <i>as soon as possible</i>
+after a successful call to <tt>DivertOpen()</tt>.
+When a <tt>divert</tt> handle is open, any packet that matches the filter will
+be captured and queued until handled by <tt>DivertRecv()</tt>.
+The packet queue never exceeds a fixed length (currently 1024 packets), after
+which packets are dropped.
+Furthermore packets are not queued indefinitely.
+A packet that has been queued longer than a specific time (currently 100ms)
+will be dropped.
+To avoid packets being dropped that application must process packets as fast
+as possible.
+</p>
+</dd></dl>
+
+<a name="divert_send"><h3>5.4 DivertSend</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>DivertSend</b>(
+    __in HANDLE handle,
+    __in PDIVERT_PACKET pPacket,
+    __in UINT packetLen,
+    __out_opt UINT *sendLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>handle</tt>: A valid <tt>divert</tt> handle created by
+     <tt>DivertOpen()</tt>.</li>
+<li> <tt>pPacket</tt>: A pointer to a <tt>DIVERT_PACKET</tt> header and the
+     packet to be injected.
+     The packet is assumed to immediately follow the
+     <tt>DIVERT_PACKET</tt> header.</li>
+<li> <tt>packetLen</tt>: The total length of the <tt>DIVERT_PACKET</tt> 
+      header and packet to be injected.</li>
+<li> <tt>sendLen</tt>: The total number of bytes injected.
+     Can be <tt>NULL</tt> if this information is not required.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if a packet was successfully injected, or <tt>FALSE</tt> if
+an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Injects a packet into the network stack.
+The injected packet may be one received from <tt>DivertRecv()</tt>, or a
+modified version, or a completely new packet.
+Injected packets cannot be read again by <tt>DivertRecv()</tt>.
+</p><p>
+The <tt>DIVERT_PACKET</tt> header determines how the packet is injected.
+If the <tt>Direction</tt> field is <tt>DIVERT_PACKET_DIRECTION_OUTBOUND</tt>,
+the packet is injected into the <i>outbound</i> path (i.e. a packet leaving
+this computer).
+Else, if <tt>Direction</tt> is <tt>DIVERT_PACKET_DIRECTION_INBOUND</tt>,
+the packet is injected into the <i>inbound</i> path (i.e. a packet arriving at
+this computer).
+Note that the <tt>Direction</tt> field, and <i>not</i> the IP addresses in 
+the injected packet, is used to determine the packet's direction.
+</p><p>
+For packets injected into the <i>inbound</i> path, the <tt>IfIdx</tt> and
+<tt>SubIfIdx</tt> fields are assumed to contain valid interface numbers.
+These may be retrieved from <tt>DivertRecv()</tt> (for packet modification),
+or from the <a href="http://msdn.microsoft.com/en-us/library/aa366073%28v=VS.85%29.aspx">IP Helper API</a>.
+</p><p>
+For <i>outbound</i> injected packets, the <tt>IfIdx</tt> and <tt>SubIfIdx</tt>
+fields are ignored and may be arbitrary values.
+Injecting an inbound packet on the outbound path <i>may</i> work (for some
+types of packets), however this should be considered "undocumented" behavior,
+and may change in future.
+</p>
+</dd></dl>
+
+<a name="divert_close"><h3>5.5 DivertClose</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>DivertClose</b>(
+    __in HANDLE handle
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>handle</tt>: A valid <tt>divert</tt> handle created by
+     <tt>DivertOpen()</tt>.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if successful, <tt>FALSE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Closes a handle created by <tt>DivertOpen()</tt>.
+</p>
+<dd></dl>
+
+<hr>
+<a name="helper_programming_api"><h2>6. Helper Programming API</h2></a>
+
+The <tt>divert</tt> helper programming API is a collection of definitions
+and functions designed to make writing <tt>divert</tt> applications easier.
+The use of the helper API is completely optional.
+
+<a name="divert_iphdr"><h3>6.1 DIVERT_IPHDR</h3>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT8  HdrLength:4;
+    UINT8  Version:4;
+    UINT8  TOS;
+    UINT16 Length;
+    UINT16 Id;
+    UINT16 <i>...</i>;
+    UINT8  TTL;
+    UINT8  Protocol;
+    UINT16 Checksum;
+    UINT32 SrcAddr;
+    UINT32 DstAddr;
+} <b>DIVERT_IPHDR</b>, *<b>PDIVERT_IPHDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Fields</b><br>
+See <a href="http://en.wikipedia.org/wiki/IPv4#Packet_structure">here</a>
+for more information.
+</p><p>
+<b>Remarks</b><br>
+IPv4 header definition.
+</p><p>
+The following fields can only be get/set using the following macro
+definitions:
+<ul>
+<li><i>FragOff</i> with <tt>DIVERT_IPHDR_GET_FRAGOFF(<i>hdr</i>)</tt> and
+    <tt>DIVERT_IPHDR_SET_FRAGOFF(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>MF</i> with <tt>DIVERT_IPHDR_GET_MF(<i>hdr</i>)</tt> and
+    <tt>DIVERT_IPHDR_SET_MF(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>DF</i> with <tt>DIVERT_IPHDR_GET_DF(<i>hdr</i>)</tt> and
+    <tt>DIVERT_IPHDR_SET_DF(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>Reserved</i> with <tt>DIVERT_IPHDR_GET_RESERVED(<i>hdr</i>)</tt> and
+    <tt>DIVERT_IPHDR_SET_RESERVED(<i>hdr</i>, <i>val</i>)</tt></li>
+</ul>
+</p>
+</dl></dd>
+
+<a name="divert_ipv6hdr"><h3>6.2 DIVERT_IPV6HDR</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT32 Version:4;
+    UINT32 ...:28;
+    UINT16 Length;
+    UINT8  NextHdr;
+    UINT8  HopLimit;
+    UINT32 SrcAddr[4];
+    UINT32 DstAddr[4];
+} <b>DIVERT_IPV6HDR</b>, *<b>PDIVERT_IPV6HDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Fields</b><br>
+See <a href="http://en.wikipedia.org/wiki/IPv6_packet#Fixed_header">here</a>
+for more information.
+</p><p>
+<b>Remarks</b><br>
+IPv6 header definition.
+</p><p>
+The following fields can only be get/set using the following macro
+definitions:
+<ul>
+<li><i>TrafficClass</i> with
+    <tt>DIVERT_IPV6HDR_GET_TRAFFICCLASS(<i>hdr</i>)</tt> and
+    <tt>DIVERT_IPV6HDR_SET_TRAFFICCLASS(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>FlowLabel</i> with <tt>DIVERT_IPV6HDR_GET_FLOWLABEL(<i>hdr</i>)</tt> and
+    <tt>DIVERT_IPV6HDR_SET_FLOWLABEL(<i>hdr</i>, <i>val</i>)</tt></li>
+</ul>
+</p>
+</dl></dd>
+
+<a name="divert_icmphdr"><h3>6.3 DIVERT_ICMPHDR</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT8  Type;
+    UINT8  Code;
+    UINT16 Checksum;
+    UINT32 Body;
+} <b>DIVERT_ICMPHDR</b>, *<b>PDIVERT_ICMPHDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Fields</b><br>
+See <a href="http://en.wikipedia.org/wiki/Internet_Control_Message_Protocol#ICMP_segment_structure">here</a>
+for more information.
+</p><p>
+<b>Remarks</b><br>
+ICMP header definition.
+</p>
+</dl></dd>
+
+<a name="divert_icmpv6hdr"><h3>6.4 DIVERT_ICMPV6HDR</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT8  Type;
+    UINT8  Code;
+    UINT16 Checksum;
+    UINT32 Body;
+} <b>DIVERT_ICMPV6HDR</b>, *<b>PDIVERT_ICMPV6HDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Fields</b><br>
+See <a href="http://en.wikipedia.org/wiki/ICMPv6#Packet_format">here</a> for
+more information.
+</p><p>
+<b>Remarks</b><br>
+ICMPv6 header definition.
+</p>
+</dl></dd>
+
+<a name="divert_tcphdr"><h3>6.5 DIVERT_TCPHDR</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT16 SrcPort;
+    UINT16 DstPort;
+    UINT32 SeqNum;
+    UINT32 AckNum;
+    UINT16 Reserved1:4;
+    UINT16 HdrLength:4;
+    UINT16 Fin:1;
+    UINT16 Syn:1;
+    UINT16 Rst:1;
+    UINT16 Psh:1;
+    UINT16 Ack:1;
+    UINT16 Urg:1;
+    UINT16 Reserved2:2;
+    UINT16 Window;
+    UINT16 Checksum;
+    UINT16 UrgPtr;
+} <b>DIVERT_TCPHDR</b>, *<b>PDIVERT_TCPHDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Fields</b><br>
+See <a href="http://en.wikipedia.org/wiki/Transmission_Control_Protocol#TCP_segment_structure">here</a>
+for more information.
+</p><p>
+<b>Remarks</b><br>
+TCP header definition.
+</p>
+</dl></dd>
+
+<a name="divert_udphdr"><h3>6.6 DIVERT_UDPHDR</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT16 SrcPort;
+    UINT16 DstPort;
+    UINT16 Length;
+    UINT16 Checksum;
+} <b>DIVERT_UDPHDR</b>, *<b>PDIVERT_UDPHDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Fields</b><br>
+See <a href="http://en.wikipedia.org/wiki/User_Datagram_Protocol#Packet_structure">here</a>
+for more information.
+</p><p>
+<b>Remarks</b><br>
+UDP header definition.
+</p>
+</dl></dd>
+
+<a name="divert_helper_parse"><h3>6.7 DivertHelperParse</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>DivertHelperParse</b>(
+    __in PDIVERT_PACKET pPacket,
+    __in UINT packetLen,
+    __out_opt PDIVERT_IPHDR *ppIpHdr,
+    __out_opt PDIVERT_IPV6HDR *ppIpv6Hdr,
+    __out_opt PDIVERT_ICMPHDR *ppIcmpHdr,
+    __out_opt PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
+    __out_opt PDIVERT_TCPHDR *ppTcpHdr,
+    __out_opt PDIVERT_UDPHDR *ppUdpHdr,
+    __out_opt PVOID *ppData,
+    __out_opt UINT *pDataLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>pPacket</tt>: The packet to be parsed.</li>
+<li> <tt>packetLen</tt>: The total length of the packet and the
+    <tt>DIVERT_PACKET</tt> header.</li>
+<li> <tt>ppIpHdr</tt>: Output pointer to a <tt>DIVERT_IPHDR</tt>.</li>
+<li> <tt>ppIpv6Hdr</tt>: Output pointer to a <tt>DIVERT_IPV6HDR</tt>.</li>
+<li> <tt>ppIcmpHdr</tt>: Output pointer to a <tt>DIVERT_ICMPHDR</tt>.</li>
+<li> <tt>ppIcmpv6Hdr</tt>: Output pointer to a <tt>DIVERT_ICMPV6HDR</tt>.</li>
+<li> <tt>ppTcpHdr</tt>: Output pointer to a <tt>DIVERT_TCPHDR</tt>.</li>
+<li> <tt>ppUdpHdr</tt>: Output pointer to a <tt>DIVERT_UDPHDR</tt>.</li>
+<li> <tt>ppData</tt>: Output pointer to the packet's data/payload.</li>
+<li> <tt>pDataLen</tt> Output data/payload length.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if all expected (non-<tt>NULL</tt>) outputs were present,
+<tt>FALSE</tt> otherwise.
+Note that <tt>FALSE</tt> may sometimes be a legitimate return value, e.g.,
+when both <tt>ppIpHdr</tt> and <tt>ppIpv6Hdr</tt> are non-<tt>NULL</tt>.
+</p><p>
+<b>Remarks</b><br>
+Parses a raw packet (e.g. one captured using <tt>DivertRecv</tt>) into the
+various packet headers and/or payloads that may or may not be present.
+</p><p>
+Each output parameter may be <tt>NULL</tt> or non-<tt>NULL</tt>.
+For non-<tt>NULL</tt> parameters, this function will write the pointer to
+the corresponding header/payload if it exists, or will write <tt>NULL</tt>
+otherwise.
+Any non-<tt>NULL</tt> pointer that is returned
+<ol>
+<li> Is a pointer into the original <tt>pPacket</tt> packet; and</li>
+<li> There is enough space in <tt>pPacket</tt> to fit the header.</li>
+</ol>
+</p><p>
+This function does not do any verification of the header/payload contents,
+other length and the minimal information required to parse the headers
+themselves.
+<p>
+</dd></dl>
+
+<a name="divert_helper_calc_checksums"><h3>6.8 DivertHelperCalcChecksums</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+UINT <b>DivertHelperCalcChecksums</b>(
+    __inout PDIVERT_PACKET pPacket,
+    __in UINT packetLen,
+    __in UINT64 flags
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>pPacket</tt>: The packet to be modified.</li>
+<li> <tt>packetLen</tt>: The total length of the packet and the
+    <tt>DIVERT_PACKET</tt> header.</li>
+<li> <tt>flags</tt>: One or more of the following flags:
+<ul>
+<li> <tt>DIVERT_HELPER_NO_IP_CHECKSUM</tt>: Do not calculate the IPv4
+    checksum.</li>
+<li> <tt>DIVERT_HELPER_NO_ICMP_CHECKSUM</tt>: Do not calculate the ICMP
+    checksum.</li>
+<li> <tt>DIVERT_HELPER_NO_ICMPV6_CHECKSUM</tt>: Do not calculate the ICMPv6
+    checksum.</li>
+<li> <tt>DIVERT_HELPER_NO_TCP_CHECKSUM</tt>: Do not calculate the TCP
+    checksum.</li>
+<li> <tt>DIVERT_HELPER_NO_UDP_CHECKSUM</tt>: Do not calculate the UDP
+    checksum.</li>
+</ul></li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+The number of checksums calculated.
+</p><p>
+<b>Remarks</b><br>
+(Re)calculates the checksum for any IPv4/ICMP/ICMPv6/TCP/UDP checksum present
+in the given packet.
+Individual checksum calculations may be disabled via the appropriate flag.
+Typically this function should be used before a packet is injected.
+</p><p>
+This function will calculate each checksum from scratch, even if the existing
+checksum is correct.
+This may be inefficient for some applications.
+For better performance, incremental checksum calculations should be used
+instead (not provided by this API).
+<p>
+</dd></dl>
+
+<hr>
+<a name="filter_language"><h2>7. Filter Language</h2></a>
+
+<p>
+The <tt>DivertOpen()</tt> function accepts a string containing a
+<i>filter expression</i>.
+Only packets that match the filter expression are diverted.
+Any other packet is allowed to continue as per normal.
+</p><p>
+Filter allows an application to select only the subset of traffic that is of
+interest.
+For example, a URL blacklist filter would only be interested in packets that
+contain URLs.
+This could be achieved via the following filter.
+<pre>
+HANDLE handle = DivertOpen(
+    "outbound and "
+    "data and "
+    "tcp.DstPort == 80");
+</pre>
+This filter specifies that we should only divert traffic that is
+<ol>
+<li>outbound;</li>
+<li>contains data; and</li>
+<li>has TCP destination port 80 (i.e. HTTP web traffic).
+</ol>
+</p><p>
+A <i>filter</i> is a Boolean expression of the form:
+<pre>
+        <i>FILTER</i> := true | false | <i>FILTER</i> and <i>FILTER</i> | <i>FILTER</i> or <i>FILTER</i> | (<i>FILTER</i>) | <i>TEST</i>
+</pre>
+C-style syntax <tt>&amp;&amp;</tt>, <tt>||</tt>, and <tt>!</tt> may also
+be used instead of <tt>and</tt>, <tt>or</tt>, and <tt>not</tt>, respectively.
+A <i>test</i> is of the following form:
+<pre>
+        <i>TEST</i> := <i>TEST0</i> | not <i>TEST0</i>
+        <i>TEST0</i> := <i>FIELD</i> | <i>FIELD</i> op <i>VAL</i>
+</pre>
+where <tt>op</tt> is one of the following:
+</p><p>
+<center>
+<table border="1" cellpadding="5">
+<tr><td><tt>==</tt> or <tt>=</tt></td><td>Equal</td></tr>
+<tr><td><tt>!=</tt></td><td>Not equal</td></tr>
+<tr><td><tt>&lt;</tt></td><td>Less-than</td></tr>
+<tr><td><tt>&gt;</tt></td><td>Greater-than</td></tr>
+<tr><td><tt>&lt;=</tt></td><td>Less-than-or-equal</td></tr>
+<tr><td><tt>&gt;=</tt></td><td>Greater-than-or-equal</td></tr>
+</table>
+</center>
+</p><p>
+and <tt><i>VAL</i></tt> is a decimal number, hexadecimal number, or IP
+address.
+If the "<tt>op <i>VAL</i></tt>" is missing, the test is implicitly
+"<tt><i>FIELD</i> != 0</tt>".
+</p><p>
+Finally a <i>field</i> is some property about the packet.
+The possible fields are:
+</p><p>
+<center>
+<table border="1" cellpadding="5">
+<tr><td><tt>outbound</tt></td><td>Is outbound?</td></tr>
+<tr><td><tt>inbound</tt></td><td>Is inbound?</td></tr>
+<tr><td><tt>ifIdx</tt></td><td>Interface index</td></tr>
+<tr><td><tt>subIfIdx</tt></td><td>Sub-interface index</td></tr>
+<tr><td><tt>ip</tt></td><td>Is IPv4?</td></tr>
+<tr><td><tt>ipv6</tt></td><td>Is IPv6?</td></tr>
+<tr><td><tt>icmp</tt></td><td>Is ICMP?</td></tr>
+<tr><td><tt>icmpv6</tt></td><td>Is ICMPv6?</td></tr>
+<tr><td><tt>tcp</tt></td><td>Is TCP?</td></tr>
+<tr><td><tt>udp</tt></td><td>Is UDP?</td></tr>
+<tr><td><tt>ip.*</tt></td><td>IPv4 fields (see <tt>DIVERT_IPHDR</tt>)</td></tr>
+<tr><td><tt>ipv6.*</tt></td><td>IPv6 fields (see <tt>DIVERT_IPV6HDR</tt>)</td></tr>
+<tr><td><tt>icmp.*</tt></td><td>ICMP fields (see <tt>DIVERT_ICMPHDR</tt>)</td></tr>
+<tr><td><tt>icmpv6.*</tt></td><td>ICMPV6 fields (see <tt>DIVERT_ICMPV6HDR</tt>)</td></tr>
+<tr><td><tt>tcp.*</tt></td><td>TCP fields (see <tt>DIVERT_TCPHDR</tt>)</td></tr>
+<tr><td><tt>tcp.PayloadLength</tt></td><td>The TCP payload length</td></tr>
+<tr><td><tt>udp.*</tt></td><td>UDP fields (see <tt>DIVERT_UDPHDR</tt>)</td></tr>
+<tr><td><tt>udp.PayloadLength</tt></td><td>The UDP payload length</td></tr>
+</table>
+</center>
+</p><p>
+A <i>test</i> also fails if the field is missing.
+E.g. the test "<tt>tcp.DstPort == 80</tt>" will fail if the packet does not
+contain a TCP header.
+</p>
+
+<a name="filter_examples"><h3>7.1 Filter Examples</h3></a>
+
+<p>
+<ol>
+<li>
+Divert all outbound web traffic:
+<pre>
+HANDLE handle = DivertOpen(
+        "outbound and "
+        "(tcp.DstPort == 80 or udp.DstPort == 53)"
+    );
+</pre>
+</li>
+<li>
+Divert all inbound TCP SYNs:
+<pre>
+HANDLE handle = DivertOpen(
+        "inbound and "
+        "tcp.Syn"
+    );
+</pre>
+</li>
+<li>
+Divert only (inbound) local traffic:
+<pre>
+HANDLE handle = DivertOpen(
+        "inbound and ("
+        "(ip.DstAddr &gt;= 127.0.0.1 and ip.DstAddr &lt;= 127.255.255.255) or"
+        "ipv6.DstAddr == ::1)"
+    );
+</pre>
+</li>
+<li>
+Divert all traffic:
+<pre>
+HANDLE handle = DivertOpen("true");
+</pre>
+</li>
+<li>
+Divert no traffic:
+<pre>
+HANDLE handle = DivertOpen("false");
+</pre>
+(This is not very useful).
+</ol>
+
+<hr>
+<a name="samples"><h2>8. Samples</h2></a>
+
+<p>
+Some samples have been provided to demonstrate the <tt>divert</tt> API.
+The sample programs are:
+<ul>
+<li><tt>webfilter.exe</tt>: A simple URL blacklist filter.
+    This program monitors outbound HTTP traffic.
+    If it finds a URL request that matches the blacklist, it hijacks the
+    TCP connection, reseting the connection at the server's end, and
+    sending a simple block-page to the browser.
+    The blacklist(s) are specified at the command-line.</li>
+<li><tt>netdump.exe</tt>: A simple packet sniffer based on the
+    <tt>divert</tt> filter language.
+    This program takes a filter specified at the command line, and prints
+    information about any packet that matches the filter.
+    Unlike the other samples, this program does not modify or block packets,
+    it simply re-injects them.</li>
+<li><tt>netfilter.exe</tt>: A simple firewall based on the <tt>divert</tt>
+    filter language.
+    This program takes a filter specified at the command line, and blocks
+    any packet that matches the filter.
+    It blocks TCP by sending a TCP reset, UDP by an ICMP message, and all
+    other traffic it simply drops.
+    This is similar to the Linux <tt>iptables</tt> command with the
+    <tt>-j REJECT</tt> option.</li>
+</ul>
+</p><p>
+The samples are intended for educational purposes only, and are not
+fully-featured applications.
+</p>
+
+<hr>
+<a name="known_issues"><h2>9. Known Issues</h2></a>
+
+<p>
+There are some limitations to the <tt>divert</tt> package.
+They are
+<ul>
+<li><i>Injecting inbound ICMP/ICMPv6 messages</i>:
+    For some ICMP/ICMPv6 messages, inbound injection does not work.
+    An error will be returned and the packet will be lost.
+    It is suspected that this is an issue with the WFP framework on which
+    <tt>divert</tt> is built.
+    The work-around is to inject inbound ICMP messages as <tt>outbound</tt>.
+    </li>
+<li><i>No IPv6 extension header support</i>:
+    Currently there is no filter support for IPv6 packets with extension
+    headers.
+    The work around is to capture all IPv6 traffic.
+<li><i>Injected packets are never re-captured</i>:
+    An injected packet will <i>never</i> be captured again by any
+    <tt>divert</tt> handle.
+    This is necessary to prevent packet loops and deadlocks.
+    In the future we intend to implement priorities for <tt>divert</tt>
+    handles to allow packets to be seen by multiple <tt>divert</tt> handles.
+<li><i>Speed</i>:
+    The <tt>divert</tt> driver is not re-entrant, and thus is not as
+    efficient as it could be.
+    In the future we plan to rectify this.
+</ul>
+</p>
+
+<hr>
+<a name="license"><h2>10. License</h2></a>
+<p>
+This package is distributed <i>strictly</i> under the
+<a href="http://www.gnu.org/licenses/gpl-3.0.txt">GNU Public License (GPL) Version 3</a>.
+Please note the following:
+<pre>
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see &lt;http://www.gnu.org/licenses/&gt;.
+</pre>
+</p>
+<p>
+Other licenses (including commercial licenses) <i>may</i> be available on
+request.
+For more information please contact:<br>
+<tt>basil</tt> AT <tt>reqrypt</tt> DOT <tt>org</tt>
+</p>
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+<br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br><br>
+</body>
+</html>
