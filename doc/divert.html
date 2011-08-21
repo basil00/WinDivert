@@ -33,7 +33,7 @@
 <li><a href="#uninstalling">4. Uninstalling</a></li>
 <li><a href="#programming_api">5. Programming API</a></li>
 <ul>
-<li><a href="#divert_packet">5.1 DIVERT_PACKET</a></li>
+<li><a href="#divert_address">5.1 DIVERT_ADDRESS</a></li>
 <li><a href="#divert_open">5.2 DivertOpen</a></li>
 <li><a href="#divert_recv">5.3 DivertRecv</a></li>
 <li><a href="#divert_send">5.4 DivertSend</a></li>
@@ -175,24 +175,24 @@ To use the <tt>divert</tt> package, a program/application must:
 <li> Link or dynamically load the <tt>divert.dll</tt> dynamic link library.
 </ol>
 
-<a name="divert_packet"><h3>5.1 DIVERT_PACKET</h3></a>
+<a name="divert_address"><h3>5.1 DIVERT_ADDRESS</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
 {
-    UINT8  Reserved[7];
-    UINT8  Direction;
     UINT32 IfIdx;
     UINT32 SubIfIdx;
-} <b>DIVERT_PACKET</b>, *<b>PDIVERT_PACKET</b>;
+    UINT8  Direction;
+} <b>DIVERT_ADDRESS</b>, *<b>PDIVERT_ADDRESS</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
 <p>
 <b>Fields</b>
 <ul>
-<li> <tt>Reserved</tt>: Reserved for internal use.  This field may be
-    left uninitialized.</li>
+<li> <tt>IfIdx</tt>: The interface index on which the packet arrived
+    (for inbound packets), or is to be sent (for outbound packets).</li>
+<li> <tt>SubIfIdx</tt>: The sub-interface index for <tt>IfIdx</tt>.</li>
 <li> <tt>Direction</tt>: The packet's direction.
 The possible values are
 <ul>
@@ -201,15 +201,12 @@ packets.</li>
 <li> <tt>DIVERT_PACKET_DIRECTION_INBOUND</tt> with value 1 for inbound
 packets.</li>
 </ul></li>
-<li> <tt>IfIdx</tt>: The interface index on which the packet arrived
-    (for inbound packets), or is to be sent (for outbound packets).</li>
-<li> <tt>SubIfIdx</tt>: The sub-interface index for <tt>IfIdx</tt>.</li>
 </ul>
 </p><p>
 <b>Remarks</b><br>
-The <tt>DIVERT_PACKET</tt> structure represents a captured or injected packet.
-The packet's contents, i.e., IP/TCP/UDP headers and data, immediately follow
-a DIVERT_PACKET header in memory.
+The <tt>DIVERT_ADDRESS</tt> structure represents where a captured or injected
+packet is being sent.
+This includes the packets network interfaces, and the packet's direction.
 </p>
 </dd></dl>
 
@@ -264,8 +261,9 @@ This model helps ensure the driver is not loaded unless it is required to be.
 <pre>
 BOOL <b>DivertRecv</b>(
     __in HANDLE handle,
-    __out PDIVERT_PACKET pPacket,
+    __out PVOID pPacket,
     __in UINT packetLen,
+    __out PDIVERT_ADDRESS pAddr,
     __out_opt UINT *recvLen
 );
 </pre>
@@ -276,12 +274,9 @@ BOOL <b>DivertRecv</b>(
 <ul>
 <li> <tt>handle</tt>: A valid <tt>divert</tt> handle created by
      <tt>DivertOpen()</tt>.</li>
-<li> <tt>pPacket</tt>: A pointer to a <tt>DIVERT_PACKET</tt> header and free
-     space to write the captured packet to.
-     The free space is assumed to immediately follow the
-     <tt>DIVERT_PACKET</tt> header.</li>
-<li> <tt>packetLen</tt>: The total length of the <tt>DIVERT_PACKET</tt> 
-     header and the free space.</li>
+<li> <tt>pPacket</tt>: A buffer for the captured packet.</li>
+<li> <tt>packetLen</tt>: The length of the buffer <tt>pPacket</tt>.</li>
+<li> <tt>pAddr</tt>: The <tt>DIVERT_ADDRESS</tt> of the captured packet.</li>
 <li> <tt>recvLen</tt>: The total number of bytes written to <tt>pPacket</tt>.
      Can be <tt>NULL</tt> if this information is not required.</li>
 </ul>
@@ -295,24 +290,14 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 Receives a diverted packet that matches the filter passed to
 <tt>DivertOpen()</tt>.
 The received packet is guaranteed to match the filter.
-</p>
-<p>
-The <tt>pPacket</tt> parameter is intended to be a buffer large enough to
-store a <tt>DIVERT_PACKET</tt> header, and enough space to store the diverted
-packet.
-This would typically be achieved by the following declarations:
-<pre>
-    char packet[MAX_SIZE];                              // packet buffer space
-    PDIVERT_PACKET pPacket = (PDIVERT_PACKET)packet;    // cast packet to a PDIVERT_PACKET
-    ...
-    if (!DivertRecv(handle, pPacket, sizeof(packet), &amp;recvLen))
-    {
-        // Recv error
-    }
-    ...
-</pre>
-</p>
-<p>
+</p><p>
+The contents of the captured packet are written to <tt>pPacket</tt>.
+If the captured packet is larger than the <tt>pPacket</tt> buffer length,
+then the packet will be truncated.
+If <tt>recvLen</tt> is non-<tt>NULL</tt>, then the total number of bytes
+written to <tt>pPacket</tt> is placed there.
+The address of the captured packet is written to <tt>pAddr</tt>.
+</p><p>
 An application should call <tt>DivertRecv()</tt> <i>as soon as possible</i>
 after a successful call to <tt>DivertOpen()</tt>.
 When a <tt>divert</tt> handle is open, any packet that matches the filter will
@@ -332,8 +317,9 @@ as possible.
 <pre>
 BOOL <b>DivertSend</b>(
     __in HANDLE handle,
-    __in PDIVERT_PACKET pPacket,
+    __in PVOID pPacket,
     __in UINT packetLen,
+    __in PDIVERT_ADDRESS pAddr,
     __out_opt UINT *sendLen
 );
 </pre>
@@ -344,12 +330,9 @@ BOOL <b>DivertSend</b>(
 <ul>
 <li> <tt>handle</tt>: A valid <tt>divert</tt> handle created by
      <tt>DivertOpen()</tt>.</li>
-<li> <tt>pPacket</tt>: A pointer to a <tt>DIVERT_PACKET</tt> header and the
-     packet to be injected.
-     The packet is assumed to immediately follow the
-     <tt>DIVERT_PACKET</tt> header.</li>
-<li> <tt>packetLen</tt>: The total length of the <tt>DIVERT_PACKET</tt> 
-      header and packet to be injected.</li>
+<li> <tt>pPacket</tt>: A buffer containing the packet to be injected.</li>
+<li> <tt>packetLen</tt>: The total length of the buffer <tt>pPacket</tt>.</li> 
+<li> <tt>pAddr</tt>: The <tt>DIVERT_ADDRESS</tt> for the injected packet.</li>
 <li> <tt>sendLen</tt>: The total number of bytes injected.
      Can be <tt>NULL</tt> if this information is not required.</li>
 </ul>
@@ -365,7 +348,7 @@ The injected packet may be one received from <tt>DivertRecv()</tt>, or a
 modified version, or a completely new packet.
 Injected packets cannot be read again by <tt>DivertRecv()</tt>.
 </p><p>
-The <tt>DIVERT_PACKET</tt> header determines how the packet is injected.
+The <tt>pAddr</tt> parameter determines how the packet is injected.
 If the <tt>Direction</tt> field is <tt>DIVERT_PACKET_DIRECTION_OUTBOUND</tt>,
 the packet is injected into the <i>outbound</i> path (i.e. a packet leaving
 this computer).
@@ -602,7 +585,7 @@ UDP header definition.
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>DivertHelperParse</b>(
-    __in PDIVERT_PACKET pPacket,
+    __in PVOID pPacket,
     __in UINT packetLen,
     __out_opt PDIVERT_IPHDR *ppIpHdr,
     __out_opt PDIVERT_IPV6HDR *ppIpv6Hdr,
@@ -620,8 +603,7 @@ BOOL <b>DivertHelperParse</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>pPacket</tt>: The packet to be parsed.</li>
-<li> <tt>packetLen</tt>: The total length of the packet and the
-    <tt>DIVERT_PACKET</tt> header.</li>
+<li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
 <li> <tt>ppIpHdr</tt>: Output pointer to a <tt>DIVERT_IPHDR</tt>.</li>
 <li> <tt>ppIpv6Hdr</tt>: Output pointer to a <tt>DIVERT_IPV6HDR</tt>.</li>
 <li> <tt>ppIcmpHdr</tt>: Output pointer to a <tt>DIVERT_ICMPHDR</tt>.</li>
@@ -662,7 +644,7 @@ themselves.
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT <b>DivertHelperCalcChecksums</b>(
-    __inout PDIVERT_PACKET pPacket,
+    __inout PVOID pPacket,
     __in UINT packetLen,
     __in UINT64 flags
 );
@@ -673,8 +655,7 @@ UINT <b>DivertHelperCalcChecksums</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>pPacket</tt>: The packet to be modified.</li>
-<li> <tt>packetLen</tt>: The total length of the packet and the
-    <tt>DIVERT_PACKET</tt> header.</li>
+<li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
 <li> <tt>flags</tt>: One or more of the following flags:
 <ul>
 <li> <tt>DIVERT_HELPER_NO_IP_CHECKSUM</tt>: Do not calculate the IPv4
@@ -902,6 +883,42 @@ They are
     efficient as it could be.
     In the future we plan to rectify this.
 </ul>
+</p><p>
+All of the samples use some variant of the following basic template for
+<tt>divert</tt> applications.
+The basic idea is to open a <tt>divert</tt> handle, then enter a
+capture-modify-reinject loop:
+<pre>
+    HANDLE handle;          // Divert handle
+    DIVERT_ADDRESS addr;    // Packet address
+    char packet[MAXBUF];    // Packet buffer
+    UINT packetLen;
+
+    handle = DivertOpen("...");     // Open some filter
+    if (handle == INVALID_HANDLE_VALUE);
+    {
+        // Handle error
+        exit(1);
+    }
+
+    // Main capture-modify-inject loop:
+    while (TRUE)
+    {
+        if (!DivertRecv(handle, packet, sizeof(packet), &amp;addr, &amp;packetLen))
+        {
+            // Handle recv error
+            continue;
+        }
+
+        // Modify packet.
+
+        if (!DivertSend(handle, packet, packetLen, &amp;addr, NULL))
+        {
+            // Handle send error
+            continue;
+        }
+    }
+</pre>
 </p>
 
 <hr>

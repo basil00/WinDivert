@@ -55,7 +55,6 @@ typedef struct
  */
 typedef struct
 {
-    DIVERT_PACKET divert;
     DIVERT_IPHDR  ip;
     DIVERT_TCPHDR tcp;
 } PACKET, *PPACKET;
@@ -105,9 +104,9 @@ static BOOL BlackListPayloadMatch(PBLACKLIST blacklist, char *data,
 int main(int argc, char **argv)
 {
     HANDLE handle;
+    DIVERT_ADDRESS addr;
     UINT8 packet[MAXBUF];
-    PDIVERT_PACKET ppacket = (PDIVERT_PACKET)packet;
-    UINT ppacket_len;
+    UINT packet_len;
     PDIVERT_IPHDR ip_header;
     PDIVERT_TCPHDR tcp_header;
     PVOID payload;
@@ -142,8 +141,7 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
     PacketInit(&blockpage->header);
-    blockpage->header.ip.Length   =
-        htons(blockpage_len - sizeof(DIVERT_PACKET));
+    blockpage->header.ip.Length   = htons(blockpage_len);
     blockpage->header.tcp.SrcPort = htons(80);
     blockpage->header.tcp.Psh     = 1;
     blockpage->header.tcp.Ack     = 1;
@@ -170,19 +168,19 @@ int main(int argc, char **argv)
     // Main loop:
     while (TRUE)
     {
-        if (!DivertRecv(handle, ppacket, sizeof(packet), &ppacket_len))
+        if (!DivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
             continue;
         }
 
-        if (!DivertHelperParse(ppacket, ppacket_len, &ip_header, NULL, NULL,
+        if (!DivertHelperParse(packet, packet_len, &ip_header, NULL, NULL,
                 NULL, &tcp_header, NULL, &payload, &payload_len) ||
             !BlackListPayloadMatch(blacklist, payload, (UINT16)payload_len))
         {
             // Packet does not match the blacklist; simply reinject it.
-            if (!DivertSend(handle, ppacket, ppacket_len, NULL))
+            if (!DivertSend(handle, packet, packet_len, &addr, NULL))
             {
                 fprintf(stderr, "warning: failed to reinject packet (%d)\n",
                     GetLastError());
@@ -195,35 +193,29 @@ int main(int argc, char **argv)
 
         // (1) Send a TCP RST to the server; immediately closing the
         //     connection at the server's end.
-        reset->divert.IfIdx     = ppacket->IfIdx;
-        reset->divert.SubIfIdx  = ppacket->SubIfIdx;
-        reset->divert.Direction = ppacket->Direction;
         reset->ip.SrcAddr       = ip_header->SrcAddr;
         reset->ip.DstAddr       = ip_header->DstAddr;
         reset->tcp.SrcPort      = tcp_header->SrcPort;
         reset->tcp.DstPort      = htons(80);
         reset->tcp.SeqNum       = tcp_header->SeqNum;
         reset->tcp.AckNum       = tcp_header->AckNum;
-        DivertHelperCalcChecksums((PDIVERT_PACKET)reset, sizeof(PACKET), 0);
-        if (!DivertSend(handle, (PDIVERT_PACKET)reset, sizeof(PACKET), NULL))
+        DivertHelperCalcChecksums((PVOID)reset, sizeof(PACKET), 0);
+        if (!DivertSend(handle, (PVOID)reset, sizeof(PACKET), &addr, NULL))
         {
             fprintf(stderr, "warning: failed to send reset packet (%d)\n",
                 GetLastError());
         }
 
         // (2) Send the blockpage to the browser:
-        blockpage->header.divert.IfIdx     = ppacket->IfIdx;
-        blockpage->header.divert.SubIfIdx  = ppacket->SubIfIdx;
-        blockpage->header.divert.Direction = !ppacket->Direction;
         blockpage->header.ip.SrcAddr       = ip_header->DstAddr;
         blockpage->header.ip.DstAddr       = ip_header->SrcAddr;
         blockpage->header.tcp.DstPort      = tcp_header->SrcPort;
         blockpage->header.tcp.SeqNum       = tcp_header->AckNum;
         blockpage->header.tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        DivertHelperCalcChecksums((PDIVERT_PACKET)blockpage, blockpage_len, 0);
-        if (!DivertSend(handle, (PDIVERT_PACKET)blockpage, blockpage_len,
-            NULL))
+        DivertHelperCalcChecksums((PVOID)blockpage, blockpage_len, 0);
+        addr.Direction = !addr.Direction;     // Reverse direction.
+        if (!DivertSend(handle, (PVOID)blockpage, blockpage_len, &addr, NULL))
         {
             fprintf(stderr, "warning: failed to send block page packet (%d)\n",
                 GetLastError());
@@ -231,9 +223,6 @@ int main(int argc, char **argv)
 
         // (3) Send a TCP RST to the browser; closing the connection at the 
         //     browser's end.
-        reset->divert.IfIdx     = ppacket->IfIdx;
-        reset->divert.SubIfIdx  = ppacket->SubIfIdx;
-        reset->divert.Direction = !ppacket->Direction;
         reset->ip.SrcAddr       = ip_header->DstAddr;
         reset->ip.DstAddr       = ip_header->SrcAddr;
         reset->tcp.SrcPort      = htons(80);
@@ -242,8 +231,8 @@ int main(int argc, char **argv)
             htonl(ntohl(tcp_header->AckNum) + sizeof(block_data) - 1); 
         reset->tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        DivertHelperCalcChecksums((PDIVERT_PACKET)reset, sizeof(PACKET), 0);
-        if (!DivertSend(handle, (PDIVERT_PACKET)reset, sizeof(PACKET), NULL))
+        DivertHelperCalcChecksums((PVOID)reset, sizeof(PACKET), 0);
+        if (!DivertSend(handle, (PVOID)reset, sizeof(PACKET), &addr, NULL))
         {
             fprintf(stderr, "warning: failed to send reset packet (%d)\n",
                 GetLastError());
@@ -259,7 +248,7 @@ static void PacketInit(PPACKET packet)
     memset(packet, 0, sizeof(PACKET));
     packet->ip.Version = 4;
     packet->ip.HdrLength = sizeof(DIVERT_IPHDR) / sizeof(UINT32);
-    packet->ip.Length = htons(sizeof(PACKET) - sizeof(DIVERT_PACKET));
+    packet->ip.Length = htons(sizeof(PACKET));
     packet->ip.TTL = 64;
     packet->ip.Protocol = IPPROTO_TCP;
     packet->tcp.HdrLength = sizeof(DIVERT_TCPHDR) / sizeof(UINT32);

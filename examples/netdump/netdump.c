@@ -47,16 +47,14 @@ int main(int argc, char **argv)
     UINT i;
     char filter[MAXBUF];
     char packet[MAXBUF];
-    PDIVERT_PACKET ppacket = (PDIVERT_PACKET)packet;
-    UINT ppacket_len;
+    UINT packet_len;
+    DIVERT_ADDRESS addr;
     PDIVERT_IPHDR ip_header;
     PDIVERT_IPV6HDR ipv6_header;
     PDIVERT_ICMPHDR icmp_header;
     PDIVERT_ICMPV6HDR icmpv6_header;
     PDIVERT_TCPHDR tcp_header;
     PDIVERT_UDPHDR udp_header;
-    UINT8 *data;
-    UINT data_len;
 
     // Concat all command line args into a filter string.
     flen = 0;
@@ -96,7 +94,7 @@ int main(int argc, char **argv)
     while (TRUE)
     {
         // Read a matching packet.
-        if (!DivertRecv(handle, ppacket, sizeof(packet), &ppacket_len))
+        if (!DivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
@@ -104,14 +102,14 @@ int main(int argc, char **argv)
         }
        
         // Re-inject the matching packet.
-        if (!DivertSend(handle, ppacket, ppacket_len, NULL))
+        if (!DivertSend(handle, packet, packet_len, &addr, NULL))
         {
             fprintf(stderr, "warning: failed to reinject packet (%d)\n",
                 GetLastError());
         }
 
         // Print info about the matching packet.
-        DivertHelperParse(ppacket, ppacket_len, &ip_header, &ipv6_header,
+        DivertHelperParse(packet, packet_len, &ip_header, &ipv6_header,
             &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
             NULL);
         if (ip_header == NULL && ipv6_header == NULL)
@@ -123,7 +121,7 @@ int main(int argc, char **argv)
         putchar('\n');
         SetConsoleTextAttribute(console, FOREGROUND_RED);
         printf("Packet [Direction=%u IfIdx=%u SubIfIdx=%u]\n",
-            ppacket->Direction, ppacket->IfIdx, ppacket->SubIfIdx);
+            addr.Direction, addr.IfIdx, addr.SubIfIdx);
         if (ip_header != NULL)
         {
             UINT8 *src_addr = (UINT8 *)&ip_header->SrcAddr;
@@ -208,26 +206,24 @@ int main(int argc, char **argv)
                 ntohs(udp_header->Length), ntohs(udp_header->Checksum));
         }
         SetConsoleTextAttribute(console, FOREGROUND_GREEN | FOREGROUND_BLUE);
-        data = DIVERT_PACKET_DATA(ppacket);
-        data_len = ppacket_len - sizeof(DIVERT_PACKET);
-        for (i = 0; i < data_len; i++)
+        for (i = 0; i < packet_len; i++)
         {
             if (i % 20 == 0)
             {
                 printf("\n\t");
             }
-            printf("%.2X", (unsigned)data[i]);
+            printf("%.2X", (UINT8)packet[i]);
         }
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_BLUE);
-        for (i = 0; i < data_len; i++)
+        for (i = 0; i < packet_len; i++)
         {
             if (i % 40 == 0)
             {
                 printf("\n\t");
             }
-            if (isprint(data[i]))
+            if (isprint(packet[i]))
             {
-                putchar(data[i]);
+                putchar(packet[i]);
             }
             else
             {

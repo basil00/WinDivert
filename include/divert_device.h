@@ -16,18 +16,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/*
- * NOTE: This file is NOT part of the divert API.  For the divert API, include
- *       "divert.h" instead.
- */
-
 #ifndef __DIVERT_DEVICE_H
 #define __DIVERT_DEVICE_H
 
 #define DIVERT_DEVICE_NAME                      L"\\Device\\Divert"
 #define DIVERT_DOS_DEVICE_NAME                  L"\\??\\Divert"
 
-#define DIVERT_VERSION                          0
+#define DIVERT_VERSION                          1
 #define DIVERT_MAGIC                            0xF8D3
 
 #define DIVERT_FILTER_FIELD_ZERO                0
@@ -115,13 +110,14 @@
 /*
  * Message definitions.
  */
-struct divert_message_s
+struct divert_ioctl_s
 {
     UINT16 magic;                   // DIVERT_MAGIC
     UINT8  version;                 // DIVERT_VERSION
     UINT8  reserved;                // Reserved (set to 0x0)
+    PVOID  arg;                     // Pointer to buffer
 };
-typedef struct divert_message_s *divert_message_t;
+typedef struct divert_ioctl_s *divert_ioctl_t;
 
 /*
  * IOCTL structures.
@@ -139,7 +135,11 @@ typedef struct divert_ioctl_filter_s *divert_ioctl_filter_t;
 /*
  * IOCTL codes.
  */
+#define IOCTL_DIVERT_RECV           \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x908, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
+#define IOCTL_DIVERT_SEND           \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x909, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 #define IOCTL_DIVERT_SET_FILTER     \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x90A, METHOD_BUFFERED, FILE_ANY_ACCESS)
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x90A, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 
 #endif      // __DIVERT_DEVICE_H

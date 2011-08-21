@@ -38,22 +38,15 @@ extern "C" {
  */
 typedef struct
 {
-    UINT8  Reserved[7];             // Reserved for internal use.
-    UINT8  Direction;               // Packet's direction.
     UINT32 IfIdx;                   // Packet's interface index.
     UINT32 SubIfIdx;                // Packet's sub-interface index.
-} DIVERT_PACKET, *PDIVERT_PACKET;
+    UINT8  Direction;               // Packet's direction.
+} DIVERT_ADDRESS, *PDIVERT_ADDRESS;
 
 #ifndef DIVERT_PACKET_DIRECTION_OUTBOUND
 #define DIVERT_PACKET_DIRECTION_OUTBOUND            0
 #define DIVERT_PACKET_DIRECTION_INBOUND             1
 #endif      /* DIVERT_PACKET_DIRECTION_OUTBOUND */
-
-#define DIVERT_PACKET_DIRECTION(pPacket)            (pPacket->Direction)
-#define DIVERT_PACKET_INTERFACE_INDEX(pPacket)      (pPacket->IfIdx)
-#define DIVERT_PACKET_SUB_INTERFACE_INDEX(pPacket)  (pPacket->SubIfIdx)
-#define DIVERT_PACKET_DATA(pPacket)                 \
-    ((PVOID)(pPacket+1))
 
 /*
  * Open a handle to the divert device with the given filter.
@@ -66,8 +59,9 @@ extern DIVERTEXPORT HANDLE DivertOpen(
  */
 extern DIVERTEXPORT BOOL DivertRecv(
     __in        HANDLE handle,
-    __inout     PDIVERT_PACKET pPacket,
+    __out       PVOID pPacket,
     __in        UINT packetLen,
+    __out       PDIVERT_ADDRESS pAddr,
     __out_opt   UINT *readLen);
 
 /*
@@ -75,8 +69,9 @@ extern DIVERTEXPORT BOOL DivertRecv(
  */
 extern DIVERTEXPORT BOOL DivertSend(
     __in        HANDLE handle,
-    __in        PDIVERT_PACKET pPacket,
+    __in        PVOID pPacket,
     __in        UINT packetLen,
+    __in        PDIVERT_ADDRESS pAddr,
     __out_opt   UINT *writeLen);
 
 /*
@@ -238,7 +233,7 @@ typedef struct
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
 extern DIVERTEXPORT BOOL DivertHelperParse(
-    __in        PDIVERT_PACKET pPacket,
+    __in        PVOID pPacket,
     __in        UINT packetLen,
     __out_opt   PDIVERT_IPHDR *ppIpHdr,
     __out_opt   PDIVERT_IPV6HDR *ppIpv6Hdr,
@@ -253,7 +248,7 @@ extern DIVERTEXPORT BOOL DivertHelperParse(
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
 extern DIVERTEXPORT UINT DivertHelperCalcChecksums(
-    __inout     PDIVERT_PACKET pPacket, 
+    __inout     PVOID pPacket, 
     __in        UINT packetLen,
     __in        UINT64 flags);
 

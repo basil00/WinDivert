@@ -30,8 +30,6 @@
  */
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_UNLOAD divert_unload;
-EVT_WDF_IO_QUEUE_IO_READ divert_read;
-EVT_WDF_IO_QUEUE_IO_WRITE divert_write;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL divert_ioctl;
 EVT_WDF_DEVICE_FILE_CREATE divert_create;
 EVT_WDF_TIMER divert_timer;
@@ -134,6 +132,17 @@ typedef struct context_s *context_t;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(context_s, divert_context_get);
 
 /*
+ * Request context.
+ */
+struct req_context_s
+{
+    struct divert_addr_s *addr;             // Pointer to address structure.
+};
+typedef struct req_context_s req_context_s;
+typedef struct req_context_s *req_context_t;
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, divert_req_context_get);
+
+/*
  * Packets
  */
 #define DIVERT_PACKET_TAG               'Pvid'
@@ -156,15 +165,19 @@ typedef struct packet_s *packet_t;
 #define DIVERT_NET_BUFFER_LIST_TAG      'Lvid'
 
 /*
- * Header definitions.
+ * Address definition.
  */
-struct hdr      // Warning: must match DIVERT_PACKET in divert.h
+struct divert_addr_s
 {
-    UINT8  Reserved[7];
-    UINT8  Direction;
     UINT32 IfIdx;
     UINT32 SubIfIdx;
+    UINT8  Direction;
 };
+typedef struct divert_addr_s *divert_addr_t;
+
+/*
+ * Header definitions.
+ */
 struct iphdr
 {
     UINT8  HdrLength:4;
@@ -267,8 +280,7 @@ HANDLE injectv6_handle;
  */
 extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     IN size_t in_length, IN size_t out_len, IN ULONG code);
-extern VOID divert_read(IN WDFQUEUE queue, IN WDFREQUEST request,
-    IN size_t length);
+extern NTSTATUS divert_read(context_t context, WDFREQUEST request);
 static void divert_read_service(context_t context);
 static BOOLEAN divert_context_verify(context_t context, context_state_t state);
 extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
@@ -280,8 +292,8 @@ extern NTSTATUS divert_register_callout(context_t context, UINT idx,
 extern VOID divert_timer(IN WDFTIMER timer);
 extern VOID divert_cleanup(IN WDFFILEOBJECT object);
 extern VOID divert_close(IN WDFFILEOBJECT object);
-extern VOID divert_write(IN WDFQUEUE queue, IN WDFREQUEST request,
-    IN size_t length);
+extern NTSTATUS divert_write(context_t context, WDFREQUEST request,
+    divert_addr_t addr);
 extern void NTAPI divert_inject_complete(VOID *context,
     NET_BUFFER_LIST *packets, BOOLEAN dispatch_level);
 static NTSTATUS divert_notify_callout(IN FWPS_CALLOUT_NOTIFY_TYPE type,
@@ -391,8 +403,8 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     }
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config,
         WdfIoQueueDispatchSequential);
-    queue_config.EvtIoRead          = divert_read;
-    queue_config.EvtIoWrite         = divert_write;
+    queue_config.EvtIoRead          = NULL;
+    queue_config.EvtIoWrite         = NULL;
     queue_config.EvtIoDeviceControl = divert_ioctl;
     WDF_OBJECT_ATTRIBUTES_INIT(&obj_attrs);
     status = WdfIoQueueCreate(device, &queue_config, &obj_attrs, &queue);
@@ -867,38 +879,25 @@ extern VOID divert_close(IN WDFFILEOBJECT object)
 /*
  * Divert read routine.
  */
-extern VOID divert_read(IN WDFQUEUE queue, IN WDFREQUEST request,
-    IN size_t length)
+static NTSTATUS divert_read(context_t context, WDFREQUEST request)
 {
     NTSTATUS status = STATUS_SUCCESS;
-    context_t context = divert_context_get(WdfRequestGetFileObject(request));
 
     DEBUG("READ: reading diverted packet (context=%p, request=%p)", context,
         request);
-
-    if (!divert_context_verify(context, DIVERT_CONTEXT_STATE_OPEN))
-    {
-        status = STATUS_INVALID_DEVICE_STATE;
-        goto divert_read_exit;
-    }
 
     // Forward the request to the pending read queue:
     status = WdfRequestForwardToIoQueue(request, context->read_queue);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to forward I/O request to read queue", status);
-        goto divert_read_exit;
+        return status;
     }
 
     // Service the read request:
     divert_read_service(context);
 
-divert_read_exit:
-    
-    if (!NT_SUCCESS(status))
-    {
-        WdfRequestCompleteWithInformation(request, status, 0);
-    }
+    return STATUS_SUCCESS;
 }
 
 /*
@@ -914,8 +913,8 @@ static void divert_read_service(context_t context)
     ULONG dst_len, src_len;
     NTSTATUS status;
     packet_t packet;
-    divert_message_t message;
-    struct hdr *header;
+    req_context_t req_context;
+    divert_addr_t addr;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     while (context->state == DIVERT_CONTEXT_STATE_OPEN &&
@@ -950,23 +949,6 @@ static void divert_read_service(context_t context)
             goto divert_read_service_complete;
         }
         dst_len = MmGetMdlByteCount(dst_mdl);
-        if (dst_len < sizeof(struct hdr))
-        {
-            status = STATUS_BUFFER_TOO_SMALL;
-            DEBUG_ERROR("failed to write to output buffer; buffer too small - "
-                "cannot fit packet header", status);
-            goto divert_read_service_complete;
-        }
-        header = (struct hdr *)dst;
-        header->Direction = packet->direction;
-        header->IfIdx     = packet->if_idx;
-        header->SubIfIdx  = packet->sub_if_idx;
-        message = (divert_message_t)header->Reserved;
-        message->magic    = DIVERT_MAGIC;
-        message->version  = DIVERT_VERSION; 
-        message->reserved = 0x0;
-        dst = (PVOID)((UINT8 *)dst + sizeof(struct hdr));
-        dst_len -= sizeof(struct hdr);
         src_len = NET_BUFFER_DATA_LENGTH(packet->buffer);
         dst_len = (src_len < dst_len? src_len: dst_len);
         src = NdisGetDataBuffer(packet->buffer, dst_len, NULL, 1, 0);
@@ -978,6 +960,13 @@ static void divert_read_service(context_t context)
         {
             RtlCopyMemory(dst, src, dst_len);
         }
+        
+        // Write the address information.
+        req_context = divert_req_context_get(request);
+        addr = req_context->addr;
+        addr->IfIdx = packet->if_idx;
+        addr->SubIfIdx = packet->sub_if_idx;
+        addr->Direction = packet->direction;
 
         // Compute the IP/TCP/UDP checksums here if required.
         divert_update_checksums(dst, dst_len, packet->ip_checksum,
@@ -990,8 +979,7 @@ divert_read_service_complete:
         ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
         if (NT_SUCCESS(status))
         {
-            WdfRequestCompleteWithInformation(request, status,
-                src_len + sizeof(struct hdr));
+            WdfRequestCompleteWithInformation(request, status, dst_len);
         }
         else
         {
@@ -1005,19 +993,16 @@ divert_read_service_complete:
 /*
  * Divert write routine.
  */
-extern VOID divert_write(IN WDFQUEUE queue, IN WDFREQUEST request,
-    IN size_t length)
+static NTSTATUS divert_write(context_t context, WDFREQUEST request,
+    divert_addr_t addr)
 {
-    PMDL mdl, sub_mdl = NULL;
-    UINT8 *sub_addr;
-    UINT sub_len;
-    PNET_BUFFER_LIST buffers = NULL;
-    NTSTATUS status = STATUS_SUCCESS;
-    divert_message_t message;
-    struct hdr *header;
+    PMDL mdl = NULL;
+    PVOID data;
+    UINT data_len;
     struct iphdr *ip_header;
     BOOL isipv4;
-    context_t context = divert_context_get(WdfRequestGetFileObject(request));
+    PNET_BUFFER_LIST buffers = NULL;
+    NTSTATUS status = STATUS_SUCCESS;
 
     DEBUG("WRITE: writing/injecting a packet (context=%p, request=%p)",
         context, request);
@@ -1028,44 +1013,30 @@ extern VOID divert_write(IN WDFQUEUE queue, IN WDFREQUEST request,
         goto divert_write_exit;
     }
 
-    status = WdfRequestRetrieveInputWdmMdl(request, &mdl);
+    status = WdfRequestRetrieveOutputWdmMdl(request, &mdl);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to retrieve input MDL", status);
         goto divert_write_exit;
     }
-    if (MmGetMdlByteCount(mdl) != length)
-    {
-        status = STATUS_INVALID_BUFFER_SIZE;
-        DEBUG_ERROR("failed to validate MDL buffer size", status);
-        goto divert_write_exit;
-    }
-    if (length <= sizeof(struct hdr))
-    {
-        status = STATUS_BUFFER_TOO_SMALL;
-        DEBUG_ERROR("failed to read packet header; buffer too small", status);
-        goto divert_write_exit;
-    }
 
-    header = (struct hdr *)MmGetSystemAddressForMdlSafe(mdl,
-        NormalPagePriority);
-    if (header == NULL)
+    data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
+    if (data == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
         DEBUG_ERROR("failed to get MDL address", status);
         goto divert_write_exit;
     }
-
-    message = (divert_message_t)header->Reserved;
-    if (message->magic != DIVERT_MAGIC ||
-        message->version != DIVERT_VERSION)
+    
+    data_len = MmGetMdlByteCount(mdl);
+    if (data_len < sizeof(struct iphdr))
     {
-        status = STATUS_INVALID_PARAMETER;
-        DEBUG_ERROR("failed to validate packet header", status);
+        status = STATUS_BUFFER_TOO_SMALL;
+        DEBUG_ERROR("write buffer too small, cannot read ip header", status);
         goto divert_write_exit;
     }
 
-    ip_header = (struct iphdr *)(header + 1);
+    ip_header = (struct iphdr *)data;
     switch (ip_header->Version)
     {
         case 4:
@@ -1080,19 +1051,8 @@ extern VOID divert_write(IN WDFQUEUE queue, IN WDFREQUEST request,
             goto divert_write_exit;
     }
 
-    sub_addr = (UINT8 *)MmGetMdlVirtualAddress(mdl) + sizeof(struct hdr);
-    sub_len = length - sizeof(struct hdr);
-    sub_mdl = IoAllocateMdl(sub_addr, sub_len, FALSE, FALSE, NULL);
-    if (sub_mdl == NULL)
-    {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        DEBUG_ERROR("failed to allocate sub-mdl", status);
-        goto divert_write_exit;
-    }
-    IoBuildPartialMdl(mdl, sub_mdl, sub_addr, sub_len);
-
     status = FwpsAllocateNetBufferAndNetBufferList0(context->pool_handle,
-        0, 0, sub_mdl, 0, sub_len, &buffers);
+        0, 0, mdl, 0, data_len, &buffers);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
@@ -1100,7 +1060,7 @@ extern VOID divert_write(IN WDFQUEUE queue, IN WDFREQUEST request,
         goto divert_write_exit;
     }
 
-    switch (header->Direction)
+    switch (addr->Direction)
     {
         case DIVERT_PACKET_DIRECTION_OUTBOUND:
             if (isipv4)
@@ -1121,14 +1081,14 @@ extern VOID divert_write(IN WDFQUEUE queue, IN WDFREQUEST request,
             {
                 status = FwpsInjectNetworkReceiveAsync0(inject_handle, 
                     DIVERT_PACKET_INJECTED, 0, UNSPECIFIED_COMPARTMENT_ID,
-                    header->IfIdx, header->SubIfIdx, buffers,
+                    addr->IfIdx, addr->SubIfIdx, buffers,
                     divert_inject_complete, (HANDLE)request);
             }
             else
             {
                 status = FwpsInjectNetworkReceiveAsync0(injectv6_handle, 
                     DIVERT_PACKET_INJECTED, 0, UNSPECIFIED_COMPARTMENT_ID,
-                    header->IfIdx, header->SubIfIdx, buffers,
+                    addr->IfIdx, addr->SubIfIdx, buffers,
                     divert_inject_complete, (HANDLE)request);
             }
             break;
@@ -1147,12 +1107,9 @@ divert_write_exit:
         {
             FwpsFreeNetBufferList0(buffers);
         }
-        if (sub_mdl != NULL)
-        {
-            IoFreeMdl(sub_mdl);
-        }
-        WdfRequestComplete(request, status);
     }
+
+    return status;
 }
 
 /*
@@ -1161,7 +1118,6 @@ divert_write_exit:
 static void NTAPI divert_inject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level)
 {
-    PMDL sub_mdl;
     WDFREQUEST request = (WDFREQUEST)context;
     PNET_BUFFER buffer;
     size_t length = 0;
@@ -1171,7 +1127,6 @@ static void NTAPI divert_inject_complete(VOID *context,
     DEBUG("COMPLETE: write/inject packet complete (request=%p)", request);
 
     buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
-    sub_mdl = NET_BUFFER_FIRST_MDL(buffer);
     status = NET_BUFFER_LIST_STATUS(buffers);
     if (NT_SUCCESS(status))
     {
@@ -1181,10 +1136,8 @@ static void NTAPI divert_inject_complete(VOID *context,
     {
         DEBUG_ERROR("failed to inject packet", status);
     }
-    IoFreeMdl(sub_mdl);
     FwpsFreeNetBufferList0(buffers);
-    WdfRequestCompleteWithInformation(request, status,
-        (ULONG_PTR)(length + sizeof(struct hdr)));
+    WdfRequestCompleteWithInformation(request, status, length);
 }
 
 /*
@@ -1193,10 +1146,14 @@ static void NTAPI divert_inject_complete(VOID *context,
 extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     IN size_t out_length, IN size_t in_length, IN ULONG code)
 {
-    PCHAR buf;
-    size_t buflen, filter_len;
-    divert_message_t message;
+    PCHAR inbuf, outbuf;
+    size_t inbuflen, outbuflen, filter_len;
+    divert_ioctl_t ioctl;
     divert_ioctl_filter_t filter;
+    WDFMEMORY memobj;
+    divert_addr_t addr;
+    WDF_OBJECT_ATTRIBUTES attributes;
+    req_context_t req_context = NULL;
     NTSTATUS status = STATUS_SUCCESS;
     context_t context = divert_context_get(WdfRequestGetFileObject(request));
     UNREFERENCED_PARAMETER(queue);
@@ -1209,34 +1166,102 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
         goto divert_ioctl_exit;
     }
 
+    // Get the buffers and do sanity checks.
+    status = WdfRequestRetrieveInputBuffer(request, 0, &inbuf, &inbuflen);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to retrieve input buffer", status);
+        goto divert_ioctl_exit;
+    }
+
+    if (inbuflen != sizeof(struct divert_ioctl_s) || inbuflen != in_length)
+    {
+        status = STATUS_INVALID_DEVICE_REQUEST;
+        DEBUG_ERROR("input buffer not an ioctl message header", status);
+        goto divert_ioctl_exit;
+    }
+
+    ioctl = (divert_ioctl_t)inbuf;
+    if (ioctl->version != DIVERT_VERSION || ioctl->magic != DIVERT_MAGIC ||
+        ioctl->reserved != 0x0)
+    {
+        status = STATUS_INVALID_DEVICE_REQUEST;
+        DEBUG_ERROR("input buffer contained a bad ioctl message header",
+            status);
+        goto divert_ioctl_exit;
+    }
+
+    status = WdfRequestRetrieveOutputBuffer(request, 0, &outbuf, &outbuflen);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to retrieve output buffer", status);
+        goto divert_ioctl_exit;
+    }
+    if (outbuflen != out_length)
+    {
+        status = STATUS_INVALID_DEVICE_REQUEST;
+        DEBUG_ERROR("output buffer length mismatch", status);
+        goto divert_ioctl_exit;
+    }
+
+    // Handle the ioctl:
     switch (code)
     {
-        case IOCTL_DIVERT_SET_FILTER:
-            status = WdfRequestRetrieveInputBuffer(request, 0, &buf, &buflen);
+        case IOCTL_DIVERT_RECV:
+            status = WdfRequestProbeAndLockUserBufferForWrite(request,
+                ioctl->arg, sizeof(struct divert_addr_s), &memobj);
             if (!NT_SUCCESS(status))
             {
-                DEBUG_ERROR("failed to retrieve input buffer", status);
+                DEBUG_ERROR("invalid arg pointer for RECV ioctl", status);
                 goto divert_ioctl_exit;
             }
-            if (buflen != in_length ||
-                buflen < sizeof(struct divert_message_s))
+            addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+
+            WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes,
+                req_context_s);
+            status = WdfObjectAllocateContext(request, &attributes,
+                &req_context);
+            if (!NT_SUCCESS(status))
             {
-                status = STATUS_BUFFER_TOO_SMALL;
-                DEBUG_ERROR("input buffer has an invalid length %u bytes",
-                    status, buflen);
+                DEBUG_ERROR("failed to allocate request context for RECV "
+                    "ioctl", status);
+                goto divert_ioctl_exit;
+
+            }
+            req_context->addr = addr;
+            status = divert_read(context, request);
+            if (NT_SUCCESS(status))
+            {
+                return;
+            }
+            break;
+        
+        case IOCTL_DIVERT_SEND:
+            status = WdfRequestProbeAndLockUserBufferForRead(request,
+                ioctl->arg, sizeof(struct divert_addr_s), &memobj);
+            if (!NT_SUCCESS(status))
+            {
+                DEBUG_ERROR("invalid arg pointer for SEND ioctl", status);
                 goto divert_ioctl_exit;
             }
-            message = (divert_message_t)buf;
-            if (message->version != DIVERT_VERSION ||
-                message->magic != DIVERT_MAGIC)
+            addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+            status = divert_write(context, request, addr);
+            if (NT_SUCCESS(status))
+            {
+                return;
+            }
+            break;
+        
+        case IOCTL_DIVERT_SET_FILTER:
+            if (ioctl->arg != NULL)
             {
                 status = STATUS_INVALID_DEVICE_REQUEST;
-                DEBUG_ERROR("input buffer contains an invalid request header",
+                DEBUG_ERROR("arg pointer is non-NULL for SET_FILTER ioctl",
                     status);
                 goto divert_ioctl_exit;
             }
-            filter = (divert_ioctl_filter_t)(message+1);
-            filter_len = buflen - sizeof(struct divert_message_s);
+            filter = (divert_ioctl_filter_t)outbuf;
+            filter_len = outbuflen;
             if (!divert_filter_compile(filter, filter_len, context->filter))
             {
                 status = STATUS_INVALID_DEVICE_REQUEST;
@@ -1244,6 +1269,7 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 goto divert_ioctl_exit;
             }
             break;
+
         default:
             status = STATUS_INVALID_DEVICE_REQUEST;
             DEBUG_ERROR("failed to complete I/O control; invalid request",

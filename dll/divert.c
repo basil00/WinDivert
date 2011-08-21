@@ -439,24 +439,21 @@ DivertDriverInstallExit:
  */
 extern HANDLE DivertOpen(const char *filter)
 {
-    struct
-    {
-        struct divert_message_s      header;
-        struct divert_ioctl_filter_s filter[DIVERT_FILTER_MAXLEN];
-    } ioctl;
+    struct divert_ioctl_s ioctl;
+    struct divert_ioctl_filter_s ioctl_filter[DIVERT_FILTER_MAXLEN];
     UINT8 filter_len;
     DWORD err, iolen;
     HANDLE handle;
 
     // Parse the filter:
-    if (!DivertCompileFilter(filter, ioctl.filter, &filter_len))
+    if (!DivertCompileFilter(filter, ioctl_filter, &filter_len))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
 
 #ifdef DIVERT_DEBUG
-    DivertFilterDump(ioctl.filter, filter_len);
+    DivertFilterDump(ioctl_filter, filter_len);
 #endif
 
     // Attempt to open the Divert device:
@@ -485,13 +482,13 @@ extern HANDLE DivertOpen(const char *filter)
     }
 
     // Set the filter:
-    ioctl.header.version  = DIVERT_VERSION;
-    ioctl.header.magic    = DIVERT_MAGIC;
-    ioctl.header.reserved = 0x0;
+    ioctl.version  = DIVERT_VERSION;
+    ioctl.magic    = DIVERT_MAGIC;
+    ioctl.reserved = 0x0;
+    ioctl.arg      = NULL;
     if (!DeviceIoControl(handle, IOCTL_DIVERT_SET_FILTER, &ioctl,
-            sizeof(struct divert_message_s) +
-            filter_len*sizeof(struct divert_ioctl_filter_s), NULL, 0, &iolen,
-            NULL))
+            sizeof(ioctl), ioctl_filter,
+            filter_len*sizeof(struct divert_ioctl_filter_s), &iolen, NULL))
     {
         CloseHandle(handle);
         return INVALID_HANDLE_VALUE;
@@ -504,31 +501,24 @@ extern HANDLE DivertOpen(const char *filter)
 /*
  * Receive a packet from the Divert device.
  */
-extern BOOL DivertRecv(HANDLE handle, PDIVERT_PACKET pPacket, UINT packetLen,
-    UINT *readlen)
+extern BOOL DivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
+    PDIVERT_ADDRESS addr, UINT *readlen)
 {
-    divert_message_t message;
+    struct divert_ioctl_s ioctl;
     DWORD readlen0;
-    
-    if (!ReadFile(handle, (PVOID)pPacket, (DWORD)packetLen, &readlen0, NULL))
+
+    ioctl.version  = DIVERT_VERSION;
+    ioctl.magic    = DIVERT_MAGIC;
+    ioctl.reserved = 0x0;
+    ioctl.arg      = (PVOID)addr; 
+    if (!DeviceIoControl(handle, IOCTL_DIVERT_RECV, &ioctl, sizeof(ioctl),
+            pPacket, packetLen, &readlen0, NULL))
     {
-        return FALSE;
-    }
-    if (readlen0 <= sizeof(DIVERT_PACKET))
-    {
-        SetLastError(ERROR_INVALID_DATA);
-        return FALSE;
-    }
-    message = (divert_message_t)pPacket->Reserved;
-    if (message->magic != DIVERT_MAGIC ||
-        message->version != DIVERT_VERSION)
-    {
-        SetLastError(ERROR_INVALID_DATA);
         return FALSE;
     }
     if (readlen != NULL)
     {
-        *readlen = readlen0;
+        *readlen = (UINT)readlen0;
     }
     return TRUE;
 }
@@ -536,27 +526,26 @@ extern BOOL DivertRecv(HANDLE handle, PDIVERT_PACKET pPacket, UINT packetLen,
 /*
  * Send (inject) a packet to the Divert device.
  */
-extern BOOL DivertSend(HANDLE handle, PDIVERT_PACKET pPacket, UINT packetLen,
-    UINT *writelen)
+extern BOOL DivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
+    PDIVERT_ADDRESS addr, UINT *writelen)
 {
-    divert_message_t message;
+    struct divert_ioctl_s ioctl;
     DWORD writelen0;
-   
-    if (packetLen <= sizeof(DIVERT_PACKET))
+  
+    ioctl.version  = DIVERT_VERSION;
+    ioctl.magic    = DIVERT_MAGIC;
+    ioctl.reserved = 0x0;
+    ioctl.arg      = (PVOID)addr;
+    if (!DeviceIoControl(handle, IOCTL_DIVERT_SEND, &ioctl, sizeof(ioctl),
+            pPacket, packetLen, &writelen0, NULL))
     {
-        SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    message = (divert_message_t)pPacket->Reserved;
-    message->magic    = DIVERT_MAGIC;
-    message->version  = DIVERT_VERSION; 
-    message->reserved = 0x0;
-    if (writelen == NULL)
+    if (writelen != NULL)
     {
-        writelen = &writelen0;
+        *writelen = writelen0;
     }
-    return WriteFile(handle, (PVOID)pPacket, (DWORD)packetLen,
-        (DWORD *)writelen, NULL);
+    return TRUE;
 }
 
 /*
@@ -1564,7 +1553,7 @@ static void DivertFilterDump(divert_ioctl_filter_t filter, UINT8 len)
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern BOOL DivertHelperParse(PDIVERT_PACKET pPacket, UINT packetLen,
+extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
     PDIVERT_IPHDR *ppIpHdr, PDIVERT_IPV6HDR *ppIpv6Hdr,
     PDIVERT_ICMPHDR *ppIcmpHdr, PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
     PDIVERT_TCPHDR *ppTcpHdr, PDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
@@ -1582,13 +1571,12 @@ extern BOOL DivertHelperParse(PDIVERT_PACKET pPacket, UINT packetLen,
     UINT data_len = 0;
     BOOL success;
 
-    if (pPacket == NULL ||
-        packetLen < sizeof(DIVERT_PACKET) + sizeof(UINT8))
+    if (pPacket == NULL || packetLen < sizeof(UINT8))
     {
         goto DivertHelperParseExit;
     }
-    data = DIVERT_PACKET_DATA(pPacket);
-    data_len = packetLen - sizeof(DIVERT_PACKET);
+    data = pPacket;
+    data_len = packetLen;
 
     ip_header = (PDIVERT_IPHDR)data;
     switch (ip_header->Version)
@@ -1730,7 +1718,7 @@ DivertHelperParseExit:
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
-extern UINT DivertHelperCalcChecksums(PDIVERT_PACKET pPacket, UINT packetLen,
+extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     UINT64 flags)
 {
     DIVERT_PSEUDOHDR pseudo_header;
