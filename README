@@ -1,5 +1,14 @@
 Divert: Windows Packet Divert
 -----------------------------
 
+This a user-mode packet diversion package for Windows Vista/7.
+
+The basic idea is that you can redirect (divert) packets from the Windows
+network stack to a user-mode application using one simple programming API.
+The packets can then be modified and re-injected.
+
+The divert package is useful for implementing user-mode packet filters,
+sniffers, firewalls, tunneling, etc., etc.
+
 For more information about this project, see doc/divert.html
 
