@@ -110,12 +110,13 @@
 /*
  * Message definitions.
  */
+#pragma pack(push, 1)
 struct divert_ioctl_s
 {
     UINT16 magic;                   // DIVERT_MAGIC
     UINT8  version;                 // DIVERT_VERSION
     UINT8  reserved;                // Reserved (set to 0x0)
-    PVOID  arg;                     // Pointer to buffer
+    UINT64 arg;                     // Pointer to buffer
 };
 typedef struct divert_ioctl_s *divert_ioctl_t;
 
@@ -131,6 +132,7 @@ struct divert_ioctl_filter_s
     UINT32 arg[4];                  // Argument.
 };
 typedef struct divert_ioctl_filter_s *divert_ioctl_filter_t;
+#pragma pack(pop)
 
 /*
  * IOCTL codes.

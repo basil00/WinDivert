@@ -88,7 +88,7 @@ const char block_data[] =
  * Prototypes
  */
 static void PacketInit(PPACKET packet);
-static int UrlCompare(const void *a, const void *b);
+static int __cdecl UrlCompare(const void *a, const void *b);
 static int UrlMatch(PURL urla, PURL urlb);
 static PBLACKLIST BlackListInit(void);
 static void BlackListInsert(PBLACKLIST blacklist, PURL url);
@@ -101,7 +101,7 @@ static BOOL BlackListPayloadMatch(PBLACKLIST blacklist, char *data,
 /*
  * Entry.
  */
-int main(int argc, char **argv)
+int __cdecl main(int argc, char **argv)
 {
     HANDLE handle;
     DIVERT_ADDRESS addr;
@@ -536,7 +536,7 @@ static BOOL BlackListPayloadMatch(PBLACKLIST blacklist, char *data, UINT16 len)
 /*
  * URL comparison.
  */
-static int UrlCompare(const void *a, const void *b)
+static int __cdecl UrlCompare(const void *a, const void *b)
 {
     PURL urla = *(PURL *)a;
     PURL urlb = *(PURL *)b;

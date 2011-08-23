@@ -964,9 +964,12 @@ static void divert_read_service(context_t context)
         // Write the address information.
         req_context = divert_req_context_get(request);
         addr = req_context->addr;
-        addr->IfIdx = packet->if_idx;
-        addr->SubIfIdx = packet->sub_if_idx;
-        addr->Direction = packet->direction;
+        if (addr != NULL)
+        {
+            addr->IfIdx = packet->if_idx;
+            addr->SubIfIdx = packet->sub_if_idx;
+            addr->Direction = packet->direction;
+        }
 
         // Compute the IP/TCP/UDP checksums here if required.
         divert_update_checksums(dst, dst_len, packet->ip_checksum,
@@ -1208,14 +1211,21 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     switch (code)
     {
         case IOCTL_DIVERT_RECV:
-            status = WdfRequestProbeAndLockUserBufferForWrite(request,
-                ioctl->arg, sizeof(struct divert_addr_s), &memobj);
-            if (!NT_SUCCESS(status))
+            if ((PVOID)ioctl->arg != NULL)
             {
-                DEBUG_ERROR("invalid arg pointer for RECV ioctl", status);
-                goto divert_ioctl_exit;
+                status = WdfRequestProbeAndLockUserBufferForWrite(request,
+                    (PVOID)ioctl->arg, sizeof(struct divert_addr_s), &memobj);
+                if (!NT_SUCCESS(status))
+                {
+                    DEBUG_ERROR("invalid arg pointer for RECV ioctl", status);
+                    goto divert_ioctl_exit;
+                }
+                addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
             }
-            addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+            else
+            {
+                addr = NULL;
+            }
 
             WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes,
                 req_context_s);
@@ -1238,7 +1248,7 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
         
         case IOCTL_DIVERT_SEND:
             status = WdfRequestProbeAndLockUserBufferForRead(request,
-                ioctl->arg, sizeof(struct divert_addr_s), &memobj);
+                (PVOID)ioctl->arg, sizeof(struct divert_addr_s), &memobj);
             if (!NT_SUCCESS(status))
             {
                 DEBUG_ERROR("invalid arg pointer for SEND ioctl", status);
@@ -1253,7 +1263,7 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             break;
         
         case IOCTL_DIVERT_SET_FILTER:
-            if (ioctl->arg != NULL)
+            if ((PVOID)ioctl->arg != NULL)
             {
                 status = STATUS_INVALID_DEVICE_REQUEST;
                 DEBUG_ERROR("arg pointer is non-NULL for SET_FILTER ioctl",

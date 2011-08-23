@@ -83,7 +83,7 @@ static void PacketIpv6Icmpv6Init(PICMPV6PACKET packet);
 /*
  * Entry.
  */
-int main(int argc, char **argv)
+int __cdecl main(int argc, char **argv)
 {
     HANDLE handle, console;
     size_t slen, flen;

@@ -1,5 +1,5 @@
 /*
- * divert.c
+ * divert.h
  * (C) 2011, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
@@ -61,7 +61,7 @@ extern DIVERTEXPORT BOOL DivertRecv(
     __in        HANDLE handle,
     __out       PVOID pPacket,
     __in        UINT packetLen,
-    __out       PDIVERT_ADDRESS pAddr,
+    __out_opt   PDIVERT_ADDRESS pAddr,
     __out_opt   UINT *readLen);
 
 /*

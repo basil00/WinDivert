@@ -172,7 +172,7 @@ static BOOLEAN DivertDriverFiles(LPWSTR *divert_dir_ptr,
 static BOOLEAN DivertDriverInstall(VOID);
 static BOOL DivertCompileFilter(const char *filter_str,
     divert_ioctl_filter_t filter, UINT8 *fp);
-static int DivertFilterTokenNameCompare(const void *a, const void *b);
+static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b);
 static BOOL DivertTokenizeFilter(const char *filter, FILTER_TOKEN *tokens,
     UINT8 tokensmax);
 static BOOL DivertParseIPv4Address(char *str, UINT32 *addr_ptr);
@@ -485,7 +485,7 @@ extern HANDLE DivertOpen(const char *filter)
     ioctl.version  = DIVERT_VERSION;
     ioctl.magic    = DIVERT_MAGIC;
     ioctl.reserved = 0x0;
-    ioctl.arg      = NULL;
+    ioctl.arg      = (UINT64)NULL;
     if (!DeviceIoControl(handle, IOCTL_DIVERT_SET_FILTER, &ioctl,
             sizeof(ioctl), ioctl_filter,
             filter_len*sizeof(struct divert_ioctl_filter_s), &iolen, NULL))
@@ -510,7 +510,7 @@ extern BOOL DivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
     ioctl.version  = DIVERT_VERSION;
     ioctl.magic    = DIVERT_MAGIC;
     ioctl.reserved = 0x0;
-    ioctl.arg      = (PVOID)addr; 
+    ioctl.arg      = (UINT64)addr; 
     if (!DeviceIoControl(handle, IOCTL_DIVERT_RECV, &ioctl, sizeof(ioctl),
             pPacket, packetLen, &readlen0, NULL))
     {
@@ -535,7 +535,7 @@ extern BOOL DivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
     ioctl.version  = DIVERT_VERSION;
     ioctl.magic    = DIVERT_MAGIC;
     ioctl.reserved = 0x0;
-    ioctl.arg      = (PVOID)addr;
+    ioctl.arg      = (UINT64)addr;
     if (!DeviceIoControl(handle, IOCTL_DIVERT_SEND, &ioctl, sizeof(ioctl),
             pPacket, packetLen, &writelen0, NULL))
     {
@@ -586,7 +586,7 @@ static BOOL DivertCompileFilter(const char *filter_str,
 /*
  * Compare two FILTER_TOKEN_NAMEs.
  */
-static int DivertFilterTokenNameCompare(const void *a, const void *b)
+static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b)
 {
     PFILTER_TOKEN_NAME na = (PFILTER_TOKEN_NAME)a;
     PFILTER_TOKEN_NAME nb = (PFILTER_TOKEN_NAME)b;

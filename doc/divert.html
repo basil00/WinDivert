@@ -263,7 +263,7 @@ BOOL <b>DivertRecv</b>(
     __in HANDLE handle,
     __out PVOID pPacket,
     __in UINT packetLen,
-    __out PDIVERT_ADDRESS pAddr,
+    __out_opt PDIVERT_ADDRESS pAddr,
     __out_opt UINT *recvLen
 );
 </pre>
@@ -296,7 +296,8 @@ If the captured packet is larger than the <tt>pPacket</tt> buffer length,
 then the packet will be truncated.
 If <tt>recvLen</tt> is non-<tt>NULL</tt>, then the total number of bytes
 written to <tt>pPacket</tt> is placed there.
-The address of the captured packet is written to <tt>pAddr</tt>.
+If non-<tt>NULL</tt>, the address of the captured packet is written to
+<tt>pAddr</tt>.
 </p><p>
 An application should call <tt>DivertRecv()</tt> <i>as soon as possible</i>
 after a successful call to <tt>DivertOpen()</tt>.
