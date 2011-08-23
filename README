@@ -1,14 +1,107 @@
-Divert: Windows Packet Divert
------------------------------
+DIVERT: Windows Packet Divert
+=============================
 
-This a user-mode packet diversion package for Windows Vista/7.
+1. Introduction
+---------------
 
-The basic idea is that you can redirect (divert) packets from the Windows
-network stack to a user-mode application using one simple programming API.
-The packets can then be modified and re-injected.
+Windows Packet Divert is a user-mode packet capture-and-divert package for
+Windows Vista and Windows 7.
+
+Using this Divert package, a developers can write user-mode programs that
+capture and divert packets being sent from, or being received to, the Windows
+network stack.  The program then can inspect/filter/modify/re-inject the
+packets as it sees fit.
 
 The divert package is useful for implementing user-mode packet filters,
-sniffers, firewalls, tunneling, etc., etc.
+packet sniffers, firewalls, tunneling applications, etc..  Basically if you
+need to intercept and modify packets, then this package is for you.
 
 For more information about this project, see doc/divert.html
+
+2. Similar Packages
+-------------------
+
+The Windows Divert package provides similar functionality to divert sockets in
+FreeBSD/MacOS, NETLINK filters in Linux, and some non-free packet capturing
+packages such as WinPkFilter for Windows.  In fact, the design of this package
+was largely inspired by FreeBSD's divert sockets.
+
+This package shares some similarity with Winpcap.  However, Winpcap merely
+copies packets, whereas the Divert package stops/filters packets unless they
+are re-injected.  This means that Winpcap is mostly limited to packet sniffers
+and related applications, whereas Divert can be used to implement user-mode
+firewalls, filters, etc.
+
+3. Architecture
+---------------
+
+The basic architecture of the Divert package is as follows:
+
+                               +--------------+
+                               |              |
+                     +-------->| PROGRAM      |---------+
+                     |         | (divert.dll) |         |
+                     |         +--------------+         |
+                     |                                  | (3) re-injected
+                     | (2a) matching packet             |     packet
+                     |                                  |
+                     |                                  |
+ [user mode]         |                                  |
+ ....................|..................................|....................
+ [kernel mode]       |                                  |
+                     |                                  |
+                     |                                  |
+              +------------+                            +--------------->
+  (1) packet  |            | (2b) non-matching packet
+ ------------>| DIVERT.SYS |-------------------------------------------->
+              |            |
+              +------------+
+
+Essentially, the DIVERT.SYS driver inserts itself into the Windows network
+stack.  The following then happens
+
+(1) a new packet enters the stack, and is intercepted by DIVERT.SYS
+(2a) if the packet matches a PROGRAM-defined filter, it is diverted.  The
+    PROGRAM can then read the packet with a call to the DivertRecv() function.
+(2b) if the packet does not match the filter, the packet is permitted to
+    continue as normal.
+(3) the PROGRAM either drops, modifies, or re-injects the packet.  If the
+    (modified) packet is re-injected, via a call to DivertSend(), it is
+    inserted back into the Windows network stack.
+
+4. Building
+-----------
+
+In a WinDDK build environment, simply run the command:
+
+build -cZg
+
+For more detailed build instructions, see doc\divert.html
+
+5. License
+----------
+
+This package is distributed under the GNU Public License (GPL) Version 3.
+
+Please note the following:
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>
+
+6. About
+--------
+
+This package was written by basil.
+
+For further information, please contact basil AT reqrypt DOT org.
 
