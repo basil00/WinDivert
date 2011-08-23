@@ -853,37 +853,6 @@ The sample programs are:
 </p><p>
 The samples are intended for educational purposes only, and are not
 fully-featured applications.
-</p>
-
-<hr>
-<a name="known_issues"><h2>9. Known Issues</h2></a>
-
-<p>
-There are some limitations to the <tt>divert</tt> package.
-They are
-<ul>
-<li><i>Injecting inbound ICMP/ICMPv6 messages</i>:
-    For some ICMP/ICMPv6 messages, inbound injection does not work.
-    An error will be returned and the packet will be lost.
-    It is suspected that this is an issue with the WFP framework on which
-    <tt>divert</tt> is built.
-    The work-around is to inject inbound ICMP messages as <tt>outbound</tt>.
-    </li>
-<li><i>No IPv6 extension header support</i>:
-    Currently there is no filter support for IPv6 packets with extension
-    headers.
-    The work around is to capture all IPv6 traffic.
-<li><i>Injected packets are never re-captured</i>:
-    An injected packet will <i>never</i> be captured again by any
-    <tt>divert</tt> handle.
-    This is necessary to prevent packet loops and deadlocks.
-    In the future we intend to implement priorities for <tt>divert</tt>
-    handles to allow packets to be seen by multiple <tt>divert</tt> handles.
-<li><i>Speed</i>:
-    The <tt>divert</tt> driver is not re-entrant, and thus is not as
-    efficient as it could be.
-    In the future we plan to rectify this.
-</ul>
 </p><p>
 All of the samples use some variant of the following basic template for
 <tt>divert</tt> applications.
@@ -920,6 +889,37 @@ capture-modify-reinject loop:
         }
     }
 </pre>
+</p>
+
+<hr>
+<a name="known_issues"><h2>9. Known Issues</h2></a>
+
+<p>
+There are some limitations to the <tt>divert</tt> package.
+They are
+<ul>
+<li><i>Injecting inbound ICMP/ICMPv6 messages</i>:
+    For some ICMP/ICMPv6 messages, inbound injection does not work.
+    An error will be returned and the packet will be lost.
+    It is suspected that this is an issue with the WFP framework on which
+    <tt>divert</tt> is built.
+    The work-around is to inject inbound ICMP messages as <tt>outbound</tt>.
+    </li>
+<li><i>No IPv6 extension header support</i>:
+    Currently there is no filter support for IPv6 packets with extension
+    headers.
+    The work around is to capture all IPv6 traffic.
+<li><i>Injected packets are never re-captured</i>:
+    An injected packet will <i>never</i> be captured again by any
+    <tt>divert</tt> handle.
+    This is necessary to prevent packet loops and deadlocks.
+    In the future we intend to implement priorities for <tt>divert</tt>
+    handles to allow packets to be seen by multiple <tt>divert</tt> handles.
+<li><i>Speed</i>:
+    The <tt>divert</tt> driver is not re-entrant, and thus is not as
+    efficient as it could be.
+    In the future we plan to rectify this.
+</ul>
 </p>
 
 <hr>
