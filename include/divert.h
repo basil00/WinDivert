@@ -25,6 +25,13 @@
 #define DIVERTEXPORT    __declspec(dllimport)
 #endif      /* DIVERTEXPORT */
 
+#ifdef __MINGW32__
+#define __in
+#define __out
+#define __out_opt
+#define __inout
+#endif      /* __MINGW32__ */
+
 #ifdef __cplusplus
 extern "C" {
 #endif

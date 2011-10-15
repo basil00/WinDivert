@@ -26,7 +26,36 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __MINGW32__
+// Mingw does not have wdfinstaller.h
+typedef struct _WDF_COINSTALLER_INSTALL_OPTIONS
+{
+    ULONG Size;
+    BOOL  ShowRebootPrompt;
+} WDF_COINSTALLER_INSTALL_OPTIONS, *PWDF_COINSTALLER_INSTALL_OPTIONS;
+
+VOID FORCEINLINE WDF_COINSTALLER_INSTALL_OPTIONS_INIT(
+        PWDF_COINSTALLER_INSTALL_OPTIONS ClientOptions)
+{
+    RtlZeroMemory(ClientOptions, sizeof(WDF_COINSTALLER_INSTALL_OPTIONS));
+    ClientOptions->Size = sizeof(WDF_COINSTALLER_INSTALL_OPTIONS);
+}
+typedef ULONG (WINAPI *PFN_WDFPREDEVICEINSTALLEX)(
+        LPCWSTR inf_path,
+        LPCWSTR inf_sec_name,
+        PWDF_COINSTALLER_INSTALL_OPTIONS options
+    );
+typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEINSTALL)(
+        LPCWSTR inf_path,
+        LPCWSTR inf_sec_name
+    );
+// Mingw does not support UINT8 and UINT16 ???
+#define UINT8       unsigned char
+#define UINT16      unsigned short
+#else       /* __MINGW32__ */
 #include <wdfinstaller.h>
+#endif      /* __MINGW32__ */
 
 // #define DIVERT_DEBUG
 
@@ -38,6 +67,19 @@
 #define DIVERT_DRIVER_SYS               L"\\" DIVERT_DRIVER_NAME L".sys"
 #define DIVERT_DRIVER_INF               L"\\" DIVERT_DRIVER_NAME L".inf"
 #define DIVERT_DRIVER_MATCH_DLL         L"\\WdfCoInstaller*.dll"
+
+/*
+ * ntoh and hton implementation to remove winsock dependency.
+ */
+#define BYTESWAP16(x)                   \
+    ((((x) >> 8) & 0x00FF) | (((x) << 8) & 0xFF00))
+#define BYTESWAP32(x)                   \
+    ((((x) >> 24) & 0x000000FF) | (((x) >> 8) & 0x0000FF00) | \
+     (((x) << 8) & 0x00FF0000) | (((x) << 24) & 0xFF000000))
+#define ntohs(x)                        BYTESWAP16(x)
+#define htons(x)                        BYTESWAP16(x)
+#define ntohl(x)                        BYTESWAP32(x)
+#define htonl(x)                        BYTESWAP32(x)
 
 /*
  * Filter parsing.
