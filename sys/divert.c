@@ -30,6 +30,7 @@
  */
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_UNLOAD divert_unload;
+EVT_WDF_IO_IN_CALLER_CONTEXT divert_caller_context;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL divert_ioctl;
 EVT_WDF_DEVICE_FILE_CREATE divert_create;
 EVT_WDF_TIMER divert_timer;
@@ -393,6 +394,8 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         divert_cleanup);
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&obj_attrs, context_s);
     WdfDeviceInitSetFileObjectConfig(device_init, &file_config, &obj_attrs);
+    WdfDeviceInitSetIoInCallerContextCallback(device_init,
+        divert_caller_context);
     WDF_OBJECT_ATTRIBUTES_INIT(&obj_attrs);
     status = WdfDeviceCreate(&device_init, &obj_attrs, &device);
     if (!NT_SUCCESS(status))
@@ -791,7 +794,8 @@ extern VOID divert_timer(IN WDFTIMER timer)
         return;
     }
 
-    DEBUG("TIMER (context=%p, ticktock=%u)", context, context->timer_ticktock);
+    // DEBUG("TIMER (context=%p, ticktock=%u)", context,
+    //     context->timer_ticktock);
 
     // Sweep away old packets.
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -1144,6 +1148,119 @@ static void NTAPI divert_inject_complete(VOID *context,
 }
 
 /*
+ * Divert caller context preprocessing.
+ */
+VOID divert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
+{
+    PCHAR inbuf;
+    size_t inbuflen;
+    WDF_REQUEST_PARAMETERS params;
+    WDFMEMORY memobj;
+    divert_addr_t addr;
+    divert_ioctl_t ioctl;
+    WDF_OBJECT_ATTRIBUTES attributes;
+    req_context_t req_context = NULL;
+    NTSTATUS status;
+
+    WDF_REQUEST_PARAMETERS_INIT(&params);
+    WdfRequestGetParameters(request, &params);
+
+    if (params.Type != WdfRequestTypeDeviceControl)
+    {
+        goto divert_caller_context_exit;
+    }
+
+    // Get and verify the input buffer.
+    status = WdfRequestRetrieveInputBuffer(request, 0, &inbuf, &inbuflen);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to retrieve input buffer", status);
+        goto divert_caller_context_error;
+    }
+
+    if (inbuflen != sizeof(struct divert_ioctl_s))
+    {
+        status = STATUS_INVALID_DEVICE_REQUEST;
+        DEBUG_ERROR("input buffer not an ioctl message header", status);
+        goto divert_caller_context_error;
+    }
+
+    ioctl = (divert_ioctl_t)inbuf;
+    if (ioctl->version != DIVERT_VERSION || ioctl->magic != DIVERT_MAGIC ||
+        ioctl->reserved != 0x0)
+    {
+        status = STATUS_INVALID_DEVICE_REQUEST;
+        DEBUG_ERROR("input buffer contained a bad ioctl message header",
+            status);
+        goto divert_caller_context_error;
+    }
+
+    // Probe and lock user buffers here (if required).
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, req_context_s);
+    status = WdfObjectAllocateContext(request, &attributes, &req_context);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to allocate request context for ioctl", status);
+        goto divert_caller_context_error;
+    }
+    req_context->addr = NULL;
+    if (ioctl->arg == (UINT64)NULL)
+    {
+        goto divert_caller_context_exit;
+    }
+    switch (params.Parameters.DeviceIoControl.IoControlCode)
+    {
+        case IOCTL_DIVERT_RECV:
+            status = WdfRequestProbeAndLockUserBufferForWrite(request,
+                (PVOID)ioctl->arg, sizeof(struct divert_addr_s), &memobj);
+            if (!NT_SUCCESS(status))
+            {
+                DEBUG_ERROR("invalid arg pointer for RECV ioctl", status);
+                goto divert_caller_context_error;
+            }
+            addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+            break;
+
+        case IOCTL_DIVERT_SEND:
+            status = WdfRequestProbeAndLockUserBufferForRead(request,
+                (PVOID)ioctl->arg, sizeof(struct divert_addr_s), &memobj);
+            if (!NT_SUCCESS(status))
+            {
+                DEBUG_ERROR("invalid arg pointer for SEND ioctl", status);
+                goto divert_caller_context_error;
+            }
+            addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+            break;
+
+        case IOCTL_DIVERT_SET_FILTER:
+            status = STATUS_INVALID_DEVICE_REQUEST;
+            DEBUG_ERROR("arg pointer is non-NULL for SET_FILTER ioctl",
+                status);
+            goto divert_caller_context_error;
+        
+        default:
+            status = STATUS_INVALID_DEVICE_REQUEST;
+            DEBUG_ERROR("failed to complete I/O control; invalid request",
+                status);
+            goto divert_caller_context_error;
+    }
+    
+    req_context->addr = addr;
+
+divert_caller_context_exit:
+
+    status = WdfDeviceEnqueueRequest(device, request);
+    
+divert_caller_context_error:    
+    
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to enqueue request", status);
+        WdfRequestComplete(request, status);
+    }
+}
+
+/*
  * Divert I/O control.
  */
 extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
@@ -1153,10 +1270,8 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     size_t inbuflen, outbuflen, filter_len;
     divert_ioctl_t ioctl;
     divert_ioctl_filter_t filter;
-    WDFMEMORY memobj;
     divert_addr_t addr;
-    WDF_OBJECT_ATTRIBUTES attributes;
-    req_context_t req_context = NULL;
+    req_context_t req_context;
     NTSTATUS status = STATUS_SUCCESS;
     context_t context = divert_context_get(WdfRequestGetFileObject(request));
     UNREFERENCED_PARAMETER(queue);
@@ -1176,34 +1291,16 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
         DEBUG_ERROR("failed to retrieve input buffer", status);
         goto divert_ioctl_exit;
     }
-
-    if (inbuflen != sizeof(struct divert_ioctl_s) || inbuflen != in_length)
-    {
-        status = STATUS_INVALID_DEVICE_REQUEST;
-        DEBUG_ERROR("input buffer not an ioctl message header", status);
-        goto divert_ioctl_exit;
-    }
-
-    ioctl = (divert_ioctl_t)inbuf;
-    if (ioctl->version != DIVERT_VERSION || ioctl->magic != DIVERT_MAGIC ||
-        ioctl->reserved != 0x0)
-    {
-        status = STATUS_INVALID_DEVICE_REQUEST;
-        DEBUG_ERROR("input buffer contained a bad ioctl message header",
-            status);
-        goto divert_ioctl_exit;
-    }
-
     status = WdfRequestRetrieveOutputBuffer(request, 0, &outbuf, &outbuflen);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to retrieve output buffer", status);
         goto divert_ioctl_exit;
     }
-    if (outbuflen != out_length)
+    if (inbuflen != in_length || outbuflen != out_length)
     {
         status = STATUS_INVALID_DEVICE_REQUEST;
-        DEBUG_ERROR("output buffer length mismatch", status);
+        DEBUG_ERROR("buffer length mismatch", status);
         goto divert_ioctl_exit;
     }
 
@@ -1211,34 +1308,6 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     switch (code)
     {
         case IOCTL_DIVERT_RECV:
-            if ((PVOID)ioctl->arg != NULL)
-            {
-                status = WdfRequestProbeAndLockUserBufferForWrite(request,
-                    (PVOID)ioctl->arg, sizeof(struct divert_addr_s), &memobj);
-                if (!NT_SUCCESS(status))
-                {
-                    DEBUG_ERROR("invalid arg pointer for RECV ioctl", status);
-                    goto divert_ioctl_exit;
-                }
-                addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
-            }
-            else
-            {
-                addr = NULL;
-            }
-
-            WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes,
-                req_context_s);
-            status = WdfObjectAllocateContext(request, &attributes,
-                &req_context);
-            if (!NT_SUCCESS(status))
-            {
-                DEBUG_ERROR("failed to allocate request context for RECV "
-                    "ioctl", status);
-                goto divert_ioctl_exit;
-
-            }
-            req_context->addr = addr;
             status = divert_read(context, request);
             if (NT_SUCCESS(status))
             {
@@ -1247,14 +1316,9 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             break;
         
         case IOCTL_DIVERT_SEND:
-            status = WdfRequestProbeAndLockUserBufferForRead(request,
-                (PVOID)ioctl->arg, sizeof(struct divert_addr_s), &memobj);
-            if (!NT_SUCCESS(status))
-            {
-                DEBUG_ERROR("invalid arg pointer for SEND ioctl", status);
-                goto divert_ioctl_exit;
-            }
-            addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+            
+            req_context = divert_req_context_get(request);
+            addr = req_context->addr;
             status = divert_write(context, request, addr);
             if (NT_SUCCESS(status))
             {
@@ -1263,13 +1327,6 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             break;
         
         case IOCTL_DIVERT_SET_FILTER:
-            if ((PVOID)ioctl->arg != NULL)
-            {
-                status = STATUS_INVALID_DEVICE_REQUEST;
-                DEBUG_ERROR("arg pointer is non-NULL for SET_FILTER ioctl",
-                    status);
-                goto divert_ioctl_exit;
-            }
             filter = (divert_ioctl_filter_t)outbuf;
             filter_len = outbuflen;
             if (!divert_filter_compile(filter, filter_len, context->filter))
@@ -2313,11 +2370,6 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
         switch (ioctl_filter[i].field)
         {
             case DIVERT_FILTER_FIELD_ZERO:
-                if (ioctl_filter[i].arg[0] != 0)
-                {
-                    return FALSE;
-                }
-                break;
             case DIVERT_FILTER_FIELD_INBOUND:
             case DIVERT_FILTER_FIELD_OUTBOUND:
             case DIVERT_FILTER_FIELD_IP:
