@@ -24,7 +24,6 @@ ENVS="i586-mingw32msvc amd64-mingw32msvc"
 for ENV in $ENVS
 do
     CC="$ENV-gcc"
-    STRIP="$ENV-strip"
     if [ -x "`which $CC`" ]
     then
         mkdir -p "install/$ENV"
@@ -32,8 +31,6 @@ do
         $CC -O2 -Iinclude/ -c divert.o dll/divert.c
         echo "$CC -shared -o install/$ENV/divert.dll divert.o"
         $CC -shared -o "install/$ENV/divert.dll" divert.o 
-        echo "$STRIP install/$ENV/divert.dll"
-        $STRIP "install/$ENV/divert.dll"
     else
         echo "$CC: not found"
     fi
