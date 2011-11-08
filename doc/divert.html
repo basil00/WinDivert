@@ -856,6 +856,12 @@ The sample programs are:
     other traffic it simply drops.
     This is similar to the Linux <tt>iptables</tt> command with the
     <tt>-j REJECT</tt> option.</li>
+<li><tt>passthru.exe</tt>: A simple program that simply re-injects every
+    packet it captures.
+    This example is multi-threaded, where multiple threads are processing
+    packets from a single handle.
+    This example is useful for performance testing, and as a starting point
+    for more interesting applications.</li>
 </ul>
 </p><p>
 The samples are intended for educational purposes only, and are not
@@ -922,10 +928,6 @@ They are
     This is necessary to prevent packet loops and deadlocks.
     In the future we intend to implement priorities for <tt>divert</tt>
     handles to allow packets to be seen by multiple <tt>divert</tt> handles.
-<li><i>Speed</i>:
-    The <tt>divert</tt> driver is not re-entrant, and thus is not as
-    efficient as it could be.
-    In the future we plan to rectify this.
 </ul>
 </p>
 

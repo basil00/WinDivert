@@ -212,6 +212,8 @@ static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll);
 static BOOLEAN DivertDriverFiles(LPWSTR *divert_dir_ptr,
     LPWSTR *divert_sys_ptr, LPWSTR *divert_inf_ptr, LPWSTR *divert_dll_ptr);
 static BOOLEAN DivertDriverInstall(VOID);
+static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT64 arg, PVOID buf,
+    UINT len, UINT *iolen);
 static BOOL DivertCompileFilter(const char *filter_str,
     divert_ioctl_filter_t filter, UINT8 *fp);
 static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b);
@@ -477,6 +479,45 @@ DivertDriverInstallExit:
 }
 
 /*
+ * Perform a DeviceIoControl.
+ */
+static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT64 arg, PVOID buf,
+    UINT len, UINT *iolen)
+{
+    struct divert_ioctl_s ioctl;
+    DWORD iolen0;
+    OVERLAPPED overlapped;
+
+    ioctl.version         = DIVERT_VERSION;
+    ioctl.magic           = DIVERT_MAGIC;
+    ioctl.reserved        = 0x0;
+    ioctl.arg             = arg;
+    overlapped.Offset     = 0;
+    overlapped.OffsetHigh = 0;
+    overlapped.hEvent     = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (overlapped.hEvent == NULL)
+    {
+        return FALSE;
+    }
+    if (!DeviceIoControl(handle, code, &ioctl, sizeof(ioctl), buf, (DWORD)len,
+        &iolen0, &overlapped))
+    {
+        if (GetLastError() != ERROR_IO_PENDING ||
+            !GetOverlappedResult(handle, &overlapped, &iolen0, TRUE))
+        {
+            CloseHandle(overlapped.hEvent);
+            return FALSE;
+        }
+    }
+    CloseHandle(overlapped.hEvent);
+    if (iolen != NULL)
+    {
+        *iolen = (UINT)iolen0;
+    }
+    return TRUE;
+}
+
+/*
  * Open a handle to the Divert device.
  */
 extern HANDLE DivertOpen(const char *filter)
@@ -484,7 +525,7 @@ extern HANDLE DivertOpen(const char *filter)
     struct divert_ioctl_s ioctl;
     struct divert_ioctl_filter_s ioctl_filter[DIVERT_FILTER_MAXLEN];
     UINT8 filter_len;
-    DWORD err, iolen;
+    DWORD err;
     HANDLE handle;
 
     // Parse the filter:
@@ -500,7 +541,8 @@ extern HANDLE DivertOpen(const char *filter)
 
     // Attempt to open the Divert device:
     handle = CreateFile(L"\\\\.\\Divert", GENERIC_READ | GENERIC_WRITE,
-        0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, INVALID_HANDLE_VALUE);
+        0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+        INVALID_HANDLE_VALUE);
     if (handle == INVALID_HANDLE_VALUE)
     {
         err = GetLastError();
@@ -524,13 +566,9 @@ extern HANDLE DivertOpen(const char *filter)
     }
 
     // Set the filter:
-    ioctl.version  = DIVERT_VERSION;
-    ioctl.magic    = DIVERT_MAGIC;
-    ioctl.reserved = 0x0;
-    ioctl.arg      = (UINT64)NULL;
-    if (!DeviceIoControl(handle, IOCTL_DIVERT_SET_FILTER, &ioctl,
-            sizeof(ioctl), ioctl_filter,
-            filter_len*sizeof(struct divert_ioctl_filter_s), &iolen, NULL))
+    if (!DivertIoControl(handle, IOCTL_DIVERT_SET_FILTER, (UINT64)NULL,
+            ioctl_filter, filter_len*sizeof(struct divert_ioctl_filter_s),
+            NULL))
     {
         CloseHandle(handle);
         return INVALID_HANDLE_VALUE;
@@ -546,23 +584,8 @@ extern HANDLE DivertOpen(const char *filter)
 extern BOOL DivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
     PDIVERT_ADDRESS addr, UINT *readlen)
 {
-    struct divert_ioctl_s ioctl;
-    DWORD readlen0;
-
-    ioctl.version  = DIVERT_VERSION;
-    ioctl.magic    = DIVERT_MAGIC;
-    ioctl.reserved = 0x0;
-    ioctl.arg      = (UINT64)addr; 
-    if (!DeviceIoControl(handle, IOCTL_DIVERT_RECV, &ioctl, sizeof(ioctl),
-            pPacket, packetLen, &readlen0, NULL))
-    {
-        return FALSE;
-    }
-    if (readlen != NULL)
-    {
-        *readlen = (UINT)readlen0;
-    }
-    return TRUE;
+    return DivertIoControl(handle, IOCTL_DIVERT_RECV, (UINT64)addr, pPacket,
+        packetLen, readlen);
 }
 
 /*
@@ -571,23 +594,8 @@ extern BOOL DivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
 extern BOOL DivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
     PDIVERT_ADDRESS addr, UINT *writelen)
 {
-    struct divert_ioctl_s ioctl;
-    DWORD writelen0;
-  
-    ioctl.version  = DIVERT_VERSION;
-    ioctl.magic    = DIVERT_MAGIC;
-    ioctl.reserved = 0x0;
-    ioctl.arg      = (UINT64)addr;
-    if (!DeviceIoControl(handle, IOCTL_DIVERT_SEND, &ioctl, sizeof(ioctl),
-            pPacket, packetLen, &writelen0, NULL))
-    {
-        return FALSE;
-    }
-    if (writelen != NULL)
-    {
-        *writelen = writelen0;
-    }
-    return TRUE;
+    return DivertIoControl(handle, IOCTL_DIVERT_SEND, (UINT64)addr, pPacket,
+        packetLen, writelen);
 }
 
 /*

@@ -124,7 +124,12 @@ struct context_s
                                             // Sublayer GUIDs.
     GUID callout_guid[DIVERT_CONTEXT_NUMLAYERS];
                                             // Callout GUIDs.
+    GUID filter_guid[DIVERT_CONTEXT_NUMLAYERS];
+                                            // Filter GUIDs.
+    BOOL registered[DIVERT_CONTEXT_NUMLAYERS];
+                                            // What is registered?
     HANDLE engine_handle;                   // WFP engine handle.
+    LONG filter_on;                         // Is filter on?
     struct filter_s filter[DIVERT_FILTER_MAXLEN];
                                             // Packet filter.
 };
@@ -286,10 +291,10 @@ static void divert_read_service(context_t context);
 static BOOLEAN divert_context_verify(context_t context, context_state_t state);
 extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     IN WDFFILEOBJECT object);
-extern NTSTATUS divert_register_callout(context_t context, UINT idx,
-    wchar_t *sublayer_name, wchar_t *sublayer_desc,
-    wchar_t *callout_name, wchar_t *callout_desc,
-    wchar_t *filter_name, wchar_t *filter_desc);
+static NTSTATUS divert_register_callouts(context_t context, BOOL is_inbound,
+    BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6);
+static NTSTATUS divert_register_callout(context_t context, UINT idx,
+    BOOL is_inbound, BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6);
 extern VOID divert_timer(IN WDFTIMER timer);
 extern VOID divert_cleanup(IN WDFFILEOBJECT object);
 extern VOID divert_close(IN WDFFILEOBJECT object);
@@ -340,6 +345,10 @@ static BOOL divert_filter(PNET_BUFFER buffer, UINT32 if_idx, UINT32 sub_if_idx,
     BOOL outbound, filter_t filter);
 static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
     size_t ioctl_filter_len, filter_t filter);
+static void divert_filter_analyze(filter_t filter, BOOL *is_inbound,
+    BOOL *is_outbound, BOOL *ip_ipv4, BOOL *is_ipv6);
+static BOOL divert_filter_test(filter_t filter, UINT8 ip, UINT8 protocol,
+    UINT8 field, UINT32 arg);
 
 /*
  * Driver entry routine.
@@ -405,7 +414,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         return status;
     }
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config,
-        WdfIoQueueDispatchSequential);
+        WdfIoQueueDispatchParallel);
     queue_config.EvtIoRead          = NULL;
     queue_config.EvtIoWrite         = NULL;
     queue_config.EvtIoDeviceControl = divert_ioctl;
@@ -487,55 +496,13 @@ static BOOLEAN divert_context_verify(context_t context, context_state_t state)
 extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     IN WDFFILEOBJECT object)
 {
-    static wchar_t *sublayer_name[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"DivertSubLayerOutboundIPv4",
-        L"DivertSubLayerInboundIPv4",
-        L"DivertSubLayerOutboundIPv6",
-        L"DivertSubLayerInboundIPv6"
-    };
-    static wchar_t *sublayer_desc[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"Divert sublayer (outbound IPv4)",
-        L"Divert sublayer (inbound IPv4)",
-        L"Divert sublayer (outbound IPv6)",
-        L"Divert sublayer (inbound IPv6)"
-    };
-    static wchar_t *callout_name[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"DivertCalloutOutboundIPv4",
-        L"DivertCalloutInboundIPv4",
-        L"DivertCalloutOutboundIPv6",
-        L"DivertCalloutInboundIPv6"
-    };
-    static wchar_t *callout_desc[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"Divert callout (outbound IPv4)",
-        L"Divert callout (inbound IPv4)",
-        L"Divert callout (outbound IPv6)",
-        L"Divert callout (inbound IPv6)"
-    };
-    static wchar_t *filter_name[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"DivertFilterOutboundIPv4",
-        L"DivertFilterInboundIPv4",
-        L"DivertFilterOutboundIPv6",
-        L"DivertFilterInboundIPv6"
-    };
-    static wchar_t *filter_desc[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"Divert filter (outbound IPv4)",
-        L"Divert filter (inbound IPv4)",
-        L"Divert filter (outbound IPv6)",
-        L"Divert filter (inbound IPv6)"
-    };
     NET_BUFFER_LIST_POOL_PARAMETERS pool_params;
     WDF_IO_QUEUE_CONFIG queue_config;
     WDF_TIMER_CONFIG timer_config;
     WDF_OBJECT_ATTRIBUTES timer_attributes;
     FWPM_SESSION0 session;
     NTSTATUS status = STATUS_SUCCESS;
-    UINT8 i, j = 0;
+    UINT8 i;
     context_t context = divert_context_get(object);
 
     DEBUG("CREATE: creating a new divert context (context=%p)", context);
@@ -558,6 +525,11 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
         context->filter[i].success  = DIVERT_FILTER_RESULT_REJECT;
         context->filter[i].failure  = DIVERT_FILTER_RESULT_REJECT;
     }
+    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    {
+        context->registered[i] = FALSE;
+    }
+    context->filter_on = FALSE;
     KeInitializeSpinLock(&context->lock);
     InitializeListHead(&context->packet_queue);
     for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
@@ -572,6 +544,12 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
         if (!NT_SUCCESS(status))
         {
             DEBUG_ERROR("failed to create callout GUID", status);
+            goto divert_create_exit;
+        }
+        status = ExUuidCreate(&context->filter_guid[i]);
+        if (!NT_SUCCESS(status))
+        {
+            DEBUG_ERROR("failed to create filter GUID", status);
             goto divert_create_exit;
         }
     }
@@ -617,31 +595,6 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
         DEBUG_ERROR("failed to create WFP engine handle", status);
         goto divert_create_exit;
     }
-    status = FwpmTransactionBegin0(context->engine_handle, 0);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to begin WFP transaction", status);
-        goto divert_create_exit;
-    }
-    for (j = 0; j < DIVERT_CONTEXT_NUMLAYERS; j++)
-    {
-        status = divert_register_callout(context, j, sublayer_name[j],
-            sublayer_desc[j], callout_name[j], callout_desc[j], filter_name[j],
-            filter_desc[j]);
-        if (!NT_SUCCESS(status))
-        {
-            FwpmTransactionAbort0(context->engine_handle);
-            goto divert_create_exit;
-        }
-    }
-    status = FwpmTransactionCommit0(context->engine_handle);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to commit WFP transaction", status);
-        goto divert_create_exit;
-    }
-
-    // Open for business:
     context->state = DIVERT_CONTEXT_STATE_OPEN;
     WdfTimerStart(context->timer,
         WDF_REL_TIMEOUT_IN_MS(DIVERT_PACKET_TIMEOUT));
@@ -667,10 +620,6 @@ divert_create_exit:
         {
             FwpmEngineClose0(context->engine_handle);
         }
-        for (i = 0; i < j; i++)
-        {
-            FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
-        }
         context->state = DIVERT_CONTEXT_STATE_INVALID;
     }
 
@@ -678,37 +627,130 @@ divert_create_exit:
 }
 
 /*
- * Add a WFP filter.
+ * Register all WFP callouts.
  */
-extern NTSTATUS divert_register_callout(context_t context, UINT idx,
-    wchar_t *sublayer_name, wchar_t *sublayer_desc, 
-    wchar_t *callout_name, wchar_t *callout_desc,
-    wchar_t *filter_name, wchar_t *filter_desc)
+static NTSTATUS divert_register_callouts(context_t context, BOOL is_inbound,
+    BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6)
 {
+    UINT8 i;
+    NTSTATUS status;
+
+    status = FwpmTransactionBegin0(context->engine_handle, 0);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to begin WFP transaction", status);
+        goto divert_register_callouts_exit;
+    }
+    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    {
+        status = divert_register_callout(context, i, is_inbound, is_outbound,
+            is_ipv4, is_ipv6);
+        if (!NT_SUCCESS(status))
+        {
+            FwpmTransactionAbort0(context->engine_handle);
+            goto divert_register_callouts_exit;
+        }
+    }
+    status = FwpmTransactionCommit0(context->engine_handle);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to commit WFP transaction", status);
+        goto divert_register_callouts_exit;
+    }
+
+divert_register_callouts_exit:
+
+    if (!NT_SUCCESS(status))
+    {
+        for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+        {
+            if (context->registered[i])
+            {
+                FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
+                context->registered[i] = FALSE;
+            }
+        }
+    }
+
+    return status;
+}
+
+/*
+ * Register a WFP callout.
+ */
+static NTSTATUS divert_register_callout(context_t context, UINT idx,
+    BOOL is_inbound, BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6)
+{
+    static wchar_t *sublayer_name[DIVERT_CONTEXT_NUMLAYERS] =
+    {
+        L"DivertSubLayerOutboundIPv4",
+        L"DivertSubLayerInboundIPv4",
+        L"DivertSubLayerOutboundIPv6",
+        L"DivertSubLayerInboundIPv6"
+    };
+    static wchar_t *sublayer_desc[DIVERT_CONTEXT_NUMLAYERS] =
+    {
+        L"Divert sublayer (outbound IPv4)",
+        L"Divert sublayer (inbound IPv4)",
+        L"Divert sublayer (outbound IPv6)",
+        L"Divert sublayer (inbound IPv6)"
+    };
+    static wchar_t *callout_name[DIVERT_CONTEXT_NUMLAYERS] =
+    {
+        L"DivertCalloutOutboundIPv4",
+        L"DivertCalloutInboundIPv4",
+        L"DivertCalloutOutboundIPv6",
+        L"DivertCalloutInboundIPv6"
+    };
+    static wchar_t *callout_desc[DIVERT_CONTEXT_NUMLAYERS] =
+    {
+        L"Divert callout (outbound IPv4)",
+        L"Divert callout (inbound IPv4)",
+        L"Divert callout (outbound IPv6)",
+        L"Divert callout (inbound IPv6)"
+    };
+    static wchar_t *filter_name[DIVERT_CONTEXT_NUMLAYERS] =
+    {
+        L"DivertFilterOutboundIPv4",
+        L"DivertFilterInboundIPv4",
+        L"DivertFilterOutboundIPv6",
+        L"DivertFilterInboundIPv6"
+    };
+    static wchar_t *filter_desc[DIVERT_CONTEXT_NUMLAYERS] =
+    {
+        L"Divert filter (outbound IPv4)",
+        L"Divert filter (inbound IPv4)",
+        L"Divert filter (outbound IPv6)",
+        L"Divert filter (inbound IPv6)"
+    };
     GUID layer;
     FWPM_SUBLAYER0 sublayer;
     FWPS_CALLOUT0 scallout;
     FWPM_CALLOUT0 mcallout;
     FWPM_FILTER0 filter;
-    BOOL registered = FALSE;
+    BOOL required, registered = FALSE;
     divert_callout_t callout;
     NTSTATUS status;
 
     switch (idx)
     {
         case DIVERT_CONTEXT_OUTBOUND_IPV4_LAYER:
+            required = (is_outbound && is_ipv4);
             layer = FWPM_LAYER_OUTBOUND_IPPACKET_V4;
             callout = divert_classify_outbound_v4_callout;
             break;
         case DIVERT_CONTEXT_INBOUND_IPV4_LAYER:
+            required = (is_inbound && is_ipv4);
             layer = FWPM_LAYER_INBOUND_IPPACKET_V4;
             callout = divert_classify_inbound_v4_callout;
             break;
         case DIVERT_CONTEXT_OUTBOUND_IPV6_LAYER:
+            required = (is_outbound && is_ipv6);
             layer = FWPM_LAYER_OUTBOUND_IPPACKET_V6;
             callout = divert_classify_outbound_v6_callout;
             break;
         case DIVERT_CONTEXT_INBOUND_IPV6_LAYER:
+            required = (is_inbound && is_ipv6);
             layer = FWPM_LAYER_INBOUND_IPPACKET_V6;
             callout = divert_classify_inbound_v6_callout;
             break;
@@ -716,10 +758,15 @@ extern NTSTATUS divert_register_callout(context_t context, UINT idx,
             return STATUS_INVALID_PARAMETER;
     }
 
+    if (!required)
+    {
+        return STATUS_SUCCESS;
+    }
+
     RtlZeroMemory(&sublayer, sizeof(sublayer));
     sublayer.subLayerKey             = context->sublayer_guid[idx];
-    sublayer.displayData.name        = sublayer_name;
-    sublayer.displayData.description = sublayer_desc;
+    sublayer.displayData.name        = sublayer_name[idx];
+    sublayer.displayData.description = sublayer_desc[idx];
     sublayer.weight                  = FWP_EMPTY;
     RtlZeroMemory(&scallout, sizeof(scallout));
     scallout.calloutKey              = context->callout_guid[idx];
@@ -728,13 +775,14 @@ extern NTSTATUS divert_register_callout(context_t context, UINT idx,
     scallout.flowDeleteFn            = NULL;
     RtlZeroMemory(&mcallout, sizeof(mcallout));
     mcallout.calloutKey              = context->callout_guid[idx];
-    mcallout.displayData.name        = callout_name;
-    mcallout.displayData.description = callout_desc;
+    mcallout.displayData.name        = callout_name[idx];
+    mcallout.displayData.description = callout_desc[idx];
     mcallout.applicableLayer         = layer;
     RtlZeroMemory(&filter, sizeof(filter));
+    filter.filterKey                 = context->filter_guid[idx];
     filter.layerKey                  = layer;
-    filter.displayData.name          = filter_name;
-    filter.displayData.description   = filter_desc;
+    filter.displayData.name          = filter_name[idx];
+    filter.displayData.description   = filter_desc[idx];
     filter.action.type               = FWP_ACTION_CALLOUT_TERMINATING;
     filter.action.calloutKey         = context->callout_guid[idx];
     filter.subLayerKey               = context->sublayer_guid[idx];
@@ -766,6 +814,7 @@ extern NTSTATUS divert_register_callout(context_t context, UINT idx,
         DEBUG_ERROR("failed to add WFP filter", status);
         goto divert_register_callout_error;
     }
+    context->registered[idx] = TRUE;
 
     return STATUS_SUCCESS;
 
@@ -833,6 +882,7 @@ extern VOID divert_cleanup(IN WDFFILEOBJECT object)
     UINT i;
     context_t context = divert_context_get(object);
     packet_t packet;
+    NTSTATUS status;
     
     DEBUG("CLEANUP: cleaning up divert context (context=%p)", context);
     
@@ -856,10 +906,51 @@ extern VOID divert_cleanup(IN WDFFILEOBJECT object)
     WdfIoQueuePurge(context->read_queue, NULL, NULL);
     WdfObjectDelete(context->read_queue);
     WdfObjectDelete(context->timer);
+
+    status = FwpmTransactionBegin0(context->engine_handle, 0);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to begin WFP transaction", status);
+        goto divert_cleanup_exit;
+    }
+    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    {
+	if (!context->registered[i])
+	{
+	    continue;
+	}
+        status = FwpmFilterDeleteByKey0(context->engine_handle,
+            context->filter_guid+i);
+        if (!NT_SUCCESS(status))
+        {
+            DEBUG_ERROR("failed delete WFP filter", status);
+            FwpmTransactionAbort0(context->engine_handle);
+            goto divert_cleanup_exit;
+        }
+        status = FwpmSubLayerDeleteByKey0(context->engine_handle,
+            context->sublayer_guid+i);
+        if (!NT_SUCCESS(status))
+        {
+            DEBUG_ERROR("failed delete WFP sub-layer", status);
+            FwpmTransactionAbort0(context->engine_handle);
+            goto divert_cleanup_exit;
+        }
+    }
+    status = FwpmTransactionCommit0(context->engine_handle);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to commit WFP transaction", status);
+        goto divert_cleanup_exit;
+    }
+
+divert_cleanup_exit:
     FwpmEngineClose0(context->engine_handle);
     for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
     {
-        FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
+        if (context->registered[i])
+        {
+            FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
+        }
     }
     NdisFreeNetBufferPool(context->pool_handle);
 }
@@ -1327,6 +1418,16 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             break;
         
         case IOCTL_DIVERT_SET_FILTER:
+        {
+            BOOL is_inbound, is_outbound, is_ipv4, is_ipv6;
+
+            if (InterlockedExchange(&context->filter_on, TRUE) == TRUE)
+            {
+                status = STATUS_INVALID_DEVICE_REQUEST;
+                DEBUG_ERROR("duplicate SET_FILTER ioctl", status);
+                goto divert_ioctl_exit;
+            }
+
             filter = (divert_ioctl_filter_t)outbuf;
             filter_len = outbuflen;
             if (!divert_filter_compile(filter, filter_len, context->filter))
@@ -1335,8 +1436,14 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 DEBUG_ERROR("failed to compile filter", status);
                 goto divert_ioctl_exit;
             }
-            break;
 
+            divert_filter_analyze(context->filter, &is_inbound, &is_outbound,
+                &is_ipv4, &is_ipv6);
+            status = divert_register_callouts(context, is_inbound,
+                is_outbound, is_ipv4, is_ipv6);
+
+            break;
+        }
         default:
             status = STATUS_INVALID_DEVICE_REQUEST;
             DEBUG_ERROR("failed to complete I/O control; invalid request",
@@ -2301,6 +2408,137 @@ static BOOL divert_filter(PNET_BUFFER buffer, UINT32 if_idx, UINT32 sub_if_idx,
     }
     DEBUG("FILTER: REJECT (filter TTL exceeded)");
     return FALSE;
+}
+
+/*
+ * Analyze the given filter.
+ */
+static void divert_filter_analyze(filter_t filter, BOOL *is_inbound,
+    BOOL *is_outbound, BOOL *is_ipv4, BOOL *is_ipv6)
+{
+    BOOL result;
+
+    // False filter?
+    result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+        DIVERT_FILTER_FIELD_ZERO, 0);
+    if (!result)
+    {
+        *is_inbound  = FALSE;
+        *is_outbound = FALSE;
+        *is_ipv4     = FALSE;
+        *is_ipv6     = FALSE;
+        return;
+    }
+
+    // Inbound?
+    result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+        DIVERT_FILTER_FIELD_INBOUND, 1);
+    if (result)
+    {
+        result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+            DIVERT_FILTER_FIELD_OUTBOUND, 0);
+    }
+    *is_inbound = result;
+
+    // Outbound?
+    result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+        DIVERT_FILTER_FIELD_OUTBOUND, 1);
+    if (result)
+    {
+        result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+            DIVERT_FILTER_FIELD_INBOUND, 0);
+    }
+    *is_outbound = result;
+
+    // IPv4?
+    result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+        DIVERT_FILTER_FIELD_IP, 1);
+    if (result)
+    {
+        result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+            DIVERT_FILTER_FIELD_IPV6, 0);
+    }
+    *is_ipv4 = result;
+
+    // Ipv6?
+    result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+        DIVERT_FILTER_FIELD_IPV6, 1);
+    if (result)
+    {
+        result = divert_filter_test(filter, 0, DIVERT_FILTER_PROTOCOL_NONE,
+            DIVERT_FILTER_FIELD_IP, 0);
+    }
+    *is_ipv6 = result;
+}
+
+/*
+ * Test a filter for any packet where field = arg.
+ */
+static BOOL divert_filter_test(filter_t filter, UINT8 ip, UINT8 protocol,
+    UINT8 field, UINT32 arg)
+{
+    BOOL known = FALSE;
+    BOOL result = FALSE;
+
+    if (ip == DIVERT_FILTER_RESULT_ACCEPT)
+    {
+        return TRUE;
+    }
+    if (ip == DIVERT_FILTER_RESULT_REJECT)
+    {
+        return FALSE;
+    }
+    if (ip > DIVERT_FILTER_MAXLEN)
+    {
+        return FALSE;
+    }
+
+    if (filter[ip].protocol == protocol &&
+        filter[ip].field == field)
+    {
+        known = TRUE;
+        switch (filter[ip].test)
+        {
+            case DIVERT_FILTER_TEST_EQ:
+                result = (arg == filter[ip].arg[0]);
+                break;
+            case DIVERT_FILTER_TEST_NEQ:
+                result = (arg != filter[ip].arg[0]);
+                break;
+            case DIVERT_FILTER_TEST_LT:
+                result = (arg < filter[ip].arg[0]);
+                break;
+            case DIVERT_FILTER_TEST_LEQ:
+                result = (arg <= filter[ip].arg[0]);
+                break;
+            case DIVERT_FILTER_TEST_GT:
+                result = (arg > filter[ip].arg[0]);
+                break;
+            case DIVERT_FILTER_TEST_GEQ:
+                result = (arg >= filter[ip].arg[0]);
+                break;
+            default:
+                result = FALSE;
+                break;
+        }
+    }
+
+    if (!known)
+    {
+        result = divert_filter_test(filter, filter[ip].success, protocol,
+            field, arg);
+        if (result)
+        {
+            return TRUE;
+        }
+        return divert_filter_test(filter, filter[ip].failure, protocol, field,
+            arg);
+    }
+    else
+    {
+        ip = (result? filter[ip].success: filter[ip].failure);
+        return divert_filter_test(filter, ip, protocol, field, arg);
+    }
 }
 
 /*

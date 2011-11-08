@@ -1,6 +1,4 @@
-#!/bin/bash
-#
-# build.sh
+# sources
 # (C) 2011, all rights reserved,
 #
 # This program is free software: you can redistribute it and/or modify
@@ -16,23 +14,23 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-# Script for MinGW/Linux cross compilation.
-# NOTE: This script only builds divert.dll, not the driver divert.sys
+!IF "$(_BUILDARCH)" == "x86"
+CPU=i386
+!ELSE
+CPU=$(_BUILDARCH)
+!ENDIF
 
-ENVS="i586-mingw32msvc amd64-mingw32msvc"
-
-for ENV in $ENVS
-do
-    CC="$ENV-gcc"
-    if [ -x "`which $CC`" ]
-    then
-        mkdir -p "install/$ENV"
-        echo "$CC -O2 -Iinclude/ -c divert.o dll/divert.c"
-        $CC -O2 -Iinclude/ -c divert.o dll/divert.c
-        echo "$CC -shared -o install/$ENV/divert.dll divert.o"
-        $CC -shared -o "install/$ENV/divert.dll" divert.o 
-    else
-        echo "$CC: not found"
-    fi
-done
+TARGETNAME=passthru
+TARGETTYPE=PROGRAM
+TARGETPATH=..\..\install
+TARGETLIBS=\
+    $(SDK_LIB_PATH)\setupapi.lib \
+    $(SDK_LIB_PATH)\user32.lib \
+    $(SDK_LIB_PATH)\ws2_32.lib \
+    $(TARGETPATH)\$(CPU)\divert.lib
+UMTYPE=console
+UMENTRY=main
+USE_MSVCRT=1
+INCLUDES=$(DDK_INC_PATH);$(KMDF_INC_PATH)\$(KMDF_VER_PATH);..\..\include
+SOURCES=passthru.c
 
