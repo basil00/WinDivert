@@ -22,7 +22,7 @@ For more information about this project, see doc/divert.html
 -------------------
 
 The Windows Divert package provides similar functionality to divert sockets in
-FreeBSD/MacOS, NETLINK filters in Linux, and some non-free packet capturing
+FreeBSD/MacOS, NETLINK sockets in Linux, and some non-free packet capturing
 packages such as WinPkFilter for Windows.  In fact, the design of this package
 was largely inspired by FreeBSD's divert sockets.
 
