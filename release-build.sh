@@ -37,7 +37,9 @@ echo "DONE"
 
 PACKAGE=divert-msvc.tar.gz
 echo -n "BUILDING $PACKAGE..."
+cp install/i386/divert.lib $INSTALL/x86
 cp install/i386/divert.dll $INSTALL/x86
+cp install/amd64/divert.lib $INSTALL/amd64
 cp install/amd64/divert.dll $INSTALL/amd64
 (cd install; tar cvz --owner root --group root -f $PACKAGE divert > /dev/null)
 echo "DONE"
@@ -46,6 +48,8 @@ PACKAGE=divert-msvc.zip
 echo -n "BUILDING $PACKAGE..."
 (cd install; zip -r $PACKAGE divert > /dev/null)
 echo "DONE"
+
+rm $INSTALL/x86/divert.lib $INSTALL/amd64/divert.lib
 
 PACKAGE=divert-mingw.tar.gz
 echo -n "BUILDING $PACKAGE..."
