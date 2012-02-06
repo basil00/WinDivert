@@ -273,10 +273,11 @@ typedef void (*divert_callout_t)(
     OUT FWPS_CLASSIFY_OUT0 *result);
 
 /*
- * Global packet injection handles.
+ * Global handles.
  */
 HANDLE inject_handle;
 HANDLE injectv6_handle;
+NDIS_HANDLE pool_handle;
 
 #define DIVERT_PACKET_ALLOW         ((HANDLE)0)
 #define DIVERT_PACKET_INJECTED      ((HANDLE)1)
@@ -364,6 +365,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     WDF_IO_QUEUE_CONFIG queue_config;
     WDFQUEUE queue;
     WDF_OBJECT_ATTRIBUTES obj_attrs;
+    NET_BUFFER_LIST_POOL_PARAMETERS pool_params;
     NTSTATUS status;
     DECLARE_CONST_UNICODE_STRING(device_name, DIVERT_DEVICE_NAME);
     DECLARE_CONST_UNICODE_STRING(dos_device_name, DIVERT_DOS_DEVICE_NAME);
@@ -450,6 +452,22 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         return status;
     }
 
+    // Create the packet pool handle.
+    RtlZeroMemory(&pool_params, sizeof(pool_params));
+    pool_params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    pool_params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
+    pool_params.Header.Size = sizeof(pool_params);
+    pool_params.fAllocateNetBuffer = TRUE;
+    pool_params.PoolTag = DIVERT_NET_BUFFER_LIST_TAG;
+    pool_params.DataSize = 0;
+    pool_handle = NdisAllocateNetBufferListPool(NULL, &pool_params);
+    if (pool_handle == NULL)
+    {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        DEBUG_ERROR("failed to allocate net buffer list pool", status);
+        return status;
+    }  
+
     return STATUS_SUCCESS;
 }
 
@@ -461,6 +479,7 @@ extern VOID divert_unload(IN WDFDRIVER Driver)
     DEBUG("UNLOAD: unloading the divert driver");
     FwpsInjectionHandleDestroy0(inject_handle);
     FwpsInjectionHandleDestroy0(injectv6_handle);
+    NdisFreeNetBufferPool(pool_handle);
 }
 
 /*
@@ -553,20 +572,6 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
             goto divert_create_exit;
         }
     }
-    RtlZeroMemory(&pool_params, sizeof(pool_params));
-    pool_params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
-    pool_params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
-    pool_params.Header.Size = sizeof(pool_params);
-    pool_params.fAllocateNetBuffer = TRUE;
-    pool_params.PoolTag = DIVERT_NET_BUFFER_LIST_TAG;
-    pool_params.DataSize = 0;
-    context->pool_handle = NdisAllocateNetBufferListPool(NULL, &pool_params);
-    if (context->pool_handle == NULL)
-    {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        DEBUG_ERROR("failed to allocate net buffer list pool", status);
-        goto divert_create_exit;
-    }  
     WDF_IO_QUEUE_CONFIG_INIT(&queue_config, WdfIoQueueDispatchManual);
     status = WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES,
         &context->read_queue);
@@ -604,10 +609,6 @@ divert_create_exit:
     // Clean-up on error:
     if (!NT_SUCCESS(status))
     {
-        if (context->pool_handle != NULL)
-        {
-            NdisFreeNetBufferPool(context->pool_handle);
-        }
         if (context->read_queue != NULL)
         {
             WdfObjectDelete(context->read_queue);
@@ -952,7 +953,6 @@ divert_cleanup_exit:
             FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
         }
     }
-    NdisFreeNetBufferPool(context->pool_handle);
 }
 
 /*
@@ -1149,7 +1149,7 @@ static NTSTATUS divert_write(context_t context, WDFREQUEST request,
             goto divert_write_exit;
     }
 
-    status = FwpsAllocateNetBufferAndNetBufferList0(context->pool_handle,
+    status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle,
         0, 0, mdl, 0, data_len, &buffers);
     if (!NT_SUCCESS(status))
     {
@@ -1158,6 +1158,7 @@ static NTSTATUS divert_write(context_t context, WDFREQUEST request,
         goto divert_write_exit;
     }
 
+    WdfObjectReference(request);
     switch (addr->Direction)
     {
         case DIVERT_PACKET_DIRECTION_OUTBOUND:
@@ -1191,6 +1192,7 @@ static NTSTATUS divert_write(context_t context, WDFREQUEST request,
             }
             break;
         default:
+            WdfObjectDereference(request);
             status = STATUS_INVALID_PARAMETER;
             DEBUG_ERROR("failed to inject packet; invalid direction", status);
             goto divert_write_exit;
@@ -1236,6 +1238,7 @@ static void NTAPI divert_inject_complete(VOID *context,
     }
     FwpsFreeNetBufferList0(buffers);
     WdfRequestCompleteWithInformation(request, status, length);
+    WdfObjectDereference(request);
 }
 
 /*
@@ -1796,7 +1799,7 @@ static BOOL divert_reinject_packet(context_t context, UINT8 direction,
     NTSTATUS status;
 
     status = FwpsAllocateNetBufferAndNetBufferList0(
-        context->pool_handle, 0, 0, NET_BUFFER_FIRST_MDL(buffer),
+        pool_handle, 0, 0, NET_BUFFER_FIRST_MDL(buffer),
         NET_BUFFER_DATA_OFFSET(buffer), NET_BUFFER_DATA_LENGTH(buffer),
         &buffers_cpy);
     if (!NT_SUCCESS(status))
