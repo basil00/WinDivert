@@ -558,7 +558,8 @@ extern HANDLE DivertOpen(const char *filter)
             return INVALID_HANDLE_VALUE;
         }
         handle = CreateFile(L"\\\\.\\Divert", GENERIC_READ | GENERIC_WRITE, 0,
-            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, INVALID_HANDLE_VALUE);
+            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+            INVALID_HANDLE_VALUE);
         if (handle == INVALID_HANDLE_VALUE)
         {
             return INVALID_HANDLE_VALUE;
