@@ -1,25 +1,27 @@
 /*
  * divert.h
- * (C) 2011, all rights reserved,
+ * (C) 2012, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
+ * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef __DIVERT_H
 #define __DIVERT_H
 
+#ifndef DIVERT_KERNEL
 #include <windows.h>
+#endif      /* DIVERT_KERNEL */
 
 #ifndef DIVERTEXPORT
 #define DIVERTEXPORT    __declspec(dllimport)
@@ -30,6 +32,15 @@
 #define __out
 #define __out_opt
 #define __inout
+#include <stdint.h>
+#define INT8    int8_t
+#define UINT8   uint8_t
+#define INT16   int16_t
+#define UINT16  uint16_t
+#define INT32   int32_t
+#define UINT32  uint32_t
+#define INT64   int64_t
+#define UINT64  uint64_t
 #endif      /* __MINGW32__ */
 
 #ifdef __cplusplus
@@ -41,28 +52,62 @@ extern "C" {
 /****************************************************************************/
 
 /*
- * Divert packet.
+ * Divert address.
  */
 typedef struct
 {
-    UINT32 IfIdx;                   // Packet's interface index.
-    UINT32 SubIfIdx;                // Packet's sub-interface index.
-    UINT8  Direction;               // Packet's direction.
+    UINT32 IfIdx;                       /* Packet's interface index. */
+    UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
+    UINT8  Direction;                   /* Packet's direction. */
 } DIVERT_ADDRESS, *PDIVERT_ADDRESS;
 
-#ifndef DIVERT_PACKET_DIRECTION_OUTBOUND
-#define DIVERT_PACKET_DIRECTION_OUTBOUND            0
-#define DIVERT_PACKET_DIRECTION_INBOUND             1
-#endif      /* DIVERT_PACKET_DIRECTION_OUTBOUND */
+#define DIVERT_DIRECTION_OUTBOUND       0
+#define DIVERT_DIRECTION_INBOUND        1
 
 /*
- * Open a handle to the divert device with the given filter.
+ * Old names (deprecated).
+ */
+#define DIVERT_PACKET_DIRECTION_OUTBOUND                \
+    DIVERT_DIRECTION_OUTBOUND
+#define DIVERT_PACKET_DIRECTION_INBOUND                 \
+    DIVERT_DIRECTION_INBOUND
+
+/*
+ * Divert layers.
+ */
+typedef enum
+{
+    DIVERT_LAYER_NETWORK = 0,           /* Network layer. */
+    DIVERT_LAYER_NETWORK_FORWARD = 1    /* Network layer (forwarded packets) */
+} DIVERT_LAYER, *PDIVERT_LAYER;
+
+/*
+ * Divert flags.
+ */
+#define DIVERT_FLAG_SNIFF               1
+#define DIVERT_FLAG_DROP                2
+
+/*
+ * Divert parameters.
+ */
+typedef enum
+{
+    DIVERT_PARAM_QUEUE_LEN  = 0,        /* Packet queue length. */
+    DIVERT_PARAM_QUEUE_TIME = 1         /* Packet queue time. */
+} DIVERT_PARAM, *PDIVERT_PARAM;
+#define DIVERT_PARAM_MAX                DIVERT_PARAM_QUEUE_TIME
+
+/*
+ * Open a divert handle.
  */
 extern DIVERTEXPORT HANDLE DivertOpen(
-    __in        const char *filter);
+    __in        const char *filter,
+    __in        DIVERT_LAYER layer,
+    __in        INT16 priority,
+    __in        UINT64 flags);
 
 /*
- * Receive (read) a packet from the Divert handle.
+ * Receive (read) a packet from a divert handle.
  */
 extern DIVERTEXPORT BOOL DivertRecv(
     __in        HANDLE handle,
@@ -72,7 +117,7 @@ extern DIVERTEXPORT BOOL DivertRecv(
     __out_opt   UINT *readLen);
 
 /*
- * Send (write/inject) a packet to the Divert handle.
+ * Send (write/inject) a packet to a divert handle.
  */
 extern DIVERTEXPORT BOOL DivertSend(
     __in        HANDLE handle,
@@ -82,10 +127,26 @@ extern DIVERTEXPORT BOOL DivertSend(
     __out_opt   UINT *writeLen);
 
 /*
- * Close a Divert handle.
+ * Close a divert handle.
  */
 extern DIVERTEXPORT BOOL DivertClose(
     __in        HANDLE handle);
+
+/*
+ * Set a divert handle parameter.
+ */
+extern DIVERTEXPORT BOOL DivertSetParam(
+    __in        HANDLE handle,
+    __in        DIVERT_PARAM param,
+    __in        UINT64 value);
+
+/*
+ * Get a divert handle parameter.
+ */
+extern DIVERTEXPORT BOOL DivertGetParam(
+    __in        HANDLE handle,
+    __in        DIVERT_PARAM param,
+    __out       UINT64 *pValue);
 
 /****************************************************************************/
 /* DIVERT HELPER API                                                        */

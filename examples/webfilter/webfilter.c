@@ -1,18 +1,18 @@
 /*
  * webfilter.c
- * (C) 2011, all rights reserved,
+ * (C) 2012, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
+ * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
@@ -33,7 +33,8 @@
 
 #include "divert.h"
 
-#define MAXBUF 2048
+#define MAXBUF 0xFFFF
+#define MAXURL 4096
 
 /*
  * URL and blacklist representation.
@@ -113,10 +114,13 @@ int __cdecl main(int argc, char **argv)
     UINT payload_len;
     PACKET reset0;
     PPACKET reset = &reset0;
+    PACKET finish0;
+    PPACKET finish = &finish0;
     PDATAPACKET blockpage;
     UINT16 blockpage_len;
     PBLACKLIST blacklist;
     unsigned i;
+    INT16 priority = 13044;     // Arbitrary.
 
     // Read the blacklists.
     if (argc <= 1)
@@ -147,15 +151,19 @@ int __cdecl main(int argc, char **argv)
     blockpage->header.tcp.Ack     = 1;
     memcpy(blockpage->data, block_data, sizeof(block_data)-1);
     PacketInit(reset);
-    reset->tcp.Rst     = 1;
-    reset->tcp.Ack     = 1;
+    reset->tcp.Rst = 1;
+    reset->tcp.Ack = 1;
+    PacketInit(finish);
+    finish->tcp.Fin = 1;
+    finish->tcp.Ack = 1;
 
     // Open the Divert device:
     handle = DivertOpen(
             "outbound && "              // Outbound traffic only
             "ip && "                    // Only IPv4 supported
             "tcp.DstPort == 80 && "     // HTTP (port 80) only
-            "tcp.PayloadLength > 0"     // TCP data packets only
+            "tcp.PayloadLength > 0",    // TCP data packets only
+            0, priority, 0
         );
     if (handle == INVALID_HANDLE_VALUE)
     {
@@ -221,20 +229,20 @@ int __cdecl main(int argc, char **argv)
                 GetLastError());
         }
 
-        // (3) Send a TCP RST to the browser; closing the connection at the 
+        // (3) Send a TCP FIN to the browser; closing the connection at the 
         //     browser's end.
-        reset->ip.SrcAddr       = ip_header->DstAddr;
-        reset->ip.DstAddr       = ip_header->SrcAddr;
-        reset->tcp.SrcPort      = htons(80);
-        reset->tcp.DstPort      = tcp_header->SrcPort;
-        reset->tcp.SeqNum       =
+        finish->ip.SrcAddr       = ip_header->DstAddr;
+        finish->ip.DstAddr       = ip_header->SrcAddr;
+        finish->tcp.SrcPort      = htons(80);
+        finish->tcp.DstPort      = tcp_header->SrcPort;
+        finish->tcp.SeqNum       =
             htonl(ntohl(tcp_header->AckNum) + sizeof(block_data) - 1); 
-        reset->tcp.AckNum       =
+        finish->tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        DivertHelperCalcChecksums((PVOID)reset, sizeof(PACKET), 0);
-        if (!DivertSend(handle, (PVOID)reset, sizeof(PACKET), &addr, NULL))
+        DivertHelperCalcChecksums((PVOID)finish, sizeof(PACKET), 0);
+        if (!DivertSend(handle, (PVOID)finish, sizeof(PACKET), &addr, NULL))
         {
-            fprintf(stderr, "warning: failed to send reset packet (%d)\n",
+            fprintf(stderr, "warning: failed to send finish packet (%d)\n",
                 GetLastError());
         }
     }
@@ -260,16 +268,18 @@ static void PacketInit(PPACKET packet)
 static PBLACKLIST BlackListInit(void)
 {
     PBLACKLIST blacklist = (PBLACKLIST)malloc(sizeof(BLACKLIST));
+    UINT size;
     if (blacklist == NULL)
     {
         goto memory_error;
     }
-    blacklist->urls = (PURL *)malloc(MAXBUF*sizeof(PURL));
+    size = 1024;
+    blacklist->urls = (PURL *)malloc(size*sizeof(PURL));
     if (blacklist->urls == NULL)
     {
         goto memory_error;
     }
-    blacklist->size = MAXBUF;
+    blacklist->size = size;
     blacklist->length = 0;
 
     return blacklist;
@@ -341,8 +351,8 @@ static BOOL BlackListMatch(PBLACKLIST blacklist, PURL url)
  */
 static void BlackListRead(PBLACKLIST blacklist, const char *filename)
 {
-    char domain[MAXBUF+1];
-    char uri[MAXBUF+1];
+    char domain[MAXURL+1];
+    char uri[MAXURL+1];
     int c;
     UINT16 i, j;
     PURL url;
@@ -376,7 +386,7 @@ static void BlackListRead(PBLACKLIST blacklist, const char *filename)
         }
         i = 0;
         domain[i++] = (char)c;
-        while ((isalnum(c = getc(file)) || c == '-' || c == '.') && i < MAXBUF)
+        while ((isalnum(c = getc(file)) || c == '-' || c == '.') && i < MAXURL)
         {
             domain[i++] = (char)c;
         }
@@ -384,7 +394,7 @@ static void BlackListRead(PBLACKLIST blacklist, const char *filename)
         j = 0;
         if (c == '/')
         {
-            while (!isspace(c = getc(file)) && c != EOF && j < MAXBUF)
+            while (!isspace(c = getc(file)) && c != EOF && j < MAXURL)
             {
                 uri[j++] = (char)c;
             }
@@ -440,8 +450,8 @@ static BOOL BlackListPayloadMatch(PBLACKLIST blacklist, char *data, UINT16 len)
     static const char get_str[] = "GET /";
     static const char post_str[] = "POST /";
     static const char http_host_str[] = " HTTP/1.1\r\nHost: ";
-    char domain[MAXBUF];
-    char uri[MAXBUF];
+    char domain[MAXURL];
+    char uri[MAXURL];
     URL url = {domain, uri};
     UINT16 i = 0, j;
     BOOL result;

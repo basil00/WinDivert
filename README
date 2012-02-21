@@ -1,71 +1,84 @@
-DIVERT: Windows Packet Divert
-=============================
+WinDivert 1.0: Windows Packet Divert
+====================================
 
 1. Introduction
 ---------------
 
-Windows Packet Divert is a user-mode packet capture-and-divert package for
-Windows Vista and Windows 7.
+Windows Packet Divert (WinDivert) is a user-mode packet capture-and-divert
+package for Windows Vista, Windows 2008, and Windows 7.
 
-Using this Divert package, a developers can write user-mode programs that
-capture and divert packets being sent from, or being received to, the Windows
-network stack.  The program then can inspect/filter/modify/re-inject the
-packets as it sees fit.
+With WinDivert developers can write user-mode programs that capture and
+modify or drop network packets sent to/from the Windows network stack.
+In summary, WinDivert can
+    - capture network packets
+    - filter/drop network packets
+    - sniff network packets
+    - (re)inject network packets
+    - modify network packets
 
-The divert package is useful for implementing user-mode packet filters,
-packet sniffers, firewalls, tunneling applications, etc..  Basically if you
-need to intercept and modify packets, then this package is for you.
+WinDivert can be used to implement user-mode packet filters, packet sniffers,
+firewalls, NAT, VPNs, tunneling applications, etc., etc..  If you
+need to intercept and modify packets, then WinDivert is for you.
 
-For more information about this project, see doc/divert.html
+The features of WinDivert include:
+    - packet interception, sniffing, or dropping modes
+    - fully supports loopback (localhost) traffic
+    - full IPv6 support
+    - network layer
+    - simple and powerful API
+    - high-level filtering language
+    - filter priorities
+    - freely available under the terms of the GNU Lesser General Public
+      License (LGPL)
+
+For more information about WinDivert, see doc/divert.html
 
 2. Similar Packages
 -------------------
 
-The Windows Divert package provides similar functionality to divert sockets in
-FreeBSD/MacOS, NETLINK sockets in Linux, and some non-free packet capturing
-packages such as WinPkFilter for Windows.  In fact, the design of this package
-was largely inspired by FreeBSD's divert sockets.
+WinDivert is similar to divert sockets in FreeBSD/MacOS, NETLINK sockets in
+Linux, and some commercial packet capturing packages such as WinPkFilter for
+Windows.  The design of WinDivert is largely influenced by FreeBSD's divert
+sockets.
 
-This package shares some similarity with Winpcap.  However, Winpcap merely
-copies packets, whereas the Divert package stops/filters packets unless they
-are re-injected.  This means that Winpcap is mostly limited to packet sniffers
-and related applications, whereas Divert can be used to implement user-mode
-firewalls, filters, etc.
+WinDivert in packet-sniffing mode is similar to Winpcap.  Unlike Winpcap,
+WinDivert fully supports capturing loopback traffic.   Furthermore, WinDivert
+supports packet interception, which is not supported in Winpcap.
 
 3. Architecture
 ---------------
 
-The basic architecture of the Divert package is as follows:
+The basic architecture of WinDivert is as follows:
 
-                               +--------------+
-                               |              |
-                     +-------->| PROGRAM      |---------+
-                     |         | (divert.dll) |         |
-                     |         +--------------+         |
-                     |                                  | (3) re-injected
-                     | (2a) matching packet             |     packet
-                     |                                  |
-                     |                                  |
- [user mode]         |                                  |
- ....................|..................................|....................
- [kernel mode]       |                                  |
-                     |                                  |
-                     |                                  |
-              +------------+                            +--------------->
-  (1) packet  |            | (2b) non-matching packet
- ------------>| DIVERT.SYS |-------------------------------------------->
-              |            |
-              +------------+
+                              +-----------------+
+                              |                 |
+                     +------->|    PROGRAM      |--------+
+                     |        | (WinDivert.dll) |        |
+                     |        +-----------------+        |
+                     |                                   | (3) re-injected
+                     | (2a) matching packet              |     packet
+                     |                                   |
+                     |                                   |
+ [user mode]         |                                   |
+ ....................|...................................|...................
+ [kernel mode]       |                                   |
+                     |                                   |
+                     |                                   |
+              +---------------+                          +----------------->
+  (1) packet  |               | (2b) non-matching packet
+ ------------>| WinDivert.sys |-------------------------------------------->
+              |               |
+              +---------------+
 
-Essentially, the DIVERT.SYS driver inserts itself into the Windows network
-stack.  The following then happens
+The WinDivert.sys driver is inserted below the Windows network stack.  The
+following then happens
 
-(1) a new packet enters the stack, and is intercepted by DIVERT.SYS
+(1) a new packet enters the network stack and is intercepted by WinDivert.sys
 (2a) if the packet matches a PROGRAM-defined filter, it is diverted.  The
-    PROGRAM can then read the packet with a call to the DivertRecv() function.
+    PROGRAM reads the packet with a call to the DivertRecv() function.
 (2b) if the packet does not match the filter, the packet is permitted to
     continue as normal.
-(3) the PROGRAM either drops, modifies, or re-injects the packet.  If the
+(3) PROGRAM either drops, modifies, or re-injects the packet.  If the
     (modified) packet is re-injected, via a call to DivertSend(), it is
     inserted back into the Windows network stack.
 
@@ -81,27 +94,36 @@ For more detailed build instructions, see doc\divert.html
 5. License
 ----------
 
-This package is distributed under the GNU Public License (GPL) Version 3.
-
-Please note the following:
+This package is distributed under the GNU Lesser General Public License
+(LGPL) Version 3.  See LICENSE for more information.
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU General Public License as published by
+it under the terms of the GNU Lesser General Public License as published by
 the Free Software Foundation, either version 3 of the License, or
 (at your option) any later version.
 
 This program is distributed in the hope that it will be useful,
 but WITHOUT ANY WARRANTY; without even the implied warranty of
 MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+GNU Lesser General Public License for more details.
 
-You should have received a copy of the GNU General Public License
+You should have received a copy of the GNU Lesser General Public License
 along with this program.  If not, see <http://www.gnu.org/licenses/>
 
 6. About
 --------
 
-This package was written by basil.
+WinDivert was written by basil.
 
-For further information, please contact basil AT reqrypt DOT org.
+For further information, or bug reports, please contact
+
+    basil AT reqrypt DOT org
+
+The homepage for WinDivert is
+
+    http://reqrypt.org/divert.html
+
+The source code for WinDivert is hosted by GitHub at
+
+    https://github.com/basil00/Divert
 

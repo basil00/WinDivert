@@ -4,7 +4,7 @@ CPU=i386
 CPU=$(_BUILDARCH)
 !ENDIF
 
-$(TARGETPATH)\$(CPU)\divert.inf: divert.inf
+$(TARGETPATH)\$(CPU)\WinDivert.inf: divert.inf
 	copy /y divert.inf $@
 $(TARGETPATH)\$(CPU)\WdfCoInstaller01009.dll:
 	copy /y $(BASEDIR)\redist\wdf\$(_BUILDARCH)\WdfCoInstaller01009.dll $@

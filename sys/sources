@@ -1,17 +1,17 @@
 # sources
-# (C) 2011, all rights reserved,
+# (C) 2012, all rights reserved,
 #
 # This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
+# it under the terms of the GNU Lesser General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
 # This program is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU General Public License for more details.
+# GNU Lesser General Public License for more details.
 #
-# You should have received a copy of the GNU General Public License
+# You should have received a copy of the GNU Lesser General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 !IF "$(_BUILDARCH)" == "x86"
@@ -20,7 +20,7 @@ CPU=i386
 CPU=$(_BUILDARCH)
 !ENDIF
 
-TARGETNAME=divert
+TARGETNAME=WinDivert
 TARGETTYPE=DRIVER
 TARGETPATH=..\install
 TARGETLIBS=\
@@ -29,7 +29,7 @@ TARGETLIBS=\
     $(DDK_LIB_PATH)\fwpkclnt.lib \
     $(SDK_LIB_PATH)\uuid.lib
 NTTARGETFILES=\
-    $(TARGETPATH)\$(CPU)\divert.inf \
+    $(TARGETPATH)\$(CPU)\WinDivert.inf \
     $(TARGETPATH)\$(CPU)\WdfCoInstaller01009.dll
 KMDF_VERSION_MAJOR=1
 C_DEFINES=$(C_DEFINES) -DBINARY_COMPATIBLE=0 -DNT -DUNICODE -D_UNICODE \

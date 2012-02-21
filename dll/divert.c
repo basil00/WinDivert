@@ -1,18 +1,18 @@
 /*
  * divert.c
- * (C) 2011, all rights reserved,
+ * (C) 2012, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
+ * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
@@ -23,6 +23,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <winioctl.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -50,9 +51,14 @@ typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEINSTALL)(
         LPCWSTR inf_path,
         LPCWSTR inf_sec_name
     );
-// Mingw does not support UINT8 and UINT16 ???
-#define UINT8       unsigned char
-#define UINT16      unsigned short
+typedef ULONG (WINAPI *PFN_WDFPREDEVICEREMOVE)(
+        LPCWSTR inf_path,
+        LPCWSTR inf_sec_name
+    );
+typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEREMOVE)(
+        LPCWSTR inf_path,
+        LPCWSTR inf_sec_name
+    );
 #else       /* __MINGW32__ */
 #include <wdfinstaller.h>
 #endif      /* __MINGW32__ */
@@ -63,9 +69,10 @@ typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEINSTALL)(
 #include "divert.h"
 #include "divert_device.h"
 
-#define DIVERT_DRIVER_NAME              L"divert"
+#define DIVERT_DRIVER_NAME              L"WinDivert"
 #define DIVERT_DRIVER_SYS               L"\\" DIVERT_DRIVER_NAME L".sys"
 #define DIVERT_DRIVER_INF               L"\\" DIVERT_DRIVER_NAME L".inf"
+#define DIVERT_DRIVER_SECTION           L"divert.NT.Wdf"
 #define DIVERT_DRIVER_MATCH_DLL         L"\\WdfCoInstaller*.dll"
 
 /*
@@ -198,12 +205,21 @@ typedef struct
 /*
  * Misc.
  */
+#ifndef UINT8_MAX
 #define UINT8_MAX       0xFF
+#endif
+#ifndef UINT32_MAX
 #define UINT32_MAX      0xFFFFFFFF
+#endif
 #define IPPROTO_ICMP    1
 #define IPPROTO_TCP     6
 #define IPPROTO_UDP     17
 #define IPPROTO_ICMPV6  58
+
+/*
+ * Driver installed?
+ */
+static BOOLEAN installed = FALSE;
 
 /*
  * Prototypes.
@@ -212,20 +228,20 @@ static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll);
 static BOOLEAN DivertDriverFiles(LPWSTR *divert_dir_ptr,
     LPWSTR *divert_sys_ptr, LPWSTR *divert_inf_ptr, LPWSTR *divert_dll_ptr);
 static BOOLEAN DivertDriverInstall(VOID);
-static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT64 arg, PVOID buf,
-    UINT len, UINT *iolen);
-static BOOL DivertCompileFilter(const char *filter_str,
-    divert_ioctl_filter_t filter, UINT8 *fp);
+static BOOLEAN DivertDriverUnInstall(VOID);
+static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT8 arg8, UINT64 arg,
+    PVOID buf, UINT len, UINT *iolen);
+static BOOL DivertCompileFilter(const char *filter_str, DIVERT_LAYER layer,
+    divert_ioctl_filter_t filter, UINT16 *fp);
 static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b);
-static BOOL DivertTokenizeFilter(const char *filter, FILTER_TOKEN *tokens,
-    UINT8 tokensmax);
+static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
+    FILTER_TOKEN *tokens, UINT tokensmax);
 static BOOL DivertParseIPv4Address(char *str, UINT32 *addr_ptr);
 static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr);
-static BOOL DivertParseFilter(FILTER_TOKEN *tokens, UINT8 *tp,
-    divert_ioctl_filter_t filter, UINT8 *fp, FILTER_TOKEN_KIND op);
-static void DivertFilterNegate(divert_ioctl_filter_t filter, UINT8 s, UINT8 e);
-static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT8 s, UINT8 e,
-    UINT8 success, UINT8 failure);
+static BOOL DivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
+    divert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op);
+static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT16 s,
+    UINT16 e, UINT16 success, UINT16 failure);
 static void DivertInitPseudoHeader(PDIVERT_IPHDR ip_header,
     PDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len);
 static void DivertInitPseudoHeaderV6(PDIVERT_IPV6HDR ipv6_header,
@@ -234,14 +250,21 @@ static UINT16 DivertHelperCalcChecksum(PVOID pseudo_header,
     UINT16 pseudo_header_len, PVOID data, UINT len);
 
 #ifdef DIVERT_DEBUG
-static void DivertFilterDump(divert_ioctl_filter_t filter, UINT8 len);
+static void DivertFilterDump(divert_ioctl_filter_t filter, UINT16 len);
 #endif
 
 /*
  * Co-installer functions.
  */
-PFN_WDFPREDEVICEINSTALLEX pfnWdfPreDeviceInstallEx;
-PFN_WDFPOSTDEVICEINSTALL pfnWdfPostDeviceInstall;
+PFN_WDFPREDEVICEINSTALLEX pfnWdfPreDeviceInstallEx = NULL;
+PFN_WDFPOSTDEVICEINSTALL pfnWdfPostDeviceInstall = NULL;
+PFN_WDFPREDEVICEREMOVE pfnWdfPreDeviceRemove = NULL;
+PFN_WDFPOSTDEVICEREMOVE pfnWdfPostDeviceRemove = NULL;
+
+/*
+ * Thread local.
+ */
+static DWORD divert_tls_idx;
 
 /*
  * Dll Entry
@@ -249,6 +272,42 @@ PFN_WDFPOSTDEVICEINSTALL pfnWdfPostDeviceInstall;
 extern BOOL APIENTRY DivertDllEntry(HANDLE module, DWORD reason,
     LPVOID reserved)
 {
+    HANDLE event;
+    switch (reason)
+    {
+        case DLL_PROCESS_ATTACH:
+            if ((divert_tls_idx = TlsAlloc()) == TLS_OUT_OF_INDEXES)
+            {
+                return FALSE;
+            }
+            // Fallthrough
+        case DLL_THREAD_ATTACH:
+            event = CreateEvent(NULL, FALSE, FALSE, NULL);
+            if (event == NULL)
+            {
+                return FALSE;
+            }
+            TlsSetValue(divert_tls_idx, (LPVOID)event);
+            break;
+
+        case DLL_PROCESS_DETACH:
+            event = (HANDLE)TlsGetValue(divert_tls_idx);
+            if (event != (HANDLE)NULL)
+            {
+                CloseHandle(event);
+            }
+            TlsFree(divert_tls_idx);
+            DivertDriverUnInstall();
+            break;
+
+        case DLL_THREAD_DETACH:
+            event = (HANDLE)TlsGetValue(divert_tls_idx);
+            if (event != (HANDLE)NULL)
+            {
+                CloseHandle(event);
+            }
+            break;
+    }
     return TRUE;
 }
 
@@ -257,8 +316,14 @@ extern BOOL APIENTRY DivertDllEntry(HANDLE module, DWORD reason,
  */
 static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll)
 {
-    HMODULE library = LoadLibrary(divert_dll);
-
+    static HMODULE library = NULL;
+    
+    if (library != NULL)
+    {
+        return library;
+    }
+    
+    library = LoadLibrary(divert_dll);
     if (library == NULL)
     {
         return NULL;
@@ -276,12 +341,28 @@ static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll)
     {
         goto DivertLoadInstallerError;
     }
+    pfnWdfPreDeviceRemove = (PFN_WDFPREDEVICEREMOVE)GetProcAddress(
+        library, "WdfPreDeviceRemove");
+    if (pfnWdfPreDeviceRemove == NULL)
+    {
+        goto DivertLoadInstallerError;
+    }
+    pfnWdfPostDeviceRemove = (PFN_WDFPOSTDEVICEREMOVE)GetProcAddress(
+        library, "WdfPostDeviceRemove");
+    if (pfnWdfPostDeviceRemove == NULL)
+    {
+        goto DivertLoadInstallerError;
+    }
 
     return library;
 
 DivertLoadInstallerError:
 
     FreeLibrary(library);
+    pfnWdfPreDeviceInstallEx = NULL;
+    pfnWdfPostDeviceInstall = NULL;
+    pfnWdfPreDeviceRemove = NULL;
+    pfnWdfPostDeviceRemove = NULL;
     return NULL;
 }
 
@@ -291,7 +372,7 @@ DivertLoadInstallerError:
 static BOOLEAN DivertDriverFiles(LPWSTR *divert_dir_ptr,
     LPWSTR *divert_sys_ptr, LPWSTR *divert_inf_ptr, LPWSTR *divert_dll_ptr)
 {
-    DWORD length, l2;
+    DWORD length;
     HANDLE find;
     WIN32_FIND_DATA find_data;
     LPWSTR divert_dir, divert_sys, divert_inf, divert_dll;
@@ -372,13 +453,11 @@ DivertDriverFilesError:
  */
 static BOOLEAN DivertDriverInstall(VOID)
 {
-    static BOOLEAN installed = FALSE;
     DWORD err;
     SC_HANDLE manager = NULL, service = NULL;
     WDF_COINSTALLER_INSTALL_OPTIONS client_options;
     LPWSTR divert_dir = NULL, divert_sys = NULL, divert_inf = NULL,
         divert_dll = NULL;
-    HMODULE library = NULL;
 
     // Do nothing if the driver is already installed:
     if (installed)
@@ -394,7 +473,7 @@ static BOOLEAN DivertDriverInstall(VOID)
     }
 
     // Check if the divert service already exists; if so, start it.
-    service = OpenService(manager, DIVERT_DRIVER_NAME, SERVICE_ALL_ACCESS);
+    service = OpenService(manager, DIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
     if (service != NULL)
     {
         if (!StartService(service, 0, NULL))
@@ -421,7 +500,7 @@ static BOOLEAN DivertDriverInstall(VOID)
 
     // Pre-install:
     WDF_COINSTALLER_INSTALL_OPTIONS_INIT(&client_options);
-    err = pfnWdfPreDeviceInstallEx(divert_inf, L"divert.NT.Wdf",
+    err = pfnWdfPreDeviceInstallEx(divert_inf, DIVERT_DRIVER_SECTION,
         &client_options);
     if (err != ERROR_SUCCESS)
     {
@@ -430,7 +509,7 @@ static BOOLEAN DivertDriverInstall(VOID)
     }
 
     // Create the service:
-    service = CreateService(manager, DIVERT_DRIVER_NAME, DIVERT_DRIVER_NAME,
+    service = CreateService(manager, DIVERT_DEVICE_NAME, DIVERT_DEVICE_NAME,
         SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
         SERVICE_ERROR_NORMAL, divert_sys, NULL, NULL, NULL, NULL, NULL);
     if (service == NULL && GetLastError() != ERROR_SERVICE_EXISTS)
@@ -445,8 +524,6 @@ static BOOLEAN DivertDriverInstall(VOID)
         SetLastError(err);
         goto DivertDriverInstallExit;
     }
-    FreeLibrary(library);
-    library = NULL;
 
     // Start the service:
     if (!StartService(service, 0, NULL))
@@ -471,45 +548,128 @@ DivertDriverInstallExit:
     {
         CloseServiceHandle(manager);
     }
-    if (library != NULL)
-    {
-        FreeLibrary(library);
-    }
     return installed;
+}
+
+/*
+ * Uninstall the Divert driver.
+ */
+static BOOLEAN DivertDriverUnInstall(VOID)
+{
+    DWORD err;
+    SC_HANDLE manager = NULL, service = NULL;
+    LPWSTR divert_dir = NULL, divert_sys = NULL, divert_inf = NULL,
+        divert_dll = NULL;
+
+    // Do nothing if the driver is not installed:
+    if (!installed)
+    {
+        return FALSE;
+    }
+
+    // Get driver files:
+    if (!DivertDriverFiles(&divert_dir, &divert_sys, &divert_inf, &divert_dll))
+    {
+        return FALSE;
+    }
+
+    // Load the co-installer:
+    if (DivertLoadCoInstaller(divert_dll) == NULL)
+    {
+        return FALSE;
+    }
+
+    // Pre-uninstall:
+    err = pfnWdfPreDeviceRemove(divert_inf, DIVERT_DRIVER_SECTION);
+    if (err != ERROR_SUCCESS)
+    {
+        goto DivertDriverUnInstallExit;
+    }
+
+    // Open the service manager:
+    manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+    if (manager == NULL)
+    {
+        goto DivertDriverUnInstallExit;
+    }
+
+    // Open the service:
+    service = OpenService(manager, DIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
+    if (service == NULL)
+    {
+        goto DivertDriverUnInstallExit;
+    }
+
+    // Delete the service:
+    if (!DeleteService(service))
+    {
+        goto DivertDriverUnInstallExit;
+    }
+
+    // Post-uninstall:
+    err = pfnWdfPostDeviceRemove(divert_inf, DIVERT_DRIVER_SECTION);
+    if (err != ERROR_SUCCESS)
+    {
+        SetLastError(err);
+        goto DivertDriverUnInstallExit;
+    }
+
+    installed = FALSE;
+
+DivertDriverUnInstallExit:
+    free(divert_dir);
+    free(divert_sys);
+    free(divert_inf);
+    free(divert_dll);
+    if (service != NULL)
+    {
+        CloseServiceHandle(service);
+    }
+    if (manager != NULL)
+    {
+        CloseServiceHandle(manager);
+    }
+    return !installed;
 }
 
 /*
  * Perform a DeviceIoControl.
  */
-static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT64 arg, PVOID buf,
-    UINT len, UINT *iolen)
+static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT8 arg8, UINT64 arg,
+    PVOID buf, UINT len, UINT *iolen)
 {
     struct divert_ioctl_s ioctl;
     DWORD iolen0;
     OVERLAPPED overlapped;
+    HANDLE event;
 
-    ioctl.version         = DIVERT_VERSION;
-    ioctl.magic           = DIVERT_MAGIC;
-    ioctl.reserved        = 0x0;
+    event = (HANDLE)TlsGetValue(divert_tls_idx);
+    if (event == (HANDLE)NULL)
+    {
+        event = CreateEvent(NULL, FALSE, FALSE, NULL);
+        if (event == NULL)
+        {
+            return FALSE;
+        }
+        TlsSetValue(divert_tls_idx, (LPVOID)event);
+    }
+
+    ioctl.version         = DIVERT_IOCTL_VERSION;
+    ioctl.magic           = DIVERT_IOCTL_MAGIC;
+    ioctl.arg8            = arg8;
     ioctl.arg             = arg;
     overlapped.Offset     = 0;
     overlapped.OffsetHigh = 0;
-    overlapped.hEvent     = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (overlapped.hEvent == NULL)
-    {
-        return FALSE;
-    }
+    overlapped.hEvent     = event;
     if (!DeviceIoControl(handle, code, &ioctl, sizeof(ioctl), buf, (DWORD)len,
         &iolen0, &overlapped))
     {
         if (GetLastError() != ERROR_IO_PENDING ||
             !GetOverlappedResult(handle, &overlapped, &iolen0, TRUE))
         {
-            CloseHandle(overlapped.hEvent);
             return FALSE;
         }
     }
-    CloseHandle(overlapped.hEvent);
     if (iolen != NULL)
     {
         *iolen = (UINT)iolen0;
@@ -518,18 +678,26 @@ static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT64 arg, PVOID buf,
 }
 
 /*
- * Open a handle to the Divert device.
+ * Open a divert handle.
  */
-extern HANDLE DivertOpen(const char *filter)
+extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
+    INT16 priority, UINT64 flags)
 {
-    struct divert_ioctl_s ioctl;
     struct divert_ioctl_filter_s ioctl_filter[DIVERT_FILTER_MAXLEN];
-    UINT8 filter_len;
+    UINT16 filter_len;
     DWORD err;
     HANDLE handle;
+    UINT32 priority32;
+
+    // Parameter checking.
+    if (flags > DIVERT_FLAGS_MAX || layer > DIVERT_LAYER_MAX)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return INVALID_HANDLE_VALUE;
+    }
 
     // Parse the filter:
-    if (!DivertCompileFilter(filter, ioctl_filter, &filter_len))
+    if (!DivertCompileFilter(filter, layer, ioctl_filter, &filter_len))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
@@ -540,9 +708,9 @@ extern HANDLE DivertOpen(const char *filter)
 #endif
 
     // Attempt to open the Divert device:
-    handle = CreateFile(L"\\\\.\\Divert", GENERIC_READ | GENERIC_WRITE,
-        0, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
-        INVALID_HANDLE_VALUE);
+    handle = CreateFile(L"\\\\.\\" DIVERT_DEVICE_NAME,
+        GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, INVALID_HANDLE_VALUE);
     if (handle == INVALID_HANDLE_VALUE)
     {
         err = GetLastError();
@@ -557,17 +725,56 @@ extern HANDLE DivertOpen(const char *filter)
             SetLastError(ERROR_OPEN_FAILED);
             return INVALID_HANDLE_VALUE;
         }
-        handle = CreateFile(L"\\\\.\\Divert", GENERIC_READ | GENERIC_WRITE, 0,
-            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
+        handle = CreateFile(L"\\\\.\\" DIVERT_DEVICE_NAME,
+            GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
             INVALID_HANDLE_VALUE);
         if (handle == INVALID_HANDLE_VALUE)
         {
             return INVALID_HANDLE_VALUE;
         }
     }
+    else
+    {
+        installed = TRUE;
+    }
 
-    // Set the filter:
-    if (!DivertIoControl(handle, IOCTL_DIVERT_SET_FILTER, (UINT64)NULL,
+    // Set the layer:
+    if (layer != DIVERT_LAYER_DEFAULT)
+    {
+        if (!DivertIoControl(handle, IOCTL_DIVERT_SET_LAYER, 0, (UINT64)layer,
+                NULL, 0, NULL))
+        {
+            CloseHandle(handle);
+            return INVALID_HANDLE_VALUE;
+        }
+    }
+
+    // Set the flags:
+    if (flags != 0)
+    {
+        if (!DivertIoControl(handle, IOCTL_DIVERT_SET_FLAGS, 0, (UINT64)flags,
+                NULL, 0, NULL))
+        {
+            CloseHandle(handle);
+            return INVALID_HANDLE_VALUE;
+        }
+    }
+
+    // Set the priority:
+    priority32 = DIVERT_PRIORITY(priority);
+    if (priority32 != DIVERT_PRIORITY_DEFAULT)
+    {
+        if (!DivertIoControl(handle, IOCTL_DIVERT_SET_PRIORITY, 0,
+                (UINT64)priority32, NULL, 0, NULL))
+        {
+            CloseHandle(handle);
+            return INVALID_HANDLE_VALUE;
+        }
+    }
+
+    // Start the filter:
+    if (!DivertIoControl(handle, IOCTL_DIVERT_START_FILTER, 0, 0,
             ioctl_filter, filter_len*sizeof(struct divert_ioctl_filter_s),
             NULL))
     {
@@ -580,27 +787,27 @@ extern HANDLE DivertOpen(const char *filter)
 }
 
 /*
- * Receive a packet from the Divert device.
+ * Receive a divert packet.
  */
 extern BOOL DivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
     PDIVERT_ADDRESS addr, UINT *readlen)
 {
-    return DivertIoControl(handle, IOCTL_DIVERT_RECV, (UINT64)addr, pPacket,
+    return DivertIoControl(handle, IOCTL_DIVERT_RECV, 0, (UINT64)addr, pPacket,
         packetLen, readlen);
 }
 
 /*
- * Send (inject) a packet to the Divert device.
+ * Send a divert packet.
  */
 extern BOOL DivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
     PDIVERT_ADDRESS addr, UINT *writelen)
 {
-    return DivertIoControl(handle, IOCTL_DIVERT_SEND, (UINT64)addr, pPacket,
+    return DivertIoControl(handle, IOCTL_DIVERT_SEND, 0, (UINT64)addr, pPacket,
         packetLen, writelen);
 }
 
 /*
- * Close a handle to the Divert device.
+ * Close a divert handle.
  */
 extern BOOL DivertClose(HANDLE handle)
 {
@@ -608,15 +815,64 @@ extern BOOL DivertClose(HANDLE handle)
 }
 
 /*
+ * Set a divert parameter.
+ */
+extern BOOL DivertSetParam(HANDLE handle, DIVERT_PARAM param, UINT64 value)
+{
+    switch ((int)param)
+    {
+        case DIVERT_PARAM_QUEUE_LEN:
+            if (value < DIVERT_PARAM_QUEUE_LEN_MIN ||
+                value > DIVERT_PARAM_QUEUE_LEN_MAX)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            break;
+        case DIVERT_PARAM_QUEUE_TIME:
+            if (value < DIVERT_PARAM_QUEUE_TIME_MIN ||
+                value > DIVERT_PARAM_QUEUE_TIME_MAX)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            break;
+        default:
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+    }
+    return DivertIoControl(handle, IOCTL_DIVERT_SET_PARAM, (UINT8)param,
+        value, NULL, 0, NULL);
+}
+
+/*
+ * Get a divert parameter.
+ */
+extern BOOL DivertGetParam(HANDLE handle, DIVERT_PARAM param, UINT64 *pValue)
+{
+    switch ((int)param)
+    {
+        case DIVERT_PARAM_QUEUE_LEN: case DIVERT_PARAM_QUEUE_TIME:
+            break;
+        default:
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+    }
+    return DivertIoControl(handle, IOCTL_DIVERT_GET_PARAM, (UINT8)param,
+        0, pValue, sizeof(UINT64), NULL);
+}
+
+/*
  * Compile a filter.
  */
-static BOOL DivertCompileFilter(const char *filter_str,
-    divert_ioctl_filter_t filter, UINT8 *fp)
+static BOOL DivertCompileFilter(const char *filter_str, DIVERT_LAYER layer,
+    divert_ioctl_filter_t filter, UINT16 *fp)
 {
     FILTER_TOKEN tokens[DIVERT_FILTER_MAXLEN*3];
-    UINT8 tp;
+    UINT16 tp;
 
-    if (!DivertTokenizeFilter(filter_str, tokens, DIVERT_FILTER_MAXLEN*3-1))
+    if (!DivertTokenizeFilter(filter_str, layer, tokens,
+            DIVERT_FILTER_MAXLEN*3-1))
     {
         return FALSE;
     }
@@ -647,8 +903,8 @@ static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b)
 /*
  * Tokenize the given filter string.
  */
-static BOOL DivertTokenizeFilter(const char *filter, FILTER_TOKEN *tokens,
-    UINT8 tokensmax)
+static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
+    FILTER_TOKEN *tokens, UINT tokensmax)
 {
     static const FILTER_TOKEN_NAME token_names[] =
     {
@@ -719,7 +975,7 @@ static BOOL DivertTokenizeFilter(const char *filter, FILTER_TOKEN *tokens,
     char c;
     char token[FILTER_TOKEN_MAXLEN];
     UINT i = 0, j;
-    UINT8 tp = 0;
+    UINT tp = 0;
 
     while (TRUE)
     {
@@ -824,6 +1080,18 @@ static BOOL DivertTokenizeFilter(const char *filter, FILTER_TOKEN *tokens,
                 sizeof(FILTER_TOKEN_NAME), DivertFilterTokenNameCompare);
             if (result != NULL)
             {
+                switch (layer)
+                {
+                    case DIVERT_LAYER_NETWORK_FORWARD:
+                        if (result->kind == FILTER_TOKEN_INBOUND ||
+                            result->kind == FILTER_TOKEN_OUTBOUND)
+                        {
+                            return FALSE;
+                        }
+                        break;
+                    default:
+                        break;
+                }
                 tokens[tp++].kind = result->kind;
                 continue;
             }
@@ -975,12 +1243,12 @@ static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr)
 /*
  * Parse the given filter.
  */
-static BOOL DivertParseFilter(FILTER_TOKEN *tokens, UINT8 *tp,
-    divert_ioctl_filter_t filter, UINT8 *fp, FILTER_TOKEN_KIND op)
+static BOOL DivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
+    divert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op)
 {
     BOOL testop, fused, result, negate;
     FILTER_TOKEN token;
-    UINT8 t, f, s, tmp;
+    UINT16 f, s;
     s = *fp;
 
 DivertParseFilterNext:
@@ -1306,27 +1574,19 @@ DivertParseFilterNext:
             DivertFilterUpdate(filter, f, *fp, DIVERT_FILTER_RESULT_ACCEPT,
                 *fp);
             goto DivertParseFilterNext;
+        default:
+            break;
     }
     return TRUE;
 }
 
 /*
- * Negate a filter.
- */
-static void DivertFilterNegate(divert_ioctl_filter_t filter, UINT8 s, UINT8 e)
-{
-    // This is easy; simple swap REJECTs and ACCEPTs
-    DivertFilterUpdate(filter, s, e, DIVERT_FILTER_RESULT_REJECT,
-        DIVERT_FILTER_RESULT_ACCEPT);
-}
-
-/*
  * Update success.
  */
-static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT8 s, UINT8 e,
-    UINT8 success, UINT8 failure)
+static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT16 s,
+    UINT16 e, UINT16 success, UINT16 failure)
 {
-    UINT8 i;
+    UINT16 i;
 
     for (i = s; i < e; i++)
     {
@@ -1355,9 +1615,9 @@ static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT8 s, UINT8 e,
 /*
  * Print a filter (debugging).
  */
-static void DivertFilterDump(divert_ioctl_filter_t filter, UINT8 len)
+static void DivertFilterDump(divert_ioctl_filter_t filter, UINT16 len)
 {
-    UINT8 i;
+    UINT16 i;
 
     for (i = 0; i < len; i++)
     {
@@ -1774,7 +2034,6 @@ extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 {
     DIVERT_PSEUDOHDR pseudo_header;
     DIVERT_PSEUDOV6HDR pseudov6_header;
-    BOOL have_pseudo_header = FALSE, have_v6pseudo_header = FALSE;
     PDIVERT_IPHDR ip_header;
     PDIVERT_IPV6HDR ipv6_header;
     PDIVERT_ICMPHDR icmp_header;

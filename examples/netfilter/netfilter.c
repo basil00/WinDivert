@@ -1,26 +1,26 @@
 /*
  * netfilter.c
- * (C) 2011, all rights reserved,
+ * (C) 2012, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
+ * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
  * DESCRIPTION:
- * This is a simple traffic filter
+ * This is a simple traffic filter/firewall.
  *
- * usage: netfilter.exe divert-filter
+ * usage: netfilter.exe divert-filter [priority]
  *
  * Any traffic that matches the divert-filter will be blocked using one of
  * the following methods:
@@ -39,7 +39,7 @@
 
 #include "divert.h"
 
-#define MAXBUF  2048
+#define MAXBUF  0xFFFF
 
 /*
  * Pre-fabricated packets.
@@ -86,9 +86,8 @@ static void PacketIpv6Icmpv6Init(PICMPV6PACKET packet);
 int __cdecl main(int argc, char **argv)
 {
     HANDLE handle, console;
-    size_t slen, flen;
     UINT i;
-    char filter[MAXBUF];
+    INT16 priority = 0;
     char packet[MAXBUF];
     UINT packet_len;
     DIVERT_ADDRESS recv_addr, send_addr;
@@ -111,22 +110,24 @@ int __cdecl main(int argc, char **argv)
         sizeof(DIVERT_TCPHDR)];
     PICMPV6PACKET dnrv6 = (PICMPV6PACKET)dnrv6_0;
 
-    // Concat all command line args into a filter string.
-    flen = 0;
-    for (i = 1; (int)i < argc; i++)
+    // Check arguments.
+    switch (argc)
     {
-        slen = strlen(argv[i]);
-        if (flen + slen + 1 >= MAXBUF)
-        {
-            fprintf(stderr, "error: filter too long\n");
+        case 2:
+            break;
+        case 3:
+            priority = (INT16)atoi(argv[2]);
+            break;
+        default:
+            fprintf(stderr, "usage: %s divert-filter [priority]\n",
+                argv[0]);
+            fprintf(stderr, "examples:\n");
+            fprintf(stderr, "\t%s true\n", argv[0]);
+            fprintf(stderr, "\t%s \"outbound and tcp.DstPort == 80\" 1000\n",
+                argv[0]);
+            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -4000\n", argv[0]);
             exit(EXIT_FAILURE);
-        }
-        strcpy(filter+flen, argv[i]);
-        flen += slen;
-        filter[flen] = ' ';
-        flen++;
     }
-    filter[flen] = '\0';
 
     // Initialize all packets.
     PacketIpTcpInit(reset);
@@ -148,7 +149,7 @@ int __cdecl main(int argc, char **argv)
     console = GetStdHandle(STD_OUTPUT_HANDLE);
 
     // Divert traffic matching the filter:
-    handle = DivertOpen(filter);
+    handle = DivertOpen(argv[1], 0, priority, 0);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
@@ -326,7 +327,7 @@ int __cdecl main(int argc, char **argv)
                 DivertHelperCalcChecksums((PVOID)dnr, icmp_length, 0);
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = DIVERT_PACKET_DIRECTION_OUTBOUND;
+                send_addr.Direction = DIVERT_DIRECTION_OUTBOUND;
                 if (!DivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
                     NULL))
                 {
@@ -349,7 +350,7 @@ int __cdecl main(int argc, char **argv)
                 DivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length, 0);
 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = DIVERT_PACKET_DIRECTION_OUTBOUND;
+                send_addr.Direction = DIVERT_DIRECTION_OUTBOUND;
                 if (!DivertSend(handle, (PVOID)dnrv6, icmpv6_length,
                         &send_addr, NULL))
                 {

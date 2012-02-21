@@ -1,9 +1,11 @@
-LIBRARY divert
+LIBRARY WinDivert
 EXPORTS
     DivertDllEntry
     DivertOpen
     DivertRecv
     DivertSend
     DivertClose
+    DivertSetParam
+    DivertGetParam
     DivertHelperParse
     DivertHelperCalcChecksums

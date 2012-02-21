@@ -1,18 +1,18 @@
 /*
  * divert.c
- * (C) 2011, all rights reserved,
+ * (C) 2012, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
+ * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
@@ -75,8 +75,8 @@ struct filter_s
     UINT8  protocol:4;                      // field's protocol
     UINT8  test:4;                          // Filter test
     UINT8  field;                           // Field of interest
-    UINT8  success;                         // Success continuation
-    UINT8  failure;                         // Fail continuation
+    UINT16 success;                         // Success continuation
+    UINT16 failure;                         // Fail continuation
     UINT32 arg[4];                          // Comparison argument
 };
 typedef struct filter_s *filter_t;
@@ -87,14 +87,14 @@ typedef struct filter_s *filter_t;
 #define DIVERT_FILTER_PROTOCOL_ICMPV6       4
 #define DIVERT_FILTER_PROTOCOL_TCP          5
 #define DIVERT_FILTER_PROTOCOL_UDP          6
+#define DIVERT_FILTER_TAG                   'Fvid'
 
 /*
  * Context information.
  */
 #define DIVERT_CONTEXT_MAGIC                0xB75D18F185A65197ull
 #define DIVERT_CONTEXT_SIZE                 (sizeof(struct context_s))
-#define DIVERT_CONTEXT_QUEUE_MAXLENGTH      1024
-#define DIVERT_CONTEXT_NUMLAYERS            4
+#define DIVERT_CONTEXT_MAXLAYERS            4
 #define DIVERT_CONTEXT_OUTBOUND_IPV4_LAYER  0
 #define DIVERT_CONTEXT_INBOUND_IPV4_LAYER   1
 #define DIVERT_CONTEXT_OUTBOUND_IPV6_LAYER  2
@@ -117,25 +117,51 @@ struct context_s
     ULONG packet_queue_length;              // Packet queue length.
     ULONG packet_queue_maxlength;           // Packet queue max length.
     WDFTIMER timer;                         // Packet timer.
+    UINT timer_timeout;                     // Packet timeout (in ms).
     BOOL timer_ticktock;                    // Packet timer ticktock.
-    NDIS_HANDLE pool_handle;                // NET_BUFFER_LIST pool handle.
     WDFQUEUE read_queue;                    // Read queue.
-    GUID sublayer_guid[DIVERT_CONTEXT_NUMLAYERS];
+    UINT8 layer_0;                          // Context's layer (initial).
+    UINT8 layer;                            // Context's layer.
+    UINT64 flags_0;                         // Context's flags (initial).
+    UINT64 flags;                           // Context's flags.
+    UINT32 priority_0;                      // Context's priority (initial).
+    UINT32 priority;                        // Context's priority.
+    GUID sublayer_guid[DIVERT_CONTEXT_MAXLAYERS];
                                             // Sublayer GUIDs.
-    GUID callout_guid[DIVERT_CONTEXT_NUMLAYERS];
+    GUID callout_guid[DIVERT_CONTEXT_MAXLAYERS];
                                             // Callout GUIDs.
-    GUID filter_guid[DIVERT_CONTEXT_NUMLAYERS];
+    GUID filter_guid[DIVERT_CONTEXT_MAXLAYERS];
                                             // Filter GUIDs.
-    BOOL registered[DIVERT_CONTEXT_NUMLAYERS];
+    BOOL registered[DIVERT_CONTEXT_MAXLAYERS];
                                             // What is registered?
     HANDLE engine_handle;                   // WFP engine handle.
     LONG filter_on;                         // Is filter on?
-    struct filter_s filter[DIVERT_FILTER_MAXLEN];
-                                            // Packet filter.
+    filter_t filter;                        // Packet filter.
 };
 typedef struct context_s context_s;
 typedef struct context_s *context_t;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(context_s, divert_context_get);
+
+/*
+ * Divert Layer information.
+ */
+typedef void (*divert_callout_t)(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result);
+struct layer_s
+{
+    wchar_t *sublayer_name;                 // Sub-layer name.
+    wchar_t *sublayer_desc;                 // Sub-layer description.
+    wchar_t *callout_name;                  // Call-out name.
+    wchar_t *callout_desc;                  // Call-out description.
+    wchar_t *filter_name;                   // Filter name.
+    wchar_t *filter_desc;                   // Filter description.
+    GUID guid;                              // WFP layer GUID.
+    divert_callout_t callout;               // Call-out.
+};
+typedef struct layer_s *layer_t;
 
 /*
  * Request context.
@@ -159,6 +185,7 @@ struct packet_s
     LIST_ENTRY entry;                       // Entry for queue
     PNET_BUFFER buffer;                     // The packet
     PNET_BUFFER_LIST buffers;               // The NBL contain the packet
+    PNET_BUFFER_LIST clone;                 // Clone of buffer
     UINT8 direction;                        // Packet direction
     UINT32 if_idx;                          // Interface index
     UINT32 sub_if_idx;                      // Sub-interface index
@@ -266,21 +293,12 @@ struct udphdr
 #define UINT8_MAX       0xFF
 #define UINT16_MAX      0xFFFF
 
-typedef void (*divert_callout_t)(
-    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
-    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
-    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
-    OUT FWPS_CLASSIFY_OUT0 *result);
-
 /*
  * Global handles.
  */
 HANDLE inject_handle;
 HANDLE injectv6_handle;
 NDIS_HANDLE pool_handle;
-
-#define DIVERT_PACKET_ALLOW         ((HANDLE)0)
-#define DIVERT_PACKET_INJECTED      ((HANDLE)1)
 
 /*
  * Prototypes.
@@ -295,7 +313,7 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
 static NTSTATUS divert_register_callouts(context_t context, BOOL is_inbound,
     BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6);
 static NTSTATUS divert_register_callout(context_t context, UINT idx,
-    BOOL is_inbound, BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6);
+    layer_t layer);
 extern VOID divert_timer(IN WDFTIMER timer);
 extern VOID divert_cleanup(IN WDFFILEOBJECT object);
 extern VOID divert_close(IN WDFFILEOBJECT object);
@@ -305,22 +323,32 @@ extern void NTAPI divert_inject_complete(VOID *context,
     NET_BUFFER_LIST *packets, BOOLEAN dispatch_level);
 static NTSTATUS divert_notify_callout(IN FWPS_CALLOUT_NOTIFY_TYPE type,
     IN const GUID *filter_key, IN const FWPS_FILTER0 *filter);
-static void divert_classify_outbound_v4_callout(
+static void divert_classify_outbound_network_v4_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
-static void divert_classify_inbound_v4_callout(
+static void divert_classify_inbound_network_v4_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
-static void divert_classify_outbound_v6_callout(
+static void divert_classify_outbound_network_v6_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
-static void divert_classify_inbound_v6_callout(
+static void divert_classify_inbound_network_v6_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result);
+static void divert_classify_forward_network_v4_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result);
+static void divert_classify_forward_network_v6_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
@@ -332,24 +360,106 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL divert_reinject_packet(context_t context, UINT8 direction,
-    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, PNET_BUFFER_LIST buffers,
-    PNET_BUFFER buffer);
+    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, UINT32 priority,
+    PNET_BUFFER_LIST buffers, PNET_BUFFER buffer);
 static void NTAPI divert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers_cpy, BOOLEAN dispatch_level);
 static BOOL divert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     PNET_BUFFER buffer, UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx);
+static void divert_free_packet(packet_t packet);
 static UINT16 divert_checksum(const void *pseudo_header,
     size_t pseudo_header_len, const void *data, size_t size);
 static void divert_update_checksums(void *header, size_t len,
     BOOL update_ip, BOOL update_tcp, BOOL update_udp);
 static BOOL divert_filter(PNET_BUFFER buffer, UINT32 if_idx, UINT32 sub_if_idx,
     BOOL outbound, filter_t filter);
-static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
-    size_t ioctl_filter_len, filter_t filter);
+static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
+    size_t ioctl_filter_len);
 static void divert_filter_analyze(filter_t filter, BOOL *is_inbound,
     BOOL *is_outbound, BOOL *ip_ipv4, BOOL *is_ipv6);
-static BOOL divert_filter_test(filter_t filter, UINT8 ip, UINT8 protocol,
+static BOOL divert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
     UINT8 field, UINT32 arg);
+
+/*
+ * Defined layers.
+ */
+static struct layer_s layer_inbound_network_ipv4_0 =
+{
+    L"" DIVERT_DEVICE_NAME L"SubLayerInboundNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" sublayer network (inbound IPv4)",
+    L"" DIVERT_DEVICE_NAME L"CalloutInboundNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" callout network (inbound IPv4)",
+    L"" DIVERT_DEVICE_NAME L"FilterInboundNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" filter network (inbound IPv4)",
+    {0},
+    divert_classify_inbound_network_v4_callout,
+};
+static layer_t layer_inbound_network_ipv4 = &layer_inbound_network_ipv4_0;
+
+static struct layer_s layer_outbound_network_ipv4_0 =
+{
+    L"" DIVERT_DEVICE_NAME L"SubLayerOutboundNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" sublayer network (outbound IPv4)",
+    L"" DIVERT_DEVICE_NAME L"CalloutOutboundNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" callout network (outbound IPv4)",
+    L"" DIVERT_DEVICE_NAME L"FilterOutboundNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" filter network (outbound IPv4)",
+    {0},
+    divert_classify_outbound_network_v4_callout,
+};
+static layer_t layer_outbound_network_ipv4 = &layer_outbound_network_ipv4_0;
+
+static struct layer_s layer_inbound_network_ipv6_0 =
+{
+    L"" DIVERT_DEVICE_NAME L"SubLayerInboundNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" sublayer network (inbound IPv6)",
+    L"" DIVERT_DEVICE_NAME L"CalloutInboundNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" callout network (inbound IPv6)",
+    L"" DIVERT_DEVICE_NAME L"FilterInboundNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" filter network (inbound IPv6)",
+    {0},
+    divert_classify_inbound_network_v6_callout,
+};
+static layer_t layer_inbound_network_ipv6 = &layer_inbound_network_ipv6_0;
+
+static struct layer_s layer_outbound_network_ipv6_0 =
+{
+    L"" DIVERT_DEVICE_NAME L"SubLayerOutboundNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" sublayer network (outbound IPv6)",
+    L"" DIVERT_DEVICE_NAME L"CalloutOutboundNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" callout network (outbound IPv6)",
+    L"" DIVERT_DEVICE_NAME L"FilterOutboundNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" filter network (outbound IPv6)",
+    {0},
+    divert_classify_outbound_network_v6_callout,
+};
+static layer_t layer_outbound_network_ipv6 = &layer_outbound_network_ipv6_0;
+
+static struct layer_s layer_forward_network_ipv4_0 =
+{
+    L"" DIVERT_DEVICE_NAME L"SubLayerForwardNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" sublayer network (forward IPv4)",
+    L"" DIVERT_DEVICE_NAME L"CalloutForwardNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" callout network (forward IPv4)",
+    L"" DIVERT_DEVICE_NAME L"FilterForwardNetworkIPv4",
+    L"" DIVERT_DEVICE_NAME L" filter network (forward IPv4)",
+    {0},
+    divert_classify_forward_network_v4_callout,
+};
+static layer_t layer_forward_network_ipv4 = &layer_forward_network_ipv4_0;
+
+static struct layer_s layer_forward_network_ipv6_0 =
+{
+    L"" DIVERT_DEVICE_NAME L"SubLayerForwardNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" sublayer network (forward IPv6)",
+    L"" DIVERT_DEVICE_NAME L"CalloutForwardNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" callout network (forward IPv6)",
+    L"" DIVERT_DEVICE_NAME L"FilterForwardNetworkIPv6",
+    L"" DIVERT_DEVICE_NAME L" filter network (forward IPv6)",
+    {0},
+    divert_classify_forward_network_v6_callout,
+};
+static layer_t layer_forward_network_ipv6 = &layer_forward_network_ipv6_0;
 
 /*
  * Driver entry routine.
@@ -367,10 +477,20 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     WDF_OBJECT_ATTRIBUTES obj_attrs;
     NET_BUFFER_LIST_POOL_PARAMETERS pool_params;
     NTSTATUS status;
-    DECLARE_CONST_UNICODE_STRING(device_name, DIVERT_DEVICE_NAME);
-    DECLARE_CONST_UNICODE_STRING(dos_device_name, DIVERT_DOS_DEVICE_NAME);
+    DECLARE_CONST_UNICODE_STRING(device_name,
+        L"\\Device\\" DIVERT_DEVICE_NAME);
+    DECLARE_CONST_UNICODE_STRING(dos_device_name,
+        L"\\??\\" DIVERT_DEVICE_NAME);
 
     DEBUG("LOAD: loading divert driver");
+
+    // Initialize the layers.
+    layer_inbound_network_ipv4->guid    = FWPM_LAYER_INBOUND_IPPACKET_V4;
+    layer_outbound_network_ipv4->guid   = FWPM_LAYER_OUTBOUND_IPPACKET_V4;
+    layer_inbound_network_ipv6->guid    = FWPM_LAYER_INBOUND_IPPACKET_V6;
+    layer_outbound_network_ipv6->guid   = FWPM_LAYER_OUTBOUND_IPPACKET_V6;
+    layer_forward_network_ipv4->guid    = FWPM_LAYER_IPFORWARD_V4;
+    layer_forward_network_ipv6->guid    = FWPM_LAYER_IPFORWARD_V6;
 
     // Configure ourself as a non-PnP driver:
     WDF_DRIVER_CONFIG_INIT(&config, WDF_NO_EVENT_CALLBACK);
@@ -466,7 +586,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         status = STATUS_INSUFFICIENT_RESOURCES;
         DEBUG_ERROR("failed to allocate net buffer list pool", status);
         return status;
-    }  
+    }
 
     return STATUS_SUCCESS;
 }
@@ -531,27 +651,23 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->state  = DIVERT_CONTEXT_STATE_OPENING;
     context->device = device;
     context->packet_queue_length = 0;
-    context->packet_queue_maxlength = DIVERT_CONTEXT_QUEUE_MAXLENGTH;
-    for (i = 0; i < DIVERT_FILTER_MAXLEN; i++)
-    {
-        context->filter[i].protocol = DIVERT_FILTER_PROTOCOL_NONE;
-        context->filter[i].field    = DIVERT_FILTER_FIELD_ZERO;
-        context->filter[i].test     = DIVERT_FILTER_TEST_EQ;
-        context->filter[i].arg[0]   = 0;
-        context->filter[i].arg[1]   = 0;
-        context->filter[i].arg[2]   = 0;
-        context->filter[i].arg[3]   = 0;
-        context->filter[i].success  = DIVERT_FILTER_RESULT_REJECT;
-        context->filter[i].failure  = DIVERT_FILTER_RESULT_REJECT;
-    }
-    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    context->packet_queue_maxlength = DIVERT_PARAM_QUEUE_LEN_DEFAULT;
+    context->timer_timeout = DIVERT_PARAM_QUEUE_TIME_DEFAULT;
+    context->layer_0    = DIVERT_LAYER_DEFAULT;
+    context->layer      = DIVERT_LAYER_DEFAULT;
+    context->flags_0    = 0;
+    context->flags      = 0;
+    context->priority_0 = DIVERT_PRIORITY_DEFAULT;
+    context->priority   = DIVERT_PRIORITY_DEFAULT;
+    context->filter     = NULL;
+    for (i = 0; i < DIVERT_CONTEXT_MAXLAYERS; i++)
     {
         context->registered[i] = FALSE;
     }
     context->filter_on = FALSE;
     KeInitializeSpinLock(&context->lock);
     InitializeListHead(&context->packet_queue);
-    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    for (i = 0; i < DIVERT_CONTEXT_MAXLAYERS; i++)
     {
         status = ExUuidCreate(&context->sublayer_guid[i]);
         if (!NT_SUCCESS(status))
@@ -572,6 +688,13 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
             goto divert_create_exit;
         }
     }
+    RtlZeroMemory(&pool_params, sizeof(pool_params));
+    pool_params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    pool_params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
+    pool_params.Header.Size = sizeof(pool_params);
+    pool_params.fAllocateNetBuffer = TRUE;
+    pool_params.PoolTag = DIVERT_NET_BUFFER_LIST_TAG;
+    pool_params.DataSize = 0;
     WDF_IO_QUEUE_CONFIG_INIT(&queue_config, WdfIoQueueDispatchManual);
     status = WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES,
         &context->read_queue);
@@ -580,8 +703,7 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
         DEBUG_ERROR("failed to create I/O read queue", status);
         goto divert_create_exit;
     }
-    WDF_TIMER_CONFIG_INIT_PERIODIC(&timer_config, divert_timer,
-        DIVERT_PACKET_TIMEOUT);
+    WDF_TIMER_CONFIG_INIT(&timer_config, divert_timer);
     timer_config.AutomaticSerialization = TRUE;
     WDF_OBJECT_ATTRIBUTES_INIT(&timer_attributes);
     timer_attributes.ParentObject = (WDFOBJECT)object;
@@ -601,8 +723,6 @@ extern VOID divert_create(IN WDFDEVICE device, IN WDFREQUEST request,
         goto divert_create_exit;
     }
     context->state = DIVERT_CONTEXT_STATE_OPEN;
-    WdfTimerStart(context->timer,
-        WDF_REL_TIMEOUT_IN_MS(DIVERT_PACKET_TIMEOUT));
 
 divert_create_exit:
 
@@ -633,8 +753,46 @@ divert_create_exit:
 static NTSTATUS divert_register_callouts(context_t context, BOOL is_inbound,
     BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6)
 {
-    UINT8 i;
+    UINT8 i, j;
+    layer_t layers[DIVERT_CONTEXT_MAXLAYERS];
     NTSTATUS status;
+
+    i = 0;
+    switch (context->layer)
+    {
+        case DIVERT_LAYER_NETWORK:
+            if (is_inbound && is_ipv4)
+            {
+                layers[i++] = layer_inbound_network_ipv4;
+            }
+            if (is_outbound && is_ipv4)
+            {
+                layers[i++] = layer_outbound_network_ipv4;
+            }
+            if (is_inbound && is_ipv6)
+            {
+                layers[i++] = layer_inbound_network_ipv6;
+            }
+            if (is_outbound && is_ipv6)
+            {
+                layers[i++] = layer_outbound_network_ipv6;
+            }
+            break;
+
+        case DIVERT_LAYER_NETWORK_FORWARD:
+            if (is_ipv4)
+            {
+                layers[i++] = layer_forward_network_ipv4;
+            }
+            if (is_ipv6)
+            {
+                layers[i++] = layer_forward_network_ipv6;
+            }
+            break;
+
+        default:
+            return STATUS_INVALID_PARAMETER;
+    }
 
     status = FwpmTransactionBegin0(context->engine_handle, 0);
     if (!NT_SUCCESS(status))
@@ -642,10 +800,9 @@ static NTSTATUS divert_register_callouts(context_t context, BOOL is_inbound,
         DEBUG_ERROR("failed to begin WFP transaction", status);
         goto divert_register_callouts_exit;
     }
-    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    for (j = 0; j < i; j++)
     {
-        status = divert_register_callout(context, i, is_inbound, is_outbound,
-            is_ipv4, is_ipv6);
+        status = divert_register_callout(context, j, layers[j]);
         if (!NT_SUCCESS(status))
         {
             FwpmTransactionAbort0(context->engine_handle);
@@ -663,12 +820,12 @@ divert_register_callouts_exit:
 
     if (!NT_SUCCESS(status))
     {
-        for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+        for (j = 0; j < i; j++)
         {
-            if (context->registered[i])
+            if (context->registered[j])
             {
-                FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
-                context->registered[i] = FALSE;
+                FwpsCalloutUnregisterByKey0(&context->callout_guid[j]);
+                context->registered[j] = FALSE;
             }
         }
     }
@@ -680,111 +837,37 @@ divert_register_callouts_exit:
  * Register a WFP callout.
  */
 static NTSTATUS divert_register_callout(context_t context, UINT idx,
-    BOOL is_inbound, BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6)
+    layer_t layer)
 {
-    static wchar_t *sublayer_name[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"DivertSubLayerOutboundIPv4",
-        L"DivertSubLayerInboundIPv4",
-        L"DivertSubLayerOutboundIPv6",
-        L"DivertSubLayerInboundIPv6"
-    };
-    static wchar_t *sublayer_desc[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"Divert sublayer (outbound IPv4)",
-        L"Divert sublayer (inbound IPv4)",
-        L"Divert sublayer (outbound IPv6)",
-        L"Divert sublayer (inbound IPv6)"
-    };
-    static wchar_t *callout_name[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"DivertCalloutOutboundIPv4",
-        L"DivertCalloutInboundIPv4",
-        L"DivertCalloutOutboundIPv6",
-        L"DivertCalloutInboundIPv6"
-    };
-    static wchar_t *callout_desc[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"Divert callout (outbound IPv4)",
-        L"Divert callout (inbound IPv4)",
-        L"Divert callout (outbound IPv6)",
-        L"Divert callout (inbound IPv6)"
-    };
-    static wchar_t *filter_name[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"DivertFilterOutboundIPv4",
-        L"DivertFilterInboundIPv4",
-        L"DivertFilterOutboundIPv6",
-        L"DivertFilterInboundIPv6"
-    };
-    static wchar_t *filter_desc[DIVERT_CONTEXT_NUMLAYERS] =
-    {
-        L"Divert filter (outbound IPv4)",
-        L"Divert filter (inbound IPv4)",
-        L"Divert filter (outbound IPv6)",
-        L"Divert filter (inbound IPv6)"
-    };
-    GUID layer;
     FWPM_SUBLAYER0 sublayer;
     FWPS_CALLOUT0 scallout;
     FWPM_CALLOUT0 mcallout;
     FWPM_FILTER0 filter;
-    BOOL required, registered = FALSE;
-    divert_callout_t callout;
+    BOOL registered = FALSE;
     NTSTATUS status;
-
-    switch (idx)
-    {
-        case DIVERT_CONTEXT_OUTBOUND_IPV4_LAYER:
-            required = (is_outbound && is_ipv4);
-            layer = FWPM_LAYER_OUTBOUND_IPPACKET_V4;
-            callout = divert_classify_outbound_v4_callout;
-            break;
-        case DIVERT_CONTEXT_INBOUND_IPV4_LAYER:
-            required = (is_inbound && is_ipv4);
-            layer = FWPM_LAYER_INBOUND_IPPACKET_V4;
-            callout = divert_classify_inbound_v4_callout;
-            break;
-        case DIVERT_CONTEXT_OUTBOUND_IPV6_LAYER:
-            required = (is_outbound && is_ipv6);
-            layer = FWPM_LAYER_OUTBOUND_IPPACKET_V6;
-            callout = divert_classify_outbound_v6_callout;
-            break;
-        case DIVERT_CONTEXT_INBOUND_IPV6_LAYER:
-            required = (is_inbound && is_ipv6);
-            layer = FWPM_LAYER_INBOUND_IPPACKET_V6;
-            callout = divert_classify_inbound_v6_callout;
-            break;
-        default:
-            return STATUS_INVALID_PARAMETER;
-    }
-
-    if (!required)
-    {
-        return STATUS_SUCCESS;
-    }
 
     RtlZeroMemory(&sublayer, sizeof(sublayer));
     sublayer.subLayerKey             = context->sublayer_guid[idx];
-    sublayer.displayData.name        = sublayer_name[idx];
-    sublayer.displayData.description = sublayer_desc[idx];
-    sublayer.weight                  = FWP_EMPTY;
+    sublayer.displayData.name        = layer->sublayer_name;
+    sublayer.displayData.description = layer->sublayer_desc;
+    sublayer.weight                  =
+       (UINT16)(DIVERT_PRIORITY_MAX - context->priority);
     RtlZeroMemory(&scallout, sizeof(scallout));
     scallout.calloutKey              = context->callout_guid[idx];
-    scallout.classifyFn              = callout;
+    scallout.classifyFn              = layer->callout;
     scallout.notifyFn                = divert_notify_callout;
     scallout.flowDeleteFn            = NULL;
     RtlZeroMemory(&mcallout, sizeof(mcallout));
     mcallout.calloutKey              = context->callout_guid[idx];
-    mcallout.displayData.name        = callout_name[idx];
-    mcallout.displayData.description = callout_desc[idx];
-    mcallout.applicableLayer         = layer;
+    mcallout.displayData.name        = layer->callout_name;
+    mcallout.displayData.description = layer->callout_desc;
+    mcallout.applicableLayer         = layer->guid;
     RtlZeroMemory(&filter, sizeof(filter));
     filter.filterKey                 = context->filter_guid[idx];
-    filter.layerKey                  = layer;
-    filter.displayData.name          = filter_name[idx];
-    filter.displayData.description   = filter_desc[idx];
-    filter.action.type               = FWP_ACTION_CALLOUT_TERMINATING;
+    filter.layerKey                  = layer->guid;
+    filter.displayData.name          = layer->filter_name;
+    filter.displayData.description   = layer->filter_desc;
+    filter.action.type               = FWP_ACTION_CALLOUT_UNKNOWN;
     filter.action.calloutKey         = context->callout_guid[idx];
     filter.subLayerKey               = context->sublayer_guid[idx];
     filter.weight.type               = FWP_EMPTY;
@@ -863,13 +946,16 @@ extern VOID divert_timer(IN WDFTIMER timer)
 
         // Packet is old, dispose of it.
         DEBUG("TIMEOUT (context=%p, packet=%p)", context, packet);
-        FwpsDereferenceNetBufferList0(packet->buffers, FALSE);
-        ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
+        divert_free_packet(packet);
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
 
     KeReleaseInStackQueuedSpinLock(&lock_handle);
     context->timer_ticktock = !context->timer_ticktock;
+
+    // Restart the timer.
+    WdfTimerStart(context->timer,
+        WDF_REL_TIMEOUT_IN_MS(context->timer_timeout));
 }
 
 /*
@@ -891,7 +977,7 @@ extern VOID divert_cleanup(IN WDFFILEOBJECT object)
     {
         return;
     }
-    WdfTimerStop(context->timer, FALSE);
+    WdfTimerStop(context->timer, TRUE);
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     context->state = DIVERT_CONTEXT_STATE_CLOSING;
     while (!IsListEmpty(&context->packet_queue))
@@ -899,8 +985,7 @@ extern VOID divert_cleanup(IN WDFFILEOBJECT object)
         entry = RemoveHeadList(&context->packet_queue);
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         packet = CONTAINING_RECORD(entry, struct packet_s, entry);
-        FwpsDereferenceNetBufferList0(packet->buffers, FALSE);
-        ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
+        divert_free_packet(packet);
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
     KeReleaseInStackQueuedSpinLock(&lock_handle);
@@ -914,7 +999,7 @@ extern VOID divert_cleanup(IN WDFFILEOBJECT object)
         DEBUG_ERROR("failed to begin WFP transaction", status);
         goto divert_cleanup_exit;
     }
-    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    for (i = 0; i < DIVERT_CONTEXT_MAXLAYERS; i++)
     {
 	if (!context->registered[i])
 	{
@@ -946,12 +1031,17 @@ extern VOID divert_cleanup(IN WDFFILEOBJECT object)
 
 divert_cleanup_exit:
     FwpmEngineClose0(context->engine_handle);
-    for (i = 0; i < DIVERT_CONTEXT_NUMLAYERS; i++)
+    for (i = 0; i < DIVERT_CONTEXT_MAXLAYERS; i++)
     {
         if (context->registered[i])
         {
             FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
         }
+    }
+    if (context->filter != NULL)
+    {   
+        ExFreePoolWithTag(context->filter, DIVERT_FILTER_TAG);
+        context->filter = NULL;
     }
 }
 
@@ -1010,6 +1100,8 @@ static void divert_read_service(context_t context)
     packet_t packet;
     req_context_t req_context;
     divert_addr_t addr;
+
+    DEBUG("divert_read_service");
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     while (context->state == DIVERT_CONTEXT_STATE_OPEN &&
@@ -1073,8 +1165,7 @@ static void divert_read_service(context_t context)
         status = STATUS_SUCCESS;
 
 divert_read_service_complete:
-        FwpsDereferenceNetBufferList0(packet->buffers, FALSE);
-        ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
+        divert_free_packet(packet);
         if (NT_SUCCESS(status))
         {
             WdfRequestCompleteWithInformation(request, status, dst_len);
@@ -1099,6 +1190,7 @@ static NTSTATUS divert_write(context_t context, WDFREQUEST request,
     UINT data_len;
     struct iphdr *ip_header;
     BOOL isipv4;
+    HANDLE handle;
     PNET_BUFFER_LIST buffers = NULL;
     NTSTATUS status = STATUS_SUCCESS;
 
@@ -1108,6 +1200,14 @@ static NTSTATUS divert_write(context_t context, WDFREQUEST request,
     if (!divert_context_verify(context, DIVERT_CONTEXT_STATE_OPEN))
     {
         status = STATUS_INVALID_DEVICE_STATE;
+        goto divert_write_exit;
+    }
+
+    if (addr->Direction != DIVERT_DIRECTION_INBOUND &&
+        addr->Direction != DIVERT_DIRECTION_OUTBOUND)
+    {
+        status = STATUS_INVALID_PARAMETER;
+        DEBUG_ERROR("failed to inject packet; invalid direction", status);
         goto divert_write_exit;
     }
 
@@ -1149,8 +1249,8 @@ static NTSTATUS divert_write(context_t context, WDFREQUEST request,
             goto divert_write_exit;
     }
 
-    status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle,
-        0, 0, mdl, 0, data_len, &buffers);
+    status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle, 0, 0, mdl,
+        0, data_len, &buffers);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
@@ -1158,44 +1258,25 @@ static NTSTATUS divert_write(context_t context, WDFREQUEST request,
         goto divert_write_exit;
     }
 
-    WdfObjectReference(request);
-    switch (addr->Direction)
+    handle = (isipv4? inject_handle: injectv6_handle);
+    if (context->layer == DIVERT_LAYER_NETWORK_FORWARD)
     {
-        case DIVERT_PACKET_DIRECTION_OUTBOUND:
-            if (isipv4)
-            {
-                status = FwpsInjectNetworkSendAsync0(inject_handle, 
-                    DIVERT_PACKET_INJECTED, 0, UNSPECIFIED_COMPARTMENT_ID,
-                    buffers, divert_inject_complete, (HANDLE)request);
-            }
-            else
-            {
-                status = FwpsInjectNetworkSendAsync0(injectv6_handle, 
-                    DIVERT_PACKET_INJECTED, 0, UNSPECIFIED_COMPARTMENT_ID,
-                    buffers, divert_inject_complete, (HANDLE)request);
-            }
-            break;
-        case DIVERT_PACKET_DIRECTION_INBOUND:
-            if (isipv4)
-            {
-                status = FwpsInjectNetworkReceiveAsync0(inject_handle, 
-                    DIVERT_PACKET_INJECTED, 0, UNSPECIFIED_COMPARTMENT_ID,
-                    addr->IfIdx, addr->SubIfIdx, buffers,
-                    divert_inject_complete, (HANDLE)request);
-            }
-            else
-            {
-                status = FwpsInjectNetworkReceiveAsync0(injectv6_handle, 
-                    DIVERT_PACKET_INJECTED, 0, UNSPECIFIED_COMPARTMENT_ID,
-                    addr->IfIdx, addr->SubIfIdx, buffers,
-                    divert_inject_complete, (HANDLE)request);
-            }
-            break;
-        default:
-            WdfObjectDereference(request);
-            status = STATUS_INVALID_PARAMETER;
-            DEBUG_ERROR("failed to inject packet; invalid direction", status);
-            goto divert_write_exit;
+        status = FwpsInjectForwardAsync0(handle, (HANDLE)context->priority,
+            0, (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
+            addr->IfIdx, buffers, divert_inject_complete, (HANDLE)request);
+    }
+    else if (addr->Direction == DIVERT_DIRECTION_OUTBOUND)
+    {
+        status = FwpsInjectNetworkSendAsync0(handle,
+            (HANDLE)context->priority, 0, UNSPECIFIED_COMPARTMENT_ID, buffers,
+            divert_inject_complete, (HANDLE)request);
+    }
+    else
+    {
+        status = FwpsInjectNetworkReceiveAsync0(handle, 
+            (HANDLE)context->priority, 0, UNSPECIFIED_COMPARTMENT_ID,
+            addr->IfIdx, addr->SubIfIdx, buffers, divert_inject_complete,
+            (HANDLE)request);
     }
 
 divert_write_exit:
@@ -1238,7 +1319,6 @@ static void NTAPI divert_inject_complete(VOID *context,
     }
     FwpsFreeNetBufferList0(buffers);
     WdfRequestCompleteWithInformation(request, status, length);
-    WdfObjectDereference(request);
 }
 
 /*
@@ -1280,8 +1360,8 @@ VOID divert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     }
 
     ioctl = (divert_ioctl_t)inbuf;
-    if (ioctl->version != DIVERT_VERSION || ioctl->magic != DIVERT_MAGIC ||
-        ioctl->reserved != 0x0)
+    if (ioctl->version != DIVERT_IOCTL_VERSION ||
+        ioctl->magic != DIVERT_IOCTL_MAGIC)
     {
         status = STATUS_INVALID_DEVICE_REQUEST;
         DEBUG_ERROR("input buffer contained a bad ioctl message header",
@@ -1326,11 +1406,18 @@ VOID divert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
             addr = (divert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
             break;
 
-        case IOCTL_DIVERT_SET_FILTER:
+        case IOCTL_DIVERT_START_FILTER:
             status = STATUS_INVALID_DEVICE_REQUEST;
             DEBUG_ERROR("arg pointer is non-NULL for SET_FILTER ioctl",
                 status);
             goto divert_caller_context_error;
+
+        case IOCTL_DIVERT_SET_LAYER:
+        case IOCTL_DIVERT_SET_PRIORITY:
+        case IOCTL_DIVERT_SET_FLAGS:
+        case IOCTL_DIVERT_SET_PARAM:
+        case IOCTL_DIVERT_GET_PARAM:
+            break;
         
         default:
             status = STATUS_INVALID_DEVICE_REQUEST;
@@ -1368,6 +1455,7 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     req_context_t req_context;
     NTSTATUS status = STATUS_SUCCESS;
     context_t context = divert_context_get(WdfRequestGetFileObject(request));
+    UINT64 value, *valptr;
     UNREFERENCED_PARAMETER(queue);
 
     DEBUG("IOCTL: I/O control request (context=%p)", context);
@@ -1385,17 +1473,21 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
         DEBUG_ERROR("failed to retrieve input buffer", status);
         goto divert_ioctl_exit;
     }
-    status = WdfRequestRetrieveOutputBuffer(request, 0, &outbuf, &outbuflen);
-    if (!NT_SUCCESS(status))
+    switch (code)
     {
-        DEBUG_ERROR("failed to retrieve output buffer", status);
-        goto divert_ioctl_exit;
-    }
-    if (inbuflen != in_length || outbuflen != out_length)
-    {
-        status = STATUS_INVALID_DEVICE_REQUEST;
-        DEBUG_ERROR("buffer length mismatch", status);
-        goto divert_ioctl_exit;
+        case IOCTL_DIVERT_START_FILTER: case IOCTL_DIVERT_GET_PARAM:
+            status = WdfRequestRetrieveOutputBuffer(request, 0, &outbuf,
+                &outbuflen);
+            if (!NT_SUCCESS(status))
+            {
+                DEBUG_ERROR("failed to retrieve output buffer", status);
+                goto divert_ioctl_exit;
+            }
+            break;
+        default:
+            outbuf = NULL;
+            outbuflen = 0;
+            break;
     }
 
     // Handle the ioctl:
@@ -1420,7 +1512,7 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             }
             break;
         
-        case IOCTL_DIVERT_SET_FILTER:
+        case IOCTL_DIVERT_START_FILTER:
         {
             BOOL is_inbound, is_outbound, is_ipv4, is_ipv6;
 
@@ -1431,22 +1523,138 @@ extern VOID divert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 goto divert_ioctl_exit;
             }
 
+            context->layer = context->layer_0;
+            context->flags = context->flags_0;
+            context->priority = context->priority_0;
+
             filter = (divert_ioctl_filter_t)outbuf;
             filter_len = outbuflen;
-            if (!divert_filter_compile(filter, filter_len, context->filter))
+            context->filter = divert_filter_compile(filter, filter_len);
+            if (context->filter == NULL)
             {
                 status = STATUS_INVALID_DEVICE_REQUEST;
                 DEBUG_ERROR("failed to compile filter", status);
                 goto divert_ioctl_exit;
             }
 
-            divert_filter_analyze(context->filter, &is_inbound, &is_outbound,
-                &is_ipv4, &is_ipv6);
+            if ((context->flags & DIVERT_FLAG_SNIFF) != 0 &&
+                (context->flags & DIVERT_FLAG_DROP) != 0)
+            {
+                // Passthru mode.
+                is_inbound = is_outbound = is_ipv4 = is_ipv6 = FALSE;
+            }
+            else
+            {
+                divert_filter_analyze(context->filter, &is_inbound,
+                    &is_outbound, &is_ipv4, &is_ipv6);
+            }
             status = divert_register_callouts(context, is_inbound,
                 is_outbound, is_ipv4, is_ipv6);
 
+            // Start the timer.
+            WdfTimerStart(context->timer,
+                WDF_REL_TIMEOUT_IN_MS(context->timer_timeout));
+
             break;
         }
+
+        case IOCTL_DIVERT_SET_LAYER:
+            ioctl = (divert_ioctl_t)inbuf;
+            if (ioctl->arg > DIVERT_LAYER_MAX)
+            {
+                status = STATUS_INVALID_DEVICE_REQUEST;
+                DEBUG_ERROR("failed to set layer; value too big", status);
+                goto divert_ioctl_exit;
+            }
+            context->layer_0 = (UINT8)ioctl->arg;
+            break;
+
+        case IOCTL_DIVERT_SET_PRIORITY:
+            ioctl = (divert_ioctl_t)inbuf;
+            if (ioctl->arg > DIVERT_PRIORITY_MAX)
+            {
+                status = STATUS_INVALID_DEVICE_REQUEST;
+                DEBUG_ERROR("failed to set priority; value too big", status);
+                goto divert_ioctl_exit;
+            }
+            context->priority_0 = (UINT16)ioctl->arg;
+            break;
+
+        case IOCTL_DIVERT_SET_FLAGS:
+            ioctl = (divert_ioctl_t)inbuf;
+            if (ioctl->arg > DIVERT_FLAGS_MAX)
+            {
+                status = STATUS_INVALID_DEVICE_REQUEST;
+                DEBUG_ERROR("failed to set flags; invalid flags value",
+                    status);
+                goto divert_ioctl_exit;
+            }
+            context->flags_0 = ioctl->arg;
+            break;
+
+        case IOCTL_DIVERT_SET_PARAM:
+            ioctl = (divert_ioctl_t)inbuf;
+            value = ioctl->arg;
+            switch ((DIVERT_PARAM)ioctl->arg8)
+            {
+                case DIVERT_PARAM_QUEUE_LEN:
+                    if (value < DIVERT_PARAM_QUEUE_LEN_MIN ||
+                        value > DIVERT_PARAM_QUEUE_LEN_MAX)
+                    {
+                        status = STATUS_INVALID_DEVICE_REQUEST;
+                        DEBUG_ERROR("failed to set queue length; invalid "
+                            "value", status);
+                        goto divert_ioctl_exit;
+                    }
+                    context->packet_queue_maxlength = (ULONG)value;
+                    break;
+
+                case DIVERT_PARAM_QUEUE_TIME:
+                    if (value < DIVERT_PARAM_QUEUE_TIME_MIN ||
+                        value > DIVERT_PARAM_QUEUE_TIME_MAX)
+                    {
+                        status = STATUS_INVALID_DEVICE_REQUEST;
+                        DEBUG_ERROR("failed to set queue time; invalid "
+                            "value", status);
+                        goto divert_ioctl_exit;
+                    }
+                    context->timer_timeout = (UINT)value;
+                    break;
+
+                default:
+                    status = STATUS_INVALID_DEVICE_REQUEST;
+                    DEBUG_ERROR("failed to set parameter; invalid parameter",
+                        status);
+                    goto divert_ioctl_exit;
+            }
+            break;
+
+        case IOCTL_DIVERT_GET_PARAM:
+            ioctl = (divert_ioctl_t)inbuf;
+            if (outbuflen != sizeof(UINT64))
+            {
+                status = STATUS_INVALID_DEVICE_REQUEST;
+                DEBUG_ERROR("failed to get parameter; invalid output "
+                    "buffer size", status);
+                goto divert_ioctl_exit;
+            }
+            valptr = (UINT64 *)outbuf;
+            switch ((DIVERT_PARAM)ioctl->arg8)
+            {
+                case DIVERT_PARAM_QUEUE_LEN:
+                    *valptr = context->packet_queue_maxlength;
+                    break;
+                case DIVERT_PARAM_QUEUE_TIME:
+                    *valptr = context->timer_timeout;
+                    break;
+                default:
+                    status = STATUS_INVALID_DEVICE_REQUEST;
+                    DEBUG_ERROR("failed to get parameter; invalid parameter",
+                        status);
+                    goto divert_ioctl_exit;
+            }
+            break;
+
         default:
             status = STATUS_INVALID_DEVICE_REQUEST;
             DEBUG_ERROR("failed to complete I/O control; invalid request",
@@ -1473,13 +1681,13 @@ static NTSTATUS divert_notify_callout(IN FWPS_CALLOUT_NOTIFY_TYPE type,
 /*
  * Divert classify outbound IPv4 callout.
  */
-static void divert_classify_outbound_v4_callout(
+static void divert_classify_outbound_network_v4_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    divert_classify_callout(DIVERT_PACKET_DIRECTION_OUTBOUND,
+    divert_classify_callout(DIVERT_DIRECTION_OUTBOUND,
         fixed_vals->incomingValue[
             FWPS_FIELD_OUTBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
@@ -1490,13 +1698,13 @@ static void divert_classify_outbound_v4_callout(
 /*
  * Divert classify outbound IPv6 callout.
  */
-static void divert_classify_outbound_v6_callout(
+static void divert_classify_outbound_network_v6_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    divert_classify_callout(DIVERT_PACKET_DIRECTION_OUTBOUND,
+    divert_classify_callout(DIVERT_DIRECTION_OUTBOUND,
         fixed_vals->incomingValue[
             FWPS_FIELD_OUTBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
@@ -1507,7 +1715,7 @@ static void divert_classify_outbound_v6_callout(
 /*
  * Divert classify inbound IPv4 callout.
  */
-static void divert_classify_inbound_v4_callout(
+static void divert_classify_inbound_network_v4_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
@@ -1527,10 +1735,10 @@ static void divert_classify_inbound_v4_callout(
         0, NULL);
     if (!NT_SUCCESS(status))
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
-    divert_classify_callout(DIVERT_PACKET_DIRECTION_INBOUND,
+    divert_classify_callout(DIVERT_DIRECTION_INBOUND,
         fixed_vals->incomingValue[
             FWPS_FIELD_INBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
@@ -1546,7 +1754,7 @@ static void divert_classify_inbound_v4_callout(
 /*
  * Divert classify inbound IPv6 callout.
  */
-static void divert_classify_inbound_v6_callout(
+static void divert_classify_inbound_network_v6_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
@@ -1566,10 +1774,10 @@ static void divert_classify_inbound_v6_callout(
         0, NULL);
     if (!NT_SUCCESS(status))
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
-    divert_classify_callout(DIVERT_PACKET_DIRECTION_INBOUND,
+    divert_classify_callout(DIVERT_DIRECTION_INBOUND,
         fixed_vals->incomingValue[
             FWPS_FIELD_INBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
@@ -1581,6 +1789,38 @@ static void divert_classify_inbound_v6_callout(
             NULL);
     }
 }
+
+/*
+ * Divert classify forward IPv4 callout.
+ */
+static void divert_classify_forward_network_v4_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result)
+{
+    divert_classify_callout(DIVERT_DIRECTION_OUTBOUND,
+        fixed_vals->incomingValue[
+            FWPS_FIELD_OUTBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32,
+        0, TRUE, fixed_vals, meta_vals, data, filter, flow_context, result);
+}
+
+/*
+ * Divert classify forward IPv6 callout.
+ */
+static void divert_classify_forward_network_v6_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result)
+{
+    divert_classify_callout(DIVERT_DIRECTION_OUTBOUND,
+        fixed_vals->incomingValue[
+            FWPS_FIELD_OUTBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32,
+        0, FALSE, fixed_vals, meta_vals, data, filter, flow_context, result);
+}
+
+
 /*
  * Divert classify callout.
  */
@@ -1594,7 +1834,8 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     KLOCK_QUEUE_HANDLE lock_handle;
     FWPS_PACKET_INJECTION_STATE packet_state;
     HANDLE packet_context;
-    PNET_BUFFER_LIST buffers, buffers_fst, buffers_cpy, buffers_itr;
+    UINT32 priority;
+    PNET_BUFFER_LIST buffers, buffers_fst, buffers_itr;
     PNET_BUFFER buffer, buffer0;
     PLIST_ENTRY entry;
     BOOL outbound;
@@ -1619,17 +1860,24 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
         packet_state = FwpsQueryPacketInjectionState0(injectv6_handle,
             buffers, &packet_context);
     }
-    if ((packet_state == FWPS_PACKET_INJECTED_BY_SELF ||
-         packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF) &&
-         packet_context == DIVERT_PACKET_INJECTED)
-    {
-        result->actionType = FWP_ACTION_PERMIT;
-        return;
-    }
     if (!divert_context_verify(context, DIVERT_CONTEXT_STATE_OPEN))
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
+    }
+    if (packet_state == FWPS_PACKET_INJECTED_BY_SELF ||
+        packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF)
+    {
+        priority = (UINT32)packet_context;
+        if (priority <= context->priority)
+        {
+            result->actionType = FWP_ACTION_CONTINUE;
+            return;
+        }
+    }
+    else
+    {
+        priority = 0;
     }
 
     /*
@@ -1637,14 +1885,14 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
      * may contain several NET_BUFFER structures.  Each NET_BUFFER needs to
      * be filtered independently.  To achieve this we do the following:
      * 1) First check if any NET_BUFFER passes the filter.
-     * 2) If no, then PERMIT the entire NET_BUFFER_LIST.
+     * 2) If no, then CONTINUE the entire NET_BUFFER_LIST.
      * 3) Else, split the NET_BUFFER_LIST into individual NET_BUFFERs; and
      *    either queue or re-inject based on the filter.
      */
 
     // Find the first NET_BUFFER we need to queue:
     buffers_fst = buffers;
-    outbound = (direction == DIVERT_PACKET_DIRECTION_OUTBOUND);
+    outbound = (direction == DIVERT_DIRECTION_OUTBOUND);
     do
     {
         buffer = NET_BUFFER_LIST_FIRST_NB(buffers_fst);
@@ -1660,21 +1908,28 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     // No NET_BUFFER needs to be queued, permit the entire NET_BUFFER_LIST:
     if (buffers_fst == NULL)
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
 
-    // Re-inject all packets up to 'buffers_fst'
-    buffers_itr = buffers;
-    while (buffers_itr != buffers_fst)
+    if ((context->flags & DIVERT_FLAG_SNIFF) == 0)
     {
-        buffer = NET_BUFFER_LIST_FIRST_NB(buffers_itr);
-        if (!divert_reinject_packet(context, direction, isipv4, if_idx,
-                sub_if_idx, buffers, buffer))
+        // Re-inject all packets up to 'buffers_fst'
+        buffers_itr = buffers;
+        while (buffers_itr != buffers_fst)
         {
-            goto divert_classify_callout_exit;
+            buffer = NET_BUFFER_LIST_FIRST_NB(buffers_itr);
+            if (!divert_reinject_packet(context, direction, isipv4, if_idx,
+                    sub_if_idx, priority, buffers, buffer))
+            {
+                goto divert_classify_callout_exit;
+            }
+            buffers_itr = NET_BUFFER_LIST_NEXT_NBL(buffers_itr);
         }
-        buffers_itr = NET_BUFFER_LIST_NEXT_NBL(buffers_itr);
+    }
+    else
+    {
+        buffers_itr = buffers_fst;
     }
 
     // Queue buffers_itr = buffers_fst, which matched our filter.
@@ -1699,10 +1954,10 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
                 goto divert_classify_callout_exit;
             }
         }
-        else
+        else if ((context->flags & DIVERT_FLAG_SNIFF) == 0)
         {
             if (!divert_reinject_packet(context, direction, isipv4, if_idx,
-                    sub_if_idx, buffers, buffer))
+                    sub_if_idx, priority, buffers, buffer))
             {
                 goto divert_classify_callout_exit;
             }
@@ -1710,11 +1965,23 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     }
 
     // Since new packets have been queued, service any read.
-    divert_read_service(context);
+    if ((context->flags & DIVERT_FLAG_DROP) == 0)
+    {
+        divert_read_service(context);
+    }
 
 divert_classify_callout_exit:
-    result->actionType = FWP_ACTION_BLOCK;
-    result->flags |= FWPS_CLASSIFY_OUT_FLAG_ABSORB;
+
+    if ((context->flags & DIVERT_FLAG_SNIFF) != 0)
+    {
+        result->actionType = FWP_ACTION_CONTINUE;
+    }
+    else
+    {
+        result->actionType = FWP_ACTION_BLOCK;
+        result->flags |= FWPS_CLASSIFY_OUT_FLAG_ABSORB;
+        result->rights &= ~FWPS_RIGHT_ACTION_WRITE;
+    }
 }
 
 /*
@@ -1727,6 +1994,12 @@ static BOOL divert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksum_info;
     PLIST_ENTRY entry;
     packet_t packet;
+    NTSTATUS status;
+
+    if ((context->flags & DIVERT_FLAG_DROP) != 0)
+    {
+        return TRUE;
+    }
 
     packet = (packet_t)ExAllocatePoolWithTag(NonPagedPool, DIVERT_PACKET_SIZE,
         DIVERT_PACKET_TAG);
@@ -1734,6 +2007,26 @@ static BOOL divert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     {
         return FALSE;
     }
+
+    if ((context->flags & DIVERT_FLAG_SNIFF) != 0)
+    {
+        // Clone the buffer
+        status = FwpsAllocateNetBufferAndNetBufferList0(
+            pool_handle, 0, 0, NET_BUFFER_FIRST_MDL(buffer),
+            NET_BUFFER_DATA_OFFSET(buffer), NET_BUFFER_DATA_LENGTH(buffer),
+            &packet->clone);
+        if (!NT_SUCCESS(status))
+        {
+            ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
+            return FALSE;
+        }
+        buffer = NET_BUFFER_LIST_FIRST_NB(packet->clone);
+    }
+    else
+    {
+        packet->clone = NULL;
+    }
+    
     checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
         TcpIpChecksumNetBufferListInfo);
     packet->buffer = buffer;
@@ -1741,7 +2034,7 @@ static BOOL divert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     packet->direction = direction;
     packet->if_idx = if_idx;
     packet->sub_if_idx = sub_if_idx;
-    if (direction == DIVERT_PACKET_DIRECTION_OUTBOUND)
+    if (direction == DIVERT_DIRECTION_OUTBOUND)
     {
         // IPv4 Checksum is not calculated yet
         packet->ip_checksum = TRUE;
@@ -1762,8 +2055,7 @@ static BOOL divert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     {
         // We are no longer open
         KeReleaseInStackQueuedSpinLock(&lock_handle);
-        FwpsDereferenceNetBufferList0(buffers, FALSE);
-        ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
+        divert_free_packet(packet);
         return FALSE;
     }
     InsertTailList(&context->packet_queue, entry);
@@ -1780,8 +2072,7 @@ static BOOL divert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
         // Queue is full; 'entry' contains a dropped packet.
         DEBUG("DROP: packet queue is full, dropping packet");
         packet = CONTAINING_RECORD(entry, struct packet_s, entry);
-        FwpsDereferenceNetBufferList0(packet->buffers, FALSE);
-        ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
+        divert_free_packet(packet);
     }
     DEBUG("PACKET: diverting packet (packet=%p)", packet);
 
@@ -1789,13 +2080,27 @@ static BOOL divert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
 }
 
 /*
+ * Free a packet.
+ */
+static void divert_free_packet(packet_t packet)
+{
+    FwpsDereferenceNetBufferList0(packet->buffers, FALSE);
+    if (packet->clone != NULL)
+    {
+        FwpsFreeNetBufferList0(packet->clone);
+    }
+    ExFreePoolWithTag(packet, DIVERT_PACKET_TAG);
+}
+
+/*
  * Re-inject a NET_BUFFER.
  */
 static BOOL divert_reinject_packet(context_t context, UINT8 direction,
-    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, PNET_BUFFER_LIST buffers,
-    PNET_BUFFER buffer)
+    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, UINT32 priority,
+    PNET_BUFFER_LIST buffers, PNET_BUFFER buffer)
 {
     PNET_BUFFER_LIST buffers_cpy;
+    HANDLE handle;
     NTSTATUS status;
 
     status = FwpsAllocateNetBufferAndNetBufferList0(
@@ -1807,39 +2112,26 @@ static BOOL divert_reinject_packet(context_t context, UINT8 direction,
         return FALSE;
     }
     FwpsReferenceNetBufferList0(buffers, FALSE);
-    if (direction == DIVERT_PACKET_DIRECTION_OUTBOUND)
+    handle = (isipv4? inject_handle: injectv6_handle);
+    if (context->layer == DIVERT_LAYER_NETWORK_FORWARD)
     {
-        if (isipv4)
-        {
-            status = FwpsInjectNetworkSendAsync0(inject_handle, 
-                DIVERT_PACKET_ALLOW, 0, UNSPECIFIED_COMPARTMENT_ID,
-                buffers_cpy, divert_reinject_complete, (HANDLE)buffers);
-        }
-        else
-        {
-            status = FwpsInjectNetworkSendAsync0(injectv6_handle, 
-                DIVERT_PACKET_ALLOW, 0, UNSPECIFIED_COMPARTMENT_ID,
-                buffers_cpy, divert_reinject_complete, (HANDLE)buffers);
-        }
+        status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
+            (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
+            if_idx, buffers_cpy, divert_reinject_complete, (HANDLE)buffers);
+    }   
+    else if (direction == DIVERT_DIRECTION_OUTBOUND)
+    {
+        status = FwpsInjectNetworkSendAsync0(handle, (HANDLE)priority, 0,
+            UNSPECIFIED_COMPARTMENT_ID, buffers_cpy, divert_reinject_complete,
+            (HANDLE)buffers);
     }
     else
     {
         // NOTE: this case should never occur since inbound net buffers only
         //       ever contain one packet.  We keep for completeness.
-        if (isipv4)
-        {
-            status = FwpsInjectNetworkReceiveAsync0(inject_handle, 
-                DIVERT_PACKET_ALLOW, 0, UNSPECIFIED_COMPARTMENT_ID, if_idx,
-                sub_if_idx, buffers_cpy, divert_reinject_complete,
-                (HANDLE)buffers);
-        }
-        else
-        {
-            status = FwpsInjectNetworkReceiveAsync0(injectv6_handle, 
-                DIVERT_PACKET_ALLOW, 0, UNSPECIFIED_COMPARTMENT_ID, if_idx,
-                sub_if_idx, buffers_cpy, divert_reinject_complete,
-                (HANDLE)buffers);
-        }
+        status = FwpsInjectNetworkReceiveAsync0(handle, (HANDLE)priority, 0,
+            UNSPECIFIED_COMPARTMENT_ID, if_idx, sub_if_idx, buffers_cpy,
+            divert_reinject_complete, (HANDLE)buffers);
     }
     if (!NT_SUCCESS(status))
     {
@@ -2017,9 +2309,10 @@ static BOOL divert_filter(PNET_BUFFER buffer, UINT32 if_idx, UINT32 sub_if_idx,
     struct icmpv6hdr *icmpv6_header = NULL;
     struct tcphdr *tcp_header = NULL;
     struct udphdr *udp_header = NULL;
-    UINT8 ip, protocol, ttl;
+    UINT16 ip, ttl;
+    UINT8 protocol;
 
-    // Parse the headers: 
+    // Parse the headers:
     tot_len = NET_BUFFER_DATA_LENGTH(buffer);
     if (tot_len < sizeof(struct iphdr))
     {
@@ -2477,7 +2770,7 @@ static void divert_filter_analyze(filter_t filter, BOOL *is_inbound,
 /*
  * Test a filter for any packet where field = arg.
  */
-static BOOL divert_filter_test(filter_t filter, UINT8 ip, UINT8 protocol,
+static BOOL divert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
     UINT8 field, UINT32 arg)
 {
     BOOL known = FALSE;
@@ -2547,22 +2840,23 @@ static BOOL divert_filter_test(filter_t filter, UINT8 ip, UINT8 protocol,
 /*
  * Compile a divert filter from an IOCTL.
  */
-static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
-    size_t ioctl_filter_len, filter_t filter)
+static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
+    size_t ioctl_filter_len)
 {
     struct filter_s filter0[DIVERT_FILTER_MAXLEN];
-    UINT8 i;
+    filter_t result;
+    UINT16 i;
     UINT length;
     UINT64 *src, *dst;
 
     if (ioctl_filter_len % sizeof(struct divert_ioctl_filter_s) != 0)
     {
-        return FALSE;
+        return NULL;
     }
     length = ioctl_filter_len / sizeof(struct divert_ioctl_filter_s);
     if (length >= DIVERT_FILTER_MAXLEN)
     {
-        return FALSE;
+        return NULL;
     }
 
     for (i = 0; i < length; i++)
@@ -2570,7 +2864,7 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
         if (ioctl_filter[i].field > DIVERT_FILTER_FIELD_MAX ||
             ioctl_filter[i].test > DIVERT_FILTER_TEST_MAX)
         {
-            return FALSE;
+            return NULL;
         }
         switch (ioctl_filter[i].success)
         {
@@ -2580,7 +2874,7 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 if (ioctl_filter[i].success <= i ||
                     ioctl_filter[i].success >= length)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
         }
@@ -2592,7 +2886,7 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 if (ioctl_filter[i].failure <= i ||
                     ioctl_filter[i].failure >= length)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
         }
@@ -2605,7 +2899,7 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 ioctl_filter[i].arg[2] != 0 ||
                 ioctl_filter[i].arg[3] != 0)
             {
-                return FALSE;
+                return NULL;
             }
         }
         switch (ioctl_filter[i].field)
@@ -2629,14 +2923,14 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
             case DIVERT_FILTER_FIELD_TCP_FIN:
                 if (ioctl_filter[i].arg[0] > 1)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_HDRLENGTH:
             case DIVERT_FILTER_FIELD_TCP_HDRLENGTH:
                 if (ioctl_filter[i].arg[0] > 0x0F)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_TTL:
@@ -2650,13 +2944,13 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
             case DIVERT_FILTER_FIELD_ICMPV6_CODE:
                 if (ioctl_filter[i].arg[0] > UINT8_MAX)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_FRAGOFF:
                 if (ioctl_filter[i].arg[0] > 0x1FFF)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_TOS:
@@ -2679,13 +2973,13 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
             case DIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                 if (ioctl_filter[i].arg[0] > UINT16_MAX)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
                 if (ioctl_filter[i].arg[0] > 0x000FFFFF)
                 {
-                    return FALSE;
+                    return NULL;
                 }
                 break;
             default:
@@ -2776,11 +3070,16 @@ static BOOL divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 filter0[i].protocol = DIVERT_FILTER_PROTOCOL_UDP;
                 break;
             default:
-                return FALSE;
+                return NULL;
         }
     }
-    RtlMoveMemory(filter, filter0, i*sizeof(struct filter_s));
     
-    return TRUE;
+    result = (filter_t)ExAllocatePoolWithTag(NonPagedPool,
+        i*sizeof(struct filter_s), DIVERT_FILTER_TAG);
+    if (result != NULL)
+    {
+        RtlMoveMemory(result, filter0, i*sizeof(struct filter_s));
+    }
+    return result;
 }
 

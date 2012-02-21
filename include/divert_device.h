@@ -1,29 +1,49 @@
 /*
  * divert_device.h
- * (C) 2011, all rights reserved,
+ * (C) 2012, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
+ * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 #ifndef __DIVERT_DEVICE_H
 #define __DIVERT_DEVICE_H
 
-#define DIVERT_DEVICE_NAME                      L"\\Device\\Divert"
-#define DIVERT_DOS_DEVICE_NAME                  L"\\??\\Divert"
+/*
+ * NOTE: This is the low-level interface to the divert device driver.
+ *       This interface should not be used directly, instead use he high-level
+ *       interface provided by the divert API.
+ */
+
+#define DIVERT_KERNEL
+#include "divert.h"
 
 #define DIVERT_VERSION                          1
-#define DIVERT_MAGIC                            0xF8D3
+#define DIVERT_VERSION_MINOR                    0
+
+#define DIVERT_STR2(s)                          #s
+#define DIVERT_STR(s)                           DIVERT_STR2(s)
+#define DIVERT_LSTR2(s)                         L ## #s
+#define DIVERT_LSTR(s)                          DIVERT_LSTR2(s)
+
+#define DIVERT_VERSION_LSTR                     \
+    DIVERT_LSTR(DIVERT_VERSION) L"." DIVERT_LSTR(DIVERT_VERSION_MINOR)
+
+#define DIVERT_DEVICE_NAME                      \
+    L"WinDivert" DIVERT_VERSION_LSTR
+
+#define DIVERT_IOCTL_VERSION                    2
+#define DIVERT_IOCTL_MAGIC                      0xE8D3
 
 #define DIVERT_FILTER_FIELD_ZERO                0
 #define DIVERT_FILTER_FIELD_INBOUND             1
@@ -94,18 +114,40 @@
 #define DIVERT_FILTER_TEST_GEQ                  5
 #define DIVERT_FILTER_TEST_MAX                  DIVERT_FILTER_TEST_GEQ
 
-#define DIVERT_FILTER_MAXLEN                    64
+#define DIVERT_FILTER_MAXLEN                    512
 
 #define DIVERT_FILTER_RESULT_ACCEPT             (DIVERT_FILTER_MAXLEN+1)
 #define DIVERT_FILTER_RESULT_REJECT             (DIVERT_FILTER_MAXLEN+2)
 
 /*
- * Packet definitions.
+ * Divert layers.
  */
-#ifndef DIVERT_PACKET_DIRECTION_OUTBOUND
-#define DIVERT_PACKET_DIRECTION_OUTBOUND        0
-#define DIVERT_PACKET_DIRECTION_INBOUND         1
-#endif      /* DIVERT_PACKET_DIRECTION_OUTBOUND */
+#define DIVERT_LAYER_DEFAULT                    DIVERT_LAYER_NETWORK
+#define DIVERT_LAYER_MAX                        DIVERT_LAYER_NETWORK_FORWARD
+
+/*
+ * Divert flags.
+ */
+#define DIVERT_FLAGS_MAX                        \
+    (DIVERT_FLAG_SNIFF | DIVERT_FLAG_DROP)
+
+/*
+ * Divert priorities.
+ */
+#define DIVERT_PRIORITY(priority16)             \
+    ((UINT32)((INT32)(priority16) + 0x7FFF + 1))
+#define DIVERT_PRIORITY_DEFAULT                 DIVERT_PRIORITY(0)
+#define DIVERT_PRIORITY_MAX                     DIVERT_PRIORITY(1000)
+
+/*
+ * Divert parameters.
+ */
+#define DIVERT_PARAM_QUEUE_LEN_DEFAULT          512
+#define DIVERT_PARAM_QUEUE_LEN_MIN              1
+#define DIVERT_PARAM_QUEUE_LEN_MAX              8192
+#define DIVERT_PARAM_QUEUE_TIME_DEFAULT         256
+#define DIVERT_PARAM_QUEUE_TIME_MIN             32
+#define DIVERT_PARAM_QUEUE_TIME_MAX             1024
 
 /*
  * Message definitions.
@@ -113,10 +155,10 @@
 #pragma pack(push, 1)
 struct divert_ioctl_s
 {
-    UINT16 magic;                   // DIVERT_MAGIC
-    UINT8  version;                 // DIVERT_VERSION
-    UINT8  reserved;                // Reserved (set to 0x0)
-    UINT64 arg;                     // Pointer to buffer
+    UINT16 magic;                   // DIVERT_IOCTL_MAGIC
+    UINT8  version;                 // DIVERT_IOCTL_VERSION
+    UINT8  arg8;                    // 8-bit argument
+    UINT64 arg;                     // 64-bit argument
 };
 typedef struct divert_ioctl_s *divert_ioctl_t;
 
@@ -127,8 +169,8 @@ struct divert_ioctl_filter_s
 {
     UINT8  field;                   // DIVERT_FILTER_FIELD_IP_*
     UINT8  test;                    // DIVERT_FILTER_TEST_*
-    UINT8  success;                 // Success continuation.
-    UINT8  failure;                 // Fail continuation.
+    UINT16 success;                 // Success continuation.
+    UINT16 failure;                 // Fail continuation.
     UINT32 arg[4];                  // Argument.
 };
 typedef struct divert_ioctl_filter_s *divert_ioctl_filter_t;
@@ -137,11 +179,21 @@ typedef struct divert_ioctl_filter_s *divert_ioctl_filter_t;
 /*
  * IOCTL codes.
  */
-#define IOCTL_DIVERT_RECV           \
+#define IOCTL_DIVERT_RECV               \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x908, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
-#define IOCTL_DIVERT_SEND           \
+#define IOCTL_DIVERT_SEND               \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x909, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
-#define IOCTL_DIVERT_SET_FILTER     \
+#define IOCTL_DIVERT_START_FILTER       \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x90A, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
+#define IOCTL_DIVERT_SET_LAYER          \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x90B, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
+#define IOCTL_DIVERT_SET_PRIORITY       \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x90C, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
+#define IOCTL_DIVERT_SET_FLAGS          \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x90D, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
+#define IOCTL_DIVERT_SET_PARAM          \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x90E, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
+#define IOCTL_DIVERT_GET_PARAM          \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x90F, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 
 #endif      // __DIVERT_DEVICE_H

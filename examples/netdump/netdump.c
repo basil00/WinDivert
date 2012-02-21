@@ -1,30 +1,28 @@
 /*
  * netdump.c
- * (C) 2011, all rights reserved,
+ * (C) 2012, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
+ * it under the terms of the GNU Lesser General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * GNU Lesser General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
+ * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
 /*
  * DESCRIPTION:
- * This is a simple traffic monitor.
+ * This is a simple traffic monitor.  It uses a divert handle in SNIFF mode.
+ * The SNIFF mode copies packets and does not block the original.
  *
- * usage: netdump.exe divert-filter
+ * usage: netdump.exe divert-filter [priority]
  *
- * NOTE: Using Divert for this purpose is rather inefficient, as each captured
- *       packet must be reinjected.  For packet sniffing, it's better to use a
- *       package that copies packets, not copies-and-drops such as Divert.
  */
 
 #include <winsock2.h>
@@ -35,7 +33,7 @@
 
 #include "divert.h"
 
-#define MAXBUF  2048
+#define MAXBUF  0xFFFF
 
 /*
  * Entry.
@@ -43,9 +41,8 @@
 int __cdecl main(int argc, char **argv)
 {
     HANDLE handle, console;
-    size_t slen, flen;
     UINT i;
-    char filter[MAXBUF];
+    INT16 priority = 0;
     char packet[MAXBUF];
     UINT packet_len;
     DIVERT_ADDRESS addr;
@@ -56,28 +53,30 @@ int __cdecl main(int argc, char **argv)
     PDIVERT_TCPHDR tcp_header;
     PDIVERT_UDPHDR udp_header;
 
-    // Concat all command line args into a filter string.
-    flen = 0;
-    for (i = 1; (int)i < argc; i++)
+    // Check arguments.
+    switch (argc)
     {
-        slen = strlen(argv[i]);
-        if (flen + slen + 1 >= MAXBUF)
-        {
-            fprintf(stderr, "error: filter too long\n");
+        case 2:
+            break;
+        case 3:
+            priority = (INT16)atoi(argv[2]);
+            break;
+        default:
+            fprintf(stderr, "usage: %s divert-filter [priority]\n",
+                argv[0]);
+            fprintf(stderr, "examples:\n");
+            fprintf(stderr, "\t%s true\n", argv[0]);
+            fprintf(stderr, "\t%s \"outbound and tcp.DstPort == 80\" 1000\n",
+                argv[0]);
+            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -4000\n", argv[0]);
             exit(EXIT_FAILURE);
-        }
-        strcpy(filter+flen, argv[i]);
-        flen += slen;
-        filter[flen] = ' ';
-        flen++;
     }
-    filter[flen] = '\0';
 
     // Get console for pretty colors.
     console = GetStdHandle(STD_OUTPUT_HANDLE);
 
     // Divert traffic matching the filter:
-    handle = DivertOpen(filter);
+    handle = DivertOpen(argv[1], 0, priority, DIVERT_FLAG_SNIFF);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
@@ -86,6 +85,20 @@ int __cdecl main(int argc, char **argv)
             exit(EXIT_FAILURE);
         }
         fprintf(stderr, "error: failed to open Divert device (%d)\n",
+            GetLastError());
+        exit(EXIT_FAILURE);
+    }
+
+    // Max-out the packet queue:
+    if (!DivertSetParam(handle, DIVERT_PARAM_QUEUE_LEN, 8192))
+    {
+        fprintf(stderr, "error: failed to set packet queue length (%d)\n",
+            GetLastError());
+        exit(EXIT_FAILURE);
+    }
+    if (!DivertSetParam(handle, DIVERT_PARAM_QUEUE_TIME, 1024))
+    {
+        fprintf(stderr, "error: failed to set packet queue time (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
@@ -101,13 +114,6 @@ int __cdecl main(int argc, char **argv)
             continue;
         }
        
-        // Re-inject the matching packet.
-        if (!DivertSend(handle, packet, packet_len, &addr, NULL))
-        {
-            fprintf(stderr, "warning: failed to reinject packet (%d)\n",
-                GetLastError());
-        }
-
         // Print info about the matching packet.
         DivertHelperParse(packet, packet_len, &ip_header, &ipv6_header,
             &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
