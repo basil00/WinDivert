@@ -18,7 +18,7 @@
 
 /*
  * DESCRIPTION:
- * This is a simple web (HTTP) filter using the Divert device.
+ * This is a simple web (HTTP) filter using WinDivert.
  *
  * It works by intercepting outbound HTTP GET/POST requests and matching
  * the URL against a blacklist.  If the URL is matched, we hijack the TCP
@@ -120,7 +120,7 @@ int __cdecl main(int argc, char **argv)
     UINT16 blockpage_len;
     PBLACKLIST blacklist;
     unsigned i;
-    INT16 priority = 13044;     // Arbitrary.
+    INT16 priority = 404;       // Arbitrary.
 
     // Read the blacklists.
     if (argc <= 1)

@@ -18,7 +18,7 @@
 
 /*
  * DESCRIPTION:
- * This is a simple traffic filter/firewall.
+ * This is a simple traffic filter/firewall using WinDivert.
  *
  * usage: netfilter.exe divert-filter [priority]
  *
