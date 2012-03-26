@@ -94,7 +94,7 @@ following then happens
 
     msvc-build.bat
 
-(3) [OPTIONAL MinGW support] In Linux with MinGW cross-compiler, run the
+(3) [OPTIONAL MinGW support] In Linux with MinGW a cross-compiler, run the
     command:
 
     sh mingw-build.sh
