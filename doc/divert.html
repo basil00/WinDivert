@@ -11,6 +11,8 @@
 <li><a href="#building">2. Building</a></li>
 <ul>
 <li><a href="#driver_signing">2.2 Driver Signing</a></li>
+<li><a href="#visual_studio_2010_support">2.3 Visual Studio 2010 Support</a></li>
+<li><a href="#mingw_support">2.4 MinGW Support</a></li>
 </ul>
 <li><a href="#installing">3. Installing</a></li>
 <li><a href="#uninstalling">4. Uninstalling</a></li>
@@ -86,16 +88,16 @@ The source code for WinDivert is available for download at
 </blockquote>
 To build the WinDivert package from source:
 <ol>
-<li> Download and install the latest <a href="http://www.microsoft.com/whdc/devtools/wdk/default.mspx">Windows Driver
-Kit</a>.</li>
+<li> Download and install the latest <a href="http://www.microsoft.com/whdc/devtools/wdk/default.mspx">
+Windows Driver Kit</a>.</li>
 <li> Open a <i>Free Build Environment</i> console (or
     <i>Checked Build Environment</i> for debugging).</li>
-<li> In the package root directory, run the command:
+<li> In the WinDivert package root directory, run the command:
 <pre>
-build -cZg
+wddk-build.bat
 </pre>
 This will build the following files and place them in the
-<tt>divert\install</tt> subdirectory:
+<tt>install\WDDK</tt> subdirectory:
 <ul>
 <li> <tt>WinDivert.dll</tt>: User-mode library.</li>
 <li> <tt>WinDivert.sys</tt>: Kernel-mode WDF/WFP call-out driver.</li>
@@ -106,12 +108,9 @@ This will build the following files and place them in the
     directory.</li>
 </ul></li>
 </ol>
-</p>
-<p>
-MinGW version of <tt>WinDivert.dll</tt> may be built in Linux using the
-<tt>mingw-build.sh</tt> script in the root directory.
-Note that the <tt>.dll</tt> files from MinGW are incompatible with MSVC,
-and vice versa.
+<i>NOTE:</i> The <tt>WinDivert.dll</tt> and <tt>WinDivert.lib</tt> files
+are only compatible with programs compiled with the WDDK compiler.
+See below for Visual Studio 2010 and MinGW support.
 </p>
 
 <a name="driver_signing"><h3>2.2 Driver Signing</h3></a>
@@ -127,6 +126,40 @@ If you wish to simply test and/or evaluate WinDivert, you can set up a
 driver.
 See <a href="http://msdn.microsoft.com/en-us/library/ff554809.aspx">
 Test Signing a Driver Package</a> for more information.
+</p>
+
+<a name="visual_studio_2010_support"><h3>2.3 Visual Studio 2010 Support</h3></a>
+<p>
+To build the WinDivert package for Visual Studio 2010:
+<ol>
+<li> First build the driver by running <tt>wddk-build.bat</tt> as per the
+instructions above.</li>
+<li> Open a <i>Visual Studio Command Prompt</i> environment</li>
+<li> In the WinDivert package root directory, run the command:
+<pre>
+msvc-build.bat
+</pre>
+This will build Visual Studio 2010 compatible files and place them in the
+<tt>install\MSVC</tt> subdirectory.</li>
+</ol>
+<i>NOTE:</i> Currently only the i386 build is supported.
+</p>
+
+<a name="mingw_support"><h3>2.4 MinGW Support</h3></a>
+<p>
+To build the WinDivert package for MinGW:
+<ol>
+<li> First build the driver by running <tt>wddk-build.bat</tt> as per
+the instructions above.</li>
+<li> In Linux (with the MinGW cross-compilers installed) and in the
+WinDivert package root directory, run the command:
+<pre>
+sh mingw-build.sh
+</pre>
+This will build MinGW compatible files and place them in the
+<tt>install\MINGW</tt> subdirectory.</li>
+</ol>
+
 </p>
 
 <hr>

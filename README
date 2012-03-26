@@ -85,9 +85,19 @@ following then happens
 4. Building
 -----------
 
-In a WinDDK build environment, simply run the command:
+(1) In a WinDDK build environment, run the command:
 
-build -cZg
+    wddk-build.bat
+
+(2) [OPTIONAL Visual Studio 2010 support] In a VS2010 command prompt, run the
+    command:
+
+    msvc-build.bat
+
+(3) [OPTIONAL MinGW support] In Linux with MinGW cross-compiler, run the
+    command:
+
+    sh mingw-build.sh
 
 For more detailed build instructions, see doc\divert.html
 
