@@ -22,7 +22,7 @@ CPU=$(_BUILDARCH)
 
 TARGETNAME=WinDivert
 TARGETTYPE=DRIVER
-TARGETPATH=..\install
+TARGETPATH=..\install\WDDK
 TARGETLIBS=\
     $(DDK_LIB_PATH)\wdmsec.lib \
     $(DDK_LIB_PATH)\ndis.lib \

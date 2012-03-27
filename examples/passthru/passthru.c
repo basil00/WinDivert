@@ -33,7 +33,7 @@
 
 #define MAXBUF  0xFFFF
 
-static DWORD passthru(LPVOID arg);
+static __stdcall DWORD passthru(LPVOID arg);
 
 /*
  * Entry.
@@ -88,7 +88,7 @@ int __cdecl main(int argc, char **argv)
 }
 
 // Passthru thread.
-static DWORD passthru(LPVOID arg)
+static __stdcall DWORD passthru(LPVOID arg)
 {
     char packet[MAXBUF];
     UINT packet_len;

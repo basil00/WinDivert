@@ -28,8 +28,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __MINGW32__
-// Mingw does not have wdfinstaller.h
+/*
+ * From wdfinstaller.h
+ */
 typedef struct _WDF_COINSTALLER_INSTALL_OPTIONS
 {
     ULONG Size;
@@ -59,9 +60,6 @@ typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEREMOVE)(
         LPCWSTR inf_path,
         LPCWSTR inf_sec_name
     );
-#else       /* __MINGW32__ */
-#include <wdfinstaller.h>
-#endif      /* __MINGW32__ */
 
 // #define DIVERT_DEBUG
 
