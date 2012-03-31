@@ -19,8 +19,20 @@
 
 @echo off
 
-set WDDK_INSTALL=install\WDDK\i386\
-set MSVC_INSTALL=install\MSVC\i386\
+:: Determine target CPU.
+
+cl 2>&1 | findstr "32" > NUL
+
+if %ERRORLEVEL% == 0 (
+    set TARGET=i386
+    set PLATFORM=Win32
+) ELSE (
+    set TARGET=amd64
+    set PLATFORM=x64
+)
+
+set WDDK_INSTALL=install\WDDK\%TARGET%\
+set MSVC_INSTALL=install\MSVC\%TARGET%\
 
 if not exist %WDDK_INSTALL% (
     echo ERROR: Missing WDDK build; run wddk-build.bat first
@@ -30,37 +42,46 @@ mkdir %MSVC_INSTALL%
 
 :: Build WinDivert.dll
 cd dll
-msbuild
-copy /Y Release\WinDivert.dll ..\%MSVC_INSTALL%
-copy /Y Release\WinDivert.lib ..\%MSVC_INSTALL%
+msbuild /p:Platform=%PLATFORM% /p:OutDir=build\
+copy /Y build\WinDivert.dll ..\%MSVC_INSTALL%
+copy /Y build\WinDivert.lib ..\%MSVC_INSTALL%
+copy /Y build\WinDivert.lib ..\%MSVC_INSTALL%..
+rd /s /q build\
 cd ..
 
 :: Build netdump
 cd examples\netdump
-msbuild
-copy /Y Release\netdump.exe ..\..\%MSVC_INSTALL%
+msbuild /p:Platform=%PLATFORM% /p:OutDir=build\
+copy /Y build\netdump.exe ..\..\%MSVC_INSTALL%
+rd /s /q build\
 cd ..\..
 
 :: Build netfilter
 cd examples\netfilter
-msbuild
-copy /Y Release\netfilter.exe ..\..\%MSVC_INSTALL%
+msbuild /p:Platform=%PLATFORM% /p:OutDir=build\
+copy /Y build\netfilter.exe ..\..\%MSVC_INSTALL%
+rd /s /q build\
 cd ..\..
 
 :: Build passthru
 cd examples\passthru
-msbuild
-copy /Y Release\passthru.exe ..\..\%MSVC_INSTALL%
+msbuild /p:Platform=%PLATFORM% /p:OutDir=build\
+copy /Y build\passthru.exe ..\..\%MSVC_INSTALL%
+rd /s /q build\
 cd ..\..
 
 :: Build webfilter
 cd examples\webfilter
-msbuild
-copy /Y Release\webfilter.exe ..\..\%MSVC_INSTALL%
+msbuild /p:Platform=%PLATFORM% /p:OutDir=build\
+copy /Y build\webfilter.exe ..\..\%MSVC_INSTALL%
+rd /s /q build\
 cd ..\..
 
 :: Copy files
 copy /Y %WDDK_INSTALL%\WinDivert.sys %MSVC_INSTALL%
 copy /Y %WDDK_INSTALL%\WinDivert.inf %MSVC_INSTALL%
 copy /Y %WDDK_INSTALL%\WdfCoInstaller*.dll %MSVC_INSTALL%
+
+:: Clean-up
+del %MSVC_INSTALL%..\WinDivert.lib
 

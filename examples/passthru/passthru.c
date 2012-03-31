@@ -33,7 +33,7 @@
 
 #define MAXBUF  0xFFFF
 
-static __stdcall DWORD passthru(LPVOID arg);
+static DWORD passthru(LPVOID arg);
 
 /*
  * Entry.
@@ -72,7 +72,8 @@ int __cdecl main(int argc, char **argv)
     // Start the threads
     for (i = 1; i < num_threads; i++)
     {
-        thread = CreateThread(NULL, 1, passthru, (LPVOID)handle, 0, NULL);
+        thread = CreateThread(NULL, 1, (LPTHREAD_START_ROUTINE)passthru,
+            (LPVOID)handle, 0, NULL);
         if (thread == NULL)
         {
             fprintf(stderr, "error: failed to start passthru thread (%u)\n",
@@ -88,7 +89,7 @@ int __cdecl main(int argc, char **argv)
 }
 
 // Passthru thread.
-static __stdcall DWORD passthru(LPVOID arg)
+static DWORD passthru(LPVOID arg)
 {
     char packet[MAXBUF];
     UINT packet_len;

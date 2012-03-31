@@ -28,7 +28,7 @@
       <AdditionalIncludeDirectories>..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <AdditionalDependencies>ws2_32.lib;..\..\dll\Release\WinDivert.lib</AdditionalDependencies>
+      <AdditionalDependencies>ws2_32.lib;..\..\install\MSVC\WinDivert.lib</AdditionalDependencies>
     </Link> 
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
