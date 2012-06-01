@@ -124,8 +124,44 @@ for more information.
 If you wish to simply test and/or evaluate WinDivert, you can set up a
 <i>test certificate</i> and <i>test sign</i> the <tt>WinDivert.sys</tt>
 driver.
-See <a href="http://msdn.microsoft.com/en-us/library/ff554809.aspx">
+See <a
+href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff553467%28v=vs.85%29.aspx#using_a_makecert_test_certificate_or_a_commercial_test_certificate_to_">
 Test Signing a Driver Package</a> for more information.
+In summary, the steps are:
+<ol>
+    <li> Download and install the latest
+<a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487428.aspx">Windows
+    Driver Kit</a>.</li>
+    <li> Open a WDK <i>Build Environment</i> console as Administrator.</li>
+    <li> Run the <tt>MakeCert.exe</tt> tool to create a test certificate, e.g.
+    with:
+<pre>
+    MakeCert -r -pe -ss TestCertStoreName -n "CN=TestCertName" CertFileName.cer
+</pre>
+    </li>
+    <li> Install the test certificate with <tt>CertMgr.exe</tt>, e.g. with:
+<pre>
+    CertMgr /add CertFileName.cer /s /r localMachine root
+</pre>
+    </li>
+    <li> Sign <tt>WinDivert.sys</tt> with the test certificate, e.g. with:
+<pre>
+    SignTool sign /v /s TestCertStoreName /n TestCertName WinDivert.sys
+</pre>
+    </li>
+    <li> Before you can load test-signed drivers, you must enable
+    Windows <i>test mode</i>.
+    To do this, run the command:
+<pre>
+    Bcdedit.exe -set TESTSIGNING ON
+</pre>
+    and restart Windows.
+    For more information, see
+    <a href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff553484%28v=vs.85%29.aspx">The
+    TESTSIGNING Boot Configuration Option</a>.
+    </li>
+</ol>
+After following these steps you should be able to use the WinDivert driver.
 </p>
 
 <a name="visual_studio_2010_support"><h3>2.3 Visual Studio 2010 Support</h3></a>
@@ -134,7 +170,7 @@ To build the WinDivert package for Visual Studio 2010:
 <ol>
 <li> First build the driver by running <tt>wddk-build.bat</tt> as per the
 instructions above.</li>
-<li> Open a <i>Visual Studio Command Prompt</i> environment</li>
+<li> Open a <i>Visual Studio Command Prompt</i> environment.</li>
 <li> In the WinDivert package root directory, run the command:
 <pre>
 msvc-build.bat
@@ -142,7 +178,6 @@ msvc-build.bat
 This will build Visual Studio 2010 compatible files and place them in the
 <tt>install\MSVC</tt> subdirectory.</li>
 </ol>
-<i>NOTE:</i> Currently only the i386 build is supported.
 </p>
 
 <a name="mingw_support"><h3>2.4 MinGW Support</h3></a>
