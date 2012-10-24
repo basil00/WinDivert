@@ -41,7 +41,7 @@ EVT_WDF_FILE_CLOSE divert_close;
  * Debugging macros.
  */
 // #define DEBUG_ON
-#define DEBUG_BUFSIZE       512
+#define DEBUG_BUFSIZE       256
 
 #ifdef DEBUG_ON
 static void DEBUG(PCCH format, ...)
@@ -2843,28 +2843,35 @@ static BOOL divert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
 static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
     size_t ioctl_filter_len)
 {
-    struct filter_s filter0[DIVERT_FILTER_MAXLEN];
-    filter_t result;
+    filter_t filter0 = NULL, result = NULL;
     UINT16 i;
     UINT length;
     UINT64 *src, *dst;
 
     if (ioctl_filter_len % sizeof(struct divert_ioctl_filter_s) != 0)
     {
-        return NULL;
+        goto divert_filter_compile_exit;
     }
     length = ioctl_filter_len / sizeof(struct divert_ioctl_filter_s);
     if (length >= DIVERT_FILTER_MAXLEN)
     {
-        return NULL;
+        goto divert_filter_compile_exit;
     }
 
+    // Do NOT use the stack (size = 12Kb on x86) for filter0.
+    filter0 = (filter_t)ExAllocatePoolWithTag(NonPagedPool,
+        DIVERT_FILTER_MAXLEN*sizeof(struct filter_s), DIVERT_FILTER_TAG);
+    if (filter0 == NULL)
+    {
+        goto divert_filter_compile_exit;
+    }
+ 
     for (i = 0; i < length; i++)
     {
         if (ioctl_filter[i].field > DIVERT_FILTER_FIELD_MAX ||
             ioctl_filter[i].test > DIVERT_FILTER_TEST_MAX)
         {
-            return NULL;
+            goto divert_filter_compile_exit;
         }
         switch (ioctl_filter[i].success)
         {
@@ -2874,7 +2881,7 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 if (ioctl_filter[i].success <= i ||
                     ioctl_filter[i].success >= length)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
         }
@@ -2886,7 +2893,7 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 if (ioctl_filter[i].failure <= i ||
                     ioctl_filter[i].failure >= length)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
         }
@@ -2899,7 +2906,7 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 ioctl_filter[i].arg[2] != 0 ||
                 ioctl_filter[i].arg[3] != 0)
             {
-                return NULL;
+                goto divert_filter_compile_exit;
             }
         }
         switch (ioctl_filter[i].field)
@@ -2923,14 +2930,14 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
             case DIVERT_FILTER_FIELD_TCP_FIN:
                 if (ioctl_filter[i].arg[0] > 1)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_HDRLENGTH:
             case DIVERT_FILTER_FIELD_TCP_HDRLENGTH:
                 if (ioctl_filter[i].arg[0] > 0x0F)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_TTL:
@@ -2944,13 +2951,13 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
             case DIVERT_FILTER_FIELD_ICMPV6_CODE:
                 if (ioctl_filter[i].arg[0] > UINT8_MAX)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_FRAGOFF:
                 if (ioctl_filter[i].arg[0] > 0x1FFF)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IP_TOS:
@@ -2973,13 +2980,13 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
             case DIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                 if (ioctl_filter[i].arg[0] > UINT16_MAX)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
             case DIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
                 if (ioctl_filter[i].arg[0] > 0x000FFFFF)
                 {
-                    return NULL;
+                    goto divert_filter_compile_exit;
                 }
                 break;
             default:
@@ -3070,7 +3077,7 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
                 filter0[i].protocol = DIVERT_FILTER_PROTOCOL_UDP;
                 break;
             default:
-                return NULL;
+                goto divert_filter_compile_exit;
         }
     }
     
@@ -3079,6 +3086,13 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
     if (result != NULL)
     {
         RtlMoveMemory(result, filter0, i*sizeof(struct filter_s));
+    }
+
+divert_filter_compile_exit:
+
+    if (filter0 != NULL)
+    {
+        ExFreePoolWithTag(filter0, DIVERT_FILTER_TAG);
     }
     return result;
 }

@@ -21,7 +21,7 @@
 
 /*
  * NOTE: This is the low-level interface to the divert device driver.
- *       This interface should not be used directly, instead use he high-level
+ *       This interface should not be used directly, instead use the high-level
  *       interface provided by the divert API.
  */
 
