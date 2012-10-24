@@ -517,6 +517,13 @@ static BOOLEAN DivertDriverInstall(VOID)
 
     // Post-install:
     err = pfnWdfPostDeviceInstall(divert_inf, NULL);
+    if (err == ERROR_INVALID_PARAMETER)
+    {
+        // We ignore ERROR_INVALID_PARAMETER.  WdfPostDeviceInstall sometimes
+        // returns this error for no obvious reason, and when ignored the
+        // driver seems to still work perfectly.
+        err = ERROR_SUCCESS;
+    }
     if (err != ERROR_SUCCESS)
     {
         SetLastError(err);
