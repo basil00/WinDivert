@@ -20,7 +20,7 @@
 
 set -e
 
-VERSION=1.0
+VERSION=`cat ./VERSION`
 NAME=WinDivert-$VERSION
 
 for TARGET in WDDK MSVC MINGW
