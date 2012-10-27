@@ -504,7 +504,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         return status;
     }
     device_init = WdfControlDeviceInitAllocate(driver,
-        &SDDL_DEVOBJ_SYS_ALL_ADM_RWX_WORLD_RW_RES_R);
+        &SDDL_DEVOBJ_SYS_ALL_ADM_ALL);
     if (device_init == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
