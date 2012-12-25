@@ -22,7 +22,7 @@ need to intercept and modify packets, then WinDivert is for you.
 
 The features of WinDivert include:
     - packet interception, sniffing, or dropping modes
-    - fully supports loopback (localhost) traffic
+    - support for loopback (localhost) traffic
     - full IPv6 support
     - network layer
     - simple and powerful API
@@ -131,7 +131,7 @@ For further information, or bug reports, please contact
 
 The homepage for WinDivert is
 
-    http://reqrypt.org/divert.html
+    http://reqrypt.org/windivert.html
 
 The source code for WinDivert is hosted by GitHub at
 

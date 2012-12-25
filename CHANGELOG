@@ -1,0 +1,7 @@
+WinDivert 1.0.0
+    - First release of WinDivert 1.0
+WinDivert 1.0.1
+    - Fixed stack overflow bug in 32bit versions of the driver.
+WinDivert 1.0.2
+    - WinDivert now requires Administrator privileges in order to access
+      (as opposed to just install) the WinDivert device.

@@ -36,8 +36,12 @@ do
     mkdir -p $INSTALL
     echo "\tcopy $INSTALL/README..."
     cp README $INSTALL
+    echo "\tcopy $INSTALL/CHANGELOG..."
+    cp CHANGELOG $INSTALL
     echo "\tcopy $INSTALL/LICENSE..."
     cp LICENSE $INSTALL
+    echo "\tcopy $INSTALL/VERSION..."
+    cp VERSION $INSTALL
     echo "\tmake $INSTALL/include..."
     mkdir -p $INSTALL/include
     echo "\tcopy $INSTALL/include/divert.h..."
