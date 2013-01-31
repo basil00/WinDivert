@@ -1181,11 +1181,17 @@ static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr)
 {
     UINT16 addr[8] = {0};
     UINT part;
-    UINT i, j;
+    UINT i, j, k;
     BOOL end = FALSE;
 
     if (*str == ':')
     {
+        str++;
+        if (*str != ':')
+        {
+            return FALSE;
+        }
+        end = TRUE;
         str++;
     }
 
@@ -1199,28 +1205,46 @@ static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr)
             }
             end = TRUE;
             str++;
+            if (*str == '\0')
+            {
+                break;
+            }
         }
-        errno = 0;
-        part = strtoul(str, &str, 16);
-        if (part > UINT32_MAX || errno != 0 || (*str != ':' && *str != '\0'))
+        char part_str[5];
+        for (k = 0; k < 4 && isxdigit(*str); k++)
+        {
+            part_str[k] = *str;
+            str++;
+        }
+        if (k == 0)
         {
             return FALSE;
         }
+        part_str[k] = '\0';
+        if (*str != ':' && *str != '\0')
+        {
+            return FALSE;
+        }
+        part = strtoul(part_str, NULL, 16);
         if (!end)
         {
-            addr[7 - i] = (UINT16)part;
+            addr[i] = (UINT16)ntohs(part);
         }
         else
         {
-            addr[7 - j--] = (UINT16)part;
+            addr[j--] = (UINT16)ntohs(part);
         }
         if (*str == '\0')
         {
-            if (!end)
+            if (end)
             {
-                return FALSE;
+                break;
             }
-            break;
+            if (i == 7)
+            {
+                break;
+            }
+            return FALSE;
         }
         str++;
     }
@@ -1235,9 +1259,9 @@ static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr)
         j++;
         for (i = 7; j < i; j++, i--)
         {
-            UINT16 tmp = addr[7 - i];
-            addr[7 - i] = addr[7 - j];
-            addr[7 - j] = tmp;
+            UINT16 tmp = addr[i];
+            addr[i] = addr[j];
+            addr[j] = tmp;
         }
     }
     memcpy(addr_ptr, addr, sizeof(addr));
