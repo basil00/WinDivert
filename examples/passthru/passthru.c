@@ -56,7 +56,7 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Divert traffic matching the filter:
-    handle = DivertOpen(argv[1], 0, 0, 0);
+    handle = DivertOpen(argv[1], (DIVERT_LAYER)0, 0, 0);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)

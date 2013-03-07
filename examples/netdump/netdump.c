@@ -76,7 +76,7 @@ int __cdecl main(int argc, char **argv)
     console = GetStdHandle(STD_OUTPUT_HANDLE);
 
     // Divert traffic matching the filter:
-    handle = DivertOpen(argv[1], 0, priority, DIVERT_FLAG_SNIFF);
+    handle = DivertOpen(argv[1], (DIVERT_LAYER)0, priority, DIVERT_FLAG_SNIFF);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
