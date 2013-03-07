@@ -163,7 +163,7 @@ int __cdecl main(int argc, char **argv)
             "ip && "                    // Only IPv4 supported
             "tcp.DstPort == 80 && "     // HTTP (port 80) only
             "tcp.PayloadLength > 0",    // TCP data packets only
-            0, priority, 0
+            (DIVERT_LAYER)0, priority, 0
         );
     if (handle == INVALID_HANDLE_VALUE)
     {
