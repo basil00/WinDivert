@@ -5,3 +5,5 @@ Debug/
 *.sdf
 *.log
 *.opensdf
+*.user
+sys/WinDivert.inf
