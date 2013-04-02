@@ -1,0 +1,9 @@
+syntax: glob
+Release/
+Debug/
+*.suo
+*.sdf
+*.log
+*.opensdf
+*.user
+sys/WinDivert.inf

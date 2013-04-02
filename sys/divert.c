@@ -917,7 +917,6 @@ extern VOID divert_timer(IN WDFTIMER timer)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PLIST_ENTRY entry;
-    PNET_BUFFER_LIST packets;
     WDFFILEOBJECT object = (WDFFILEOBJECT)WdfTimerGetParentObject(timer);
     context_t context = divert_context_get(object);
     packet_t packet;
@@ -965,7 +964,6 @@ extern VOID divert_cleanup(IN WDFFILEOBJECT object)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PLIST_ENTRY entry;
-    PNET_BUFFER_LIST packets;
     UINT i;
     context_t context = divert_context_get(object);
     packet_t packet;
@@ -1330,7 +1328,7 @@ VOID divert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     size_t inbuflen;
     WDF_REQUEST_PARAMETERS params;
     WDFMEMORY memobj;
-    divert_addr_t addr;
+    divert_addr_t addr = NULL;
     divert_ioctl_t ioctl;
     WDF_OBJECT_ATTRIBUTES attributes;
     req_context_t req_context = NULL;
@@ -1831,16 +1829,13 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    KLOCK_QUEUE_HANDLE lock_handle;
     FWPS_PACKET_INJECTION_STATE packet_state;
     HANDLE packet_context;
     UINT32 priority;
     PNET_BUFFER_LIST buffers, buffers_fst, buffers_itr;
-    PNET_BUFFER buffer, buffer0;
-    PLIST_ENTRY entry;
+    PNET_BUFFER buffer;
     BOOL outbound;
     context_t context;
-    packet_t packet;
 
     // Basic checks:
     if (!(result->rights & FWPS_RIGHT_ACTION_WRITE) || data == NULL)
@@ -2320,7 +2315,7 @@ static BOOL divert_filter(PNET_BUFFER buffer, UINT32 if_idx, UINT32 sub_if_idx,
         return FALSE;
     }
     cpy_len = (tot_len < sizeof(storage)? tot_len: sizeof(storage));
-    headers = (UINT8 *)NdisGetDataBuffer(buffer, cpy_len, storage, 1, 0);
+    headers = (UINT8 *)NdisGetDataBuffer(buffer, (ULONG)cpy_len, storage, 1, 0);
     if (headers == NULL)
     {
         headers = storage;
@@ -2845,8 +2840,7 @@ static filter_t divert_filter_compile(divert_ioctl_filter_t ioctl_filter,
 {
     filter_t filter0 = NULL, result = NULL;
     UINT16 i;
-    UINT length;
-    UINT64 *src, *dst;
+    size_t length;
 
     if (ioctl_filter_len % sizeof(struct divert_ioctl_filter_s) != 0)
     {
