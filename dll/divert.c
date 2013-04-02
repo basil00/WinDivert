@@ -1183,6 +1183,7 @@ static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr)
     UINT part;
     UINT i, j, k;
     BOOL end = FALSE;
+    char part_str[5];
 
     if (*str == ':')
     {
@@ -1210,7 +1211,6 @@ static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr)
                 break;
             }
         }
-        char part_str[5];
         for (k = 0; k < 4 && isxdigit(*str); k++)
         {
             part_str[k] = *str;
