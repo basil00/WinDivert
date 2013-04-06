@@ -34,8 +34,10 @@
 <li><a href="#divert_icmpv6hdr">6.4 DIVERT_ICMPV6HDR</a></li>
 <li><a href="#divert_tcphdr">6.5 DIVERT_TCPHDR</a></li>
 <li><a href="#divert_udphdr">6.6 DIVERT_UDPHDR</a></li>
-<li><a href="#divert_helper_parse">6.7 DivertHelperParse</a></li>
-<li><a href="#divert_helper_calc_checksums">6.8 DivertHelperCalcChecksums</a></li>
+<li><a href="#divert_helper_parse_packet">6.7 DivertHelperParsePacket</a></li>
+<li><a href="#divert_help_parse_ipv4_address">6.8 DivertHelperParseIPv4Address</li>
+<li><a href="#divert_help_parse_ipv6_address">6.9 DivertHelperParseIPv6Address</li>
+<li><a href="#divert_helper_calc_checksums">6.10 DivertHelperCalcChecksums</a></li>
 </ul>
 <li><a href="#filter_language">7. Filter Language</a></li>
 <ul>
@@ -88,8 +90,8 @@ The source code for WinDivert is available for download at
 </blockquote>
 To build the WinDivert package from source:
 <ol>
-<li> Download and install the latest <a href="http://www.microsoft.com/whdc/devtools/wdk/default.mspx">
-Windows Driver Kit</a>.</li>
+<li> Download and install <a href="http://www.microsoft.com/whdc/devtools/wdk/default.mspx">
+Windows Driver Kit 7.1.0</a>.</li>
 <li> Open a <i>Free Build Environment</i> console (or
     <i>Checked Build Environment</i> for debugging).</li>
 <li> In the WinDivert package root directory, run the command:
@@ -129,9 +131,9 @@ href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff553467%28v=vs.8
 Test Signing a Driver Package</a> for more information.
 In summary, the steps are:
 <ol>
-    <li> Download and install the latest
+    <li> Download and install
 <a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487428.aspx">Windows
-    Driver Kit</a>.</li>
+    Driver Kit 7.1.0</a>.</li>
     <li> Open a WDK <i>Build Environment</i> console as Administrator.</li>
     <li> Run the <tt>MakeCert.exe</tt> tool to create a test certificate, e.g.
     with:
@@ -302,6 +304,48 @@ HANDLE <b>DivertOpen</b>(
 A valid WinDivert handle on success, or
 <tt>INVALID_HANDLE_VALUE</tt> if an error occurred.
 Use <tt>GetLastError()</tt> to get the reason for the error.
+Common errors include:
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<td>
+<tt>ERROR_INVALID_PARAMETER</tt>
+</td>
+<td>
+This indicates an invalid packet filter string, layer, priority, or flags.
+</td>
+</tr>
+<tr>
+<td>
+<tt>ERROR_FILE_NOT_FOUND</tt>
+</td>
+<td>
+One or more of the <tt>WinDivert.sys</tt>,
+<tt>WinDivert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files were not
+found.
+</td>
+</tr>
+<tr>
+<td>
+<tt>ERROR_ACCESS_DENIED</tt>
+</td>
+<td>
+The calling application does not have Administrator privileges.
+</td>
+</tr>
+<tr>
+<td>
+<tt>ERROR_INVALID_IMAGE_HASH</tt>
+</td>
+<td>
+The <tt>WinDivert.sys</tt> driver does not have a valid digital signature
+(see the <a href="#driver_signing">driver signing requirements</a> above),
+or <tt>WinDivert.sys</tt> is the wrong version, i.e. 32-bit on
+64-bit Windows or vice versa.
+</td>
+</tr>
+</table>
+</center>
 </p><p>
 <b>Remarks</b><br>
 Opens a WinDivert handle for the given filter.
@@ -819,10 +863,10 @@ UDP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_helper_parse"><h3>6.7 DivertHelperParse</h3></a>
+<a name="divert_helper_parse_packet"><h3>6.7 DivertHelperParsePacket</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertHelperParse</b>(
+BOOL <b>DivertHelperParsePacket</b>(
     __in PVOID pPacket,
     __in UINT packetLen,
     __out_opt PDIVERT_IPHDR *ppIpHdr,
@@ -879,7 +923,63 @@ for parsing.
 <p>
 </dd></dl>
 
-<a name="divert_helper_calc_checksums"><h3>6.8 DivertHelperCalcChecksums</h3></a>
+<a name="divert_help_parse_ipv4_address"><h3>6.8 DivertHelperParseIPv4Address</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>DivertHelperParseIPv4Address</b>(
+    __in const char *addrStr,
+    __out_opt UINT32 *pAddr
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>addrStr</tt>: The address string.</li>
+<li> <tt>pAddr</tt>: Output address.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if successful, <tt>FALSE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Parses an IPv4 address stored in <tt>addrStr</tt>.
+If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>.
+</p>
+<dd></dl>
+
+<a name="divert_help_parse_ipv6_address"><h3>6.9 DivertHelperParseIPv6Address</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>DivertHelperParseIPv6Address</b>(
+    __in const char *addrStr,
+    __out_opt UINT32 *pAddr
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>addrStr</tt>: The address string.</li>
+<li> <tt>pAddr</tt>: Output address.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if successful, <tt>FALSE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Parses an IPv6 address stored in <tt>addrStr</tt>.
+If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>.
+The <tt>pAddr</tt> parameter is assumed to point to a buffer large enough
+to hold a 16-byte IPv6 address.
+</p>
+<dd></dl>
+
+<a name="divert_helper_calc_checksums"><h3>6.10 DivertHelperCalcChecksums</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT <b>DivertHelperCalcChecksums</b>(

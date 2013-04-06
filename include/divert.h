@@ -300,7 +300,7 @@ typedef struct
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern DIVERTEXPORT BOOL DivertHelperParse(
+extern DIVERTEXPORT BOOL DivertHelperParsePacket(
     __in        PVOID pPacket,
     __in        UINT packetLen,
     __out_opt   PDIVERT_IPHDR *ppIpHdr,
@@ -311,6 +311,27 @@ extern DIVERTEXPORT BOOL DivertHelperParse(
     __out_opt   PDIVERT_UDPHDR *ppUdpHdr,
     __out_opt   PVOID *ppData,
     __out_opt   UINT *pDataLen);
+
+/*
+ * Old name (deprecated).
+ */
+#define DivertHelperParse(p, pl, ip, ip6, icmp, icmp6, tcp, udp, d, dl)     \
+    DivertHelperParsePacket((p), (pl), (ip), (ip6), (icmp), (icmp6), (tcp), \
+        (udp), (d), (dl))
+
+/*
+ * Parse an IPv4 address.
+ */
+extern DIVERTEXPORT BOOL DivertHelperParseIPv4Address(
+    __in        const char *addrStr,
+    __out_opt   UINT32 *pAddr);
+
+/*
+ * Parse an IPv6 address.
+ */
+extern DIVERTEXPORT BOOL DivertHelperParseIPv6Address(
+    __in        const char *addrStr,
+    __out_opt   UINT32 *pAddr);
 
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.

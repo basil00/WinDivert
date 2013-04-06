@@ -28,6 +28,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+#ifdef __MINGW32__
+#define wcscpy_s(s1, l, s2)     wcscpy(s1, s2)
+#endif
+
 /*
  * From wdfinstaller.h
  */
@@ -223,8 +227,8 @@ static BOOLEAN installed = FALSE;
  * Prototypes.
  */
 static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll);
-static BOOLEAN DivertDriverFiles(LPWSTR *divert_dir_ptr,
-    LPWSTR *divert_sys_ptr, LPWSTR *divert_inf_ptr, LPWSTR *divert_dll_ptr);
+static BOOLEAN DivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
+    LPWSTR *inf_str_ptr, LPWSTR *dll_str_ptr);
 static BOOLEAN DivertDriverInstall(VOID);
 static BOOLEAN DivertDriverUnInstall(VOID);
 static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT8 arg8, UINT64 arg,
@@ -234,8 +238,6 @@ static BOOL DivertCompileFilter(const char *filter_str, DIVERT_LAYER layer,
 static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b);
 static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
     FILTER_TOKEN *tokens, UINT tokensmax);
-static BOOL DivertParseIPv4Address(char *str, UINT32 *addr_ptr);
-static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr);
 static BOOL DivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
     divert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op);
 static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT16 s,
@@ -367,82 +369,119 @@ DivertLoadInstallerError:
 /*
  * Locate the Divert driver files.
  */
-static BOOLEAN DivertDriverFiles(LPWSTR *divert_dir_ptr,
-    LPWSTR *divert_sys_ptr, LPWSTR *divert_inf_ptr, LPWSTR *divert_dll_ptr)
+static BOOLEAN DivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
+    LPWSTR *inf_str_ptr, LPWSTR *dll_str_ptr)
 {
-    DWORD length;
+    DWORD err;
     HANDLE find;
     WIN32_FIND_DATA find_data;
-    LPWSTR divert_dir, divert_sys, divert_inf, divert_dll;
+    LPWSTR dir_str = NULL, sys_str = NULL, inf_str = NULL, dll_str = NULL;
+    size_t dir_len, sys_len, inf_len, dll_len;
+
+    SetLastError(0);
 
     // Construct the filenames from the current directory name
-    length = GetCurrentDirectory(0, NULL);
-    length--;
-    divert_dir = (WCHAR *)malloc((length+1)*sizeof(WCHAR));
-    divert_sys = (WCHAR *)malloc((length+wcslen(DIVERT_DRIVER_SYS)+1)*
-        sizeof(WCHAR));
-    divert_inf = (WCHAR *)malloc((length+wcslen(DIVERT_DRIVER_INF)+1)*
-        sizeof(WCHAR));
-    divert_dll = (WCHAR *)malloc((length+wcslen(DIVERT_DRIVER_MATCH_DLL)+1)*
-        sizeof(WCHAR));
-    if (divert_dir == NULL || divert_sys == NULL || divert_inf == NULL ||
-            divert_dll == NULL)
+    dir_len = GetCurrentDirectory(0, NULL);
+    if (dir_len == 0)
     {
         goto DivertDriverFilesError;
     }
-    if (GetCurrentDirectory(length+1, divert_dir) != length)
+    dir_len--;
+    sys_len = dir_len + wcslen(DIVERT_DRIVER_SYS);
+    inf_len = dir_len + wcslen(DIVERT_DRIVER_INF);
+    dll_len = dir_len + wcslen(DIVERT_DRIVER_MATCH_DLL);
+    dir_str = (WCHAR *)malloc((dir_len+1)*sizeof(WCHAR));
+    if (dir_str == NULL)
+    {
+        goto DivertDriverFilesError;
+    }
+    if (GetCurrentDirectory(dir_len+1, dir_str) != dir_len)
     {
         SetLastError(ERROR_FILE_NOT_FOUND);
         goto DivertDriverFilesError;
     }
-    wcscpy(divert_sys, divert_dir);
-    wcscpy(divert_inf, divert_dir);
-    wcscpy(divert_dll, divert_dir);
-    wcscpy(divert_sys + length, DIVERT_DRIVER_SYS);
-    wcscpy(divert_inf + length, DIVERT_DRIVER_INF);
-    wcscpy(divert_dll + length, DIVERT_DRIVER_MATCH_DLL);
+    sys_str = (WCHAR *)malloc((sys_len+1)*sizeof(WCHAR));
+    if (sys_str == NULL)
+    {
+        goto DivertDriverFilesError;
+    }
+    inf_str = (WCHAR *)malloc((inf_len+1)*sizeof(WCHAR));
+    if (inf_str == NULL)
+    {
+        goto DivertDriverFilesError;
+    }
+    dll_str = (WCHAR *)malloc((dll_len+1)*sizeof(WCHAR));
+    if (dll_str == NULL)
+    {
+        goto DivertDriverFilesError;
+    }
+    if (wcscpy_s(sys_str, sys_len+1, dir_str) != 0 ||
+        wcscpy_s(inf_str, inf_len+1, dir_str) != 0 ||
+        wcscpy_s(dll_str, dll_len+1, dir_str) != 0 ||
+        wcscpy_s(sys_str + dir_len, sys_len+1-dir_len,
+            DIVERT_DRIVER_SYS) != 0 ||
+        wcscpy_s(inf_str + dir_len, inf_len+1-dir_len,
+            DIVERT_DRIVER_INF) != 0 ||
+        wcscpy_s(dll_str + dir_len, dll_len+1-dir_len,
+            DIVERT_DRIVER_MATCH_DLL))
+    {
+        goto DivertDriverFilesError;
+    }
 
     // Check the the files exist; and find the co-installer filename.
-    find = FindFirstFile(divert_sys, &find_data);
+    find = FindFirstFile(sys_str, &find_data);
     if (find == INVALID_HANDLE_VALUE)
     {
         goto DivertDriverFilesError;
     }
     FindClose(find);
-    find = FindFirstFile(divert_inf, &find_data);
+    find = FindFirstFile(inf_str, &find_data);
     if (find == INVALID_HANDLE_VALUE)
     {
         goto DivertDriverFilesError;
     }
     FindClose(find);
-    find = FindFirstFile(divert_dll, &find_data);
-    free(divert_dll);
+    find = FindFirstFile(dll_str, &find_data);
+    free(dll_str);
+    dll_str = NULL;
     if (find == INVALID_HANDLE_VALUE)
     {
         goto DivertDriverFilesError;
     }
     FindClose(find);
-    divert_dll = (WCHAR *)malloc((length+wcslen(find_data.cFileName)+2)*
-        sizeof(WCHAR));
-    if (divert_dll == NULL)
+    dll_len = dir_len + 1 + wcslen(find_data.cFileName) + 1;
+    dll_str = (WCHAR *)malloc((dll_len+1)*sizeof(WCHAR));
+    if (dll_str == NULL)
     {
         goto DivertDriverFilesError;
     }
-    wcscpy(divert_dll, divert_dir);
-    divert_dll[length] = L'\\';
-    wcscpy(divert_dll + length + 1, find_data.cFileName);
+    if (wcscpy_s(dll_str, dll_len+1, dir_str) != 0)
+    {
+        goto DivertDriverFilesError;
+    }
+    dll_str[dir_len] = L'\\';
+    if (wcscpy_s(dll_str + dir_len + 1, dll_len+1-dir_len-1,
+            find_data.cFileName) != 0)
+    {
+        goto DivertDriverFilesError;
+    }
 
-    *divert_dir_ptr = divert_dir;
-    *divert_sys_ptr = divert_sys;
-    *divert_inf_ptr = divert_inf;
-    *divert_dll_ptr = divert_dll;
+    *dir_str_ptr = dir_str;
+    *sys_str_ptr = sys_str;
+    *inf_str_ptr = inf_str;
+    *dll_str_ptr = dll_str;
     return TRUE;
 
 DivertDriverFilesError:
-    free(divert_dir);
-    free(divert_sys);
-    free(divert_inf);
-    free(divert_dll);
+    err = GetLastError();
+    free(dir_str);
+    free(sys_str);
+    free(inf_str);
+    free(dll_str);
+    if (err != 0)
+        SetLastError(err);
+    else
+        SetLastError(ERROR_FILE_NOT_FOUND);
     return FALSE;
 }
 
@@ -510,8 +549,12 @@ static BOOLEAN DivertDriverInstall(VOID)
     service = CreateService(manager, DIVERT_DEVICE_NAME, DIVERT_DEVICE_NAME,
         SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
         SERVICE_ERROR_NORMAL, divert_sys, NULL, NULL, NULL, NULL, NULL);
-    if (service == NULL && GetLastError() != ERROR_SERVICE_EXISTS)
+    if (service == NULL)
     {
+        if (GetLastError() == ERROR_SERVICE_EXISTS) 
+        {
+            installed = TRUE;
+        }
         goto DivertDriverInstallExit;
     }
 
@@ -541,6 +584,7 @@ static BOOLEAN DivertDriverInstall(VOID)
     installed = TRUE;
 
 DivertDriverInstallExit:
+    err = GetLastError();
     free(divert_dir);
     free(divert_sys);
     free(divert_inf);
@@ -553,6 +597,7 @@ DivertDriverInstallExit:
     {
         CloseServiceHandle(manager);
     }
+    SetLastError(err);
     return installed;
 }
 
@@ -725,9 +770,13 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
         }
 
         // Open failed because the device isn't installed; install it now.
+        SetLastError(0);
         if (!DivertDriverInstall())
         {
-            SetLastError(ERROR_OPEN_FAILED);
+            if (GetLastError() == 0)
+            {
+                SetLastError(ERROR_OPEN_FAILED);
+            }
             return INVALID_HANDLE_VALUE;
         }
         handle = CreateFile(L"\\\\.\\" DIVERT_DEVICE_NAME,
@@ -1124,7 +1173,7 @@ static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
             }
 
             // Check for IPv4 address:
-            if (DivertParseIPv4Address(token, tokens[tp].val))
+            if (DivertHelperParseIPv4Address(token, tokens[tp].val))
             {
                 tokens[tp].kind = FILTER_TOKEN_NUMBER;
                 tp++;
@@ -1132,7 +1181,8 @@ static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
             }
 
             // Check for IPv6 address:
-            if (DivertParseIPv6Address(token, tokens[tp].val))
+            SetLastError(0);
+            if (DivertHelperParseIPv6Address(token, tokens[tp].val))
             {
                 tokens[tp].kind = FILTER_TOKEN_NUMBER;
                 tp++;
@@ -1146,127 +1196,6 @@ static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
             return FALSE;
         }
     }
-}
-
-/*
- * Parse an IPv4 address.
- */
-static BOOL DivertParseIPv4Address(char *str, UINT32 *addr_ptr)
-{
-    UINT32 addr = 0;
-    UINT part, i;
-
-    errno = 0;
-    for (i = 0; i < 4; i++)
-    {
-        part = strtoul(str, &str, 10);
-        if (errno != 0 || part > UINT8_MAX)
-        {
-            return FALSE;
-        }
-        if (i != 3 && *str++ != '.')
-        {
-            return FALSE;
-        }
-        addr |= part << (8*(3-i));
-    }
-    *addr_ptr = addr;
-    return TRUE;
-}
-
-/*
- * Parse an IPv6 address.
- */
-static BOOL DivertParseIPv6Address(char *str, UINT32 *addr_ptr)
-{
-    UINT16 addr[8] = {0};
-    UINT part;
-    UINT i, j, k;
-    BOOL end = FALSE;
-    char part_str[5];
-
-    if (*str == ':')
-    {
-        str++;
-        if (*str != ':')
-        {
-            return FALSE;
-        }
-        end = TRUE;
-        str++;
-    }
-
-    for (i = 0, j = 7; i < 8; i++)
-    {
-        if (*str == ':')
-        {
-            if (end)
-            {
-                return FALSE;
-            }
-            end = TRUE;
-            str++;
-            if (*str == '\0')
-            {
-                break;
-            }
-        }
-        for (k = 0; k < 4 && isxdigit(*str); k++)
-        {
-            part_str[k] = *str;
-            str++;
-        }
-        if (k == 0)
-        {
-            return FALSE;
-        }
-        part_str[k] = '\0';
-        if (*str != ':' && *str != '\0')
-        {
-            return FALSE;
-        }
-        part = strtoul(part_str, NULL, 16);
-        if (!end)
-        {
-            addr[i] = (UINT16)ntohs(part);
-        }
-        else
-        {
-            addr[j--] = (UINT16)ntohs(part);
-        }
-        if (*str == '\0')
-        {
-            if (end)
-            {
-                break;
-            }
-            if (i == 7)
-            {
-                break;
-            }
-            return FALSE;
-        }
-        str++;
-    }
-
-    if (*str != '\0')
-    {
-        return FALSE;
-    }
-
-    if (end)
-    {
-        j++;
-        for (i = 7; j < i; j++, i--)
-        {
-            UINT16 tmp = addr[i];
-            addr[i] = addr[j];
-            addr[j] = tmp;
-        }
-    }
-    memcpy(addr_ptr, addr, sizeof(addr));
-
-    return TRUE;
 }
 
 /*
@@ -1893,7 +1822,7 @@ static void DivertFilterDump(divert_ioctl_filter_t filter, UINT16 len)
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
+extern BOOL DivertHelperParsePacket(PVOID pPacket, UINT packetLen,
     PDIVERT_IPHDR *ppIpHdr, PDIVERT_IPV6HDR *ppIpv6Hdr,
     PDIVERT_ICMPHDR *ppIcmpHdr, PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
     PDIVERT_TCPHDR *ppTcpHdr, PDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
@@ -1913,7 +1842,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
 
     if (pPacket == NULL || packetLen < sizeof(UINT8))
     {
-        goto DivertHelperParseExit;
+        goto DivertHelperParsePacketExit;
     }
     data = pPacket;
     data_len = packetLen;
@@ -1928,7 +1857,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
                 ntohs(ip_header->Length) != data_len)
             {
                 ip_header = NULL;
-                goto DivertHelperParseExit;
+                goto DivertHelperParsePacketExit;
             }
             trans_proto = ip_header->Protocol;
             header_len = ip_header->HdrLength*sizeof(UINT32); 
@@ -1943,7 +1872,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
                     data_len - sizeof(DIVERT_IPV6HDR))
             {
                 ipv6_header = NULL;
-                goto DivertHelperParseExit;
+                goto DivertHelperParsePacketExit;
             }
             trans_proto = ipv6_header->NextHdr;
             data = (PVOID)((UINT8 *)data + sizeof(DIVERT_IPV6HDR));
@@ -1951,7 +1880,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
             break;
         default:
             ip_header = NULL;
-            goto DivertHelperParseExit;
+            goto DivertHelperParsePacketExit;
     }
 
     switch (trans_proto)
@@ -1963,7 +1892,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
                 data_len < tcp_header->HdrLength*sizeof(UINT32))
             {
                 tcp_header = NULL;
-                goto DivertHelperParseExit;
+                goto DivertHelperParsePacketExit;
             }
             header_len = tcp_header->HdrLength*sizeof(UINT32);
             data = ((UINT8 *)data + header_len);
@@ -1975,7 +1904,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
                 ntohs(udp_header->Length) != data_len)
             {
                 udp_header = NULL;
-                goto DivertHelperParseExit;
+                goto DivertHelperParsePacketExit;
             }
             data = ((UINT8 *)data + sizeof(DIVERT_UDPHDR));
             data_len -= sizeof(DIVERT_UDPHDR);
@@ -1986,7 +1915,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
                 data_len < sizeof(DIVERT_ICMPHDR))
             {
                 icmp_header = NULL;
-                goto DivertHelperParseExit;
+                goto DivertHelperParsePacketExit;
             }
             data = ((UINT8 *)data + sizeof(DIVERT_ICMPHDR));
             data_len -= sizeof(DIVERT_ICMPHDR);
@@ -1997,7 +1926,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
                 data_len < sizeof(DIVERT_ICMPV6HDR))
             {
                 icmpv6_header = NULL;
-                goto DivertHelperParseExit;
+                goto DivertHelperParsePacketExit;
             }
             data = ((UINT8 *)data + sizeof(DIVERT_ICMPV6HDR));
             data_len -= sizeof(DIVERT_ICMPV6HDR);
@@ -2011,7 +1940,7 @@ extern BOOL DivertHelperParse(PVOID pPacket, UINT packetLen,
         data = NULL;
     }
 
-DivertHelperParseExit:
+DivertHelperParsePacketExit:
     success = TRUE;
     if (ppIpHdr != NULL)
     {
@@ -2072,7 +2001,7 @@ extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     UINT payload_len, checksum_len;
     UINT count = 0;
 
-    DivertHelperParse(pPacket, packetLen, &ip_header, &ipv6_header,
+    DivertHelperParsePacket(pPacket, packetLen, &ip_header, &ipv6_header,
         &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
         &payload_len);
 
@@ -2235,5 +2164,145 @@ static UINT16 DivertHelperCalcChecksum(PVOID pseudo_header,
     sum += (sum >> 16);
     sum = ~sum;
     return (UINT16)sum;
+}
+
+/*
+ * Parse an IPv4 address.
+ */
+extern BOOL DivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
+{
+    UINT32 addr = 0;
+    UINT part, i;
+
+    errno = 0;
+    for (i = 0; i < 4; i++)
+    {
+        part = strtoul(str, (char **)&str, 10);
+        if (errno != 0 || part > UINT8_MAX)
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        if (i != 3 && *str++ != '.')
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        addr |= part << (8*(3-i));
+    }
+    if (*str != '\0')
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    if (addr_ptr != NULL)
+    {
+        *addr_ptr = addr;
+    }
+    return TRUE;
+}
+
+/*
+ * Parse an IPv6 address.
+ */
+extern BOOL DivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
+{
+    UINT16 addr[8] = {0};
+    UINT part;
+    UINT i, j, k;
+    BOOL end = FALSE;
+    char part_str[5];
+
+    if (*str == ':')
+    {
+        str++;
+        if (*str != ':')
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        end = TRUE;
+        str++;
+    }
+
+    for (i = 0, j = 7; i < 8; i++)
+    {
+        if (*str == ':')
+        {
+            if (end)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            end = TRUE;
+            str++;
+            if (*str == '\0')
+            {
+                break;
+            }
+        }
+        for (k = 0; k < 4 && isxdigit(*str); k++)
+        {
+            part_str[k] = *str;
+            str++;
+        }
+        if (k == 0)
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        part_str[k] = '\0';
+        if (*str != ':' && *str != '\0')
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        part = strtoul(part_str, NULL, 16);
+        if (!end)
+        {
+            addr[i] = (UINT16)ntohs(part);
+        }
+        else
+        {
+            addr[j--] = (UINT16)ntohs(part);
+        }
+        if (*str == '\0')
+        {
+            if (end)
+            {
+                break;
+            }
+            if (i == 7)
+            {
+                break;
+            }
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        str++;
+    }
+
+    if (*str != '\0')
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+
+    if (end)
+    {
+        j++;
+        for (i = 7; j < i; j++, i--)
+        {
+            UINT16 tmp = addr[i];
+            addr[i] = addr[j];
+            addr[j] = tmp;
+        }
+    }
+    if (addr_ptr != NULL)
+    {
+        memcpy(addr_ptr, addr, sizeof(addr));
+    }
+
+    return TRUE;
 }
 

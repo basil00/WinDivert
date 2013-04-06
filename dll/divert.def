@@ -7,5 +7,7 @@ EXPORTS
     DivertClose
     DivertSetParam
     DivertGetParam
-    DivertHelperParse
     DivertHelperCalcChecksums
+    DivertHelperParsePacket
+    DivertHelperParseIPv4Address
+    DivertHelperParseIPv6Address
