@@ -5,3 +5,8 @@ WinDivert 1.0.1
 WinDivert 1.0.2
     - WinDivert now requires Administrator privileges in order to access
       (as opposed to just install) the WinDivert device.
+WinDivert 1.0.3
+    - Fix bug(s) relating to the parsing of IPv6 addresses.
+    - DivertOpen() now returns more meaningful error codes on failure.
+    - Two new helper API functions: DivertHelperParseIPvXAddress(..), X=4,6.
+    - Renamed DivertHelperParse(..) to DivertHelperParsePacket(..).
