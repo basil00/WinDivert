@@ -29,8 +29,13 @@
 #include <string.h>
 
 #ifdef __MINGW32__
-#define wcscpy_s(s1, l, s2)     wcscpy(s1, s2)
-#endif
+#define wcscpy_s(s1, l, s2)     divert_wcscpy_s((s1), (l), (s2))
+static int divert_wcscpy_s(wchar_t *dst, size_t len, wchar_t *src)
+{
+    wcscpy(dst, src);
+    return 0;
+}
+#endif      /* __MINGW32__ */
 
 /*
  * From wdfinstaller.h
