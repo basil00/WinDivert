@@ -21,11 +21,11 @@
 
 set -e
 
-ENVS="i586-mingw32msvc amd64-mingw32msvc"
+ENVS="i686-w64-mingw32 x86_64-w64-mingw32"
 
 for ENV in $ENVS
 do
-    if [ $ENV = "i586-mingw32msvc" ]
+    if [ $ENV = "i686-w64-mingw32" ]
     then
         CPU=i386
     else

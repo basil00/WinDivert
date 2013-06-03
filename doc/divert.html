@@ -10,9 +10,9 @@
 <li><a href="#introduction">1. Introduction</a></li>
 <li><a href="#building">2. Building</a></li>
 <ul>
-<li><a href="#driver_signing">2.2 Driver Signing</a></li>
-<li><a href="#visual_studio_2010_support">2.3 Visual Studio 2010 Support</a></li>
-<li><a href="#mingw_support">2.4 MinGW Support</a></li>
+<li><a href="#driver_signing">2.1 Driver Signing</a></li>
+<li><a href="#visual_studio_2010_support">2.2 Visual Studio 2010 Support</a></li>
+<li><a href="#mingw_support">2.3 MinGW Support</a></li>
 </ul>
 <li><a href="#installing">3. Installing</a></li>
 <li><a href="#uninstalling">4. Uninstalling</a></li>
@@ -115,58 +115,17 @@ are only compatible with programs compiled with the WDDK compiler.
 See below for Visual Studio 2010 and MinGW support.
 </p>
 
-<a name="driver_signing"><h3>2.2 Driver Signing</h3></a>
+<a name="driver_signing"><h3>2.1 Driver Signing</h3></a>
 <p>
 Before the WinDivert package can be used, the <tt>WinDivert.sys</tt> driver
-must be digitally signed.
+must contain a valid digital signature.
 This is Microsoft policy for all kernel drivers in recent versions of
 Windows.
 See <a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487317.aspx">Driver Signing Requirements for Windows</a>
 for more information.
-If you wish to simply test and/or evaluate WinDivert, you can set up a
-<i>test certificate</i> and <i>test sign</i> the <tt>WinDivert.sys</tt>
-driver.
-See <a
-href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff553467%28v=vs.85%29.aspx#using_a_makecert_test_certificate_or_a_commercial_test_certificate_to_">
-Test Signing a Driver Package</a> for more information.
-In summary, the steps are:
-<ol>
-    <li> Download and install
-<a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487428.aspx">Windows
-    Driver Kit 7.1.0</a>.</li>
-    <li> Open a WDK <i>Build Environment</i> console as Administrator.</li>
-    <li> Run the <tt>MakeCert.exe</tt> tool to create a test certificate, e.g.
-    with:
-<pre>
-    MakeCert -r -pe -ss TestCertStoreName -n "CN=TestCertName" CertFileName.cer
-</pre>
-    </li>
-    <li> Install the test certificate with <tt>CertMgr.exe</tt>, e.g. with:
-<pre>
-    CertMgr /add CertFileName.cer /s /r localMachine root
-</pre>
-    </li>
-    <li> Sign <tt>WinDivert.sys</tt> with the test certificate, e.g. with:
-<pre>
-    SignTool sign /v /s TestCertStoreName /n TestCertName WinDivert.sys
-</pre>
-    </li>
-    <li> Before you can load test-signed drivers, you must enable
-    Windows <i>test mode</i>.
-    To do this, run the command:
-<pre>
-    Bcdedit.exe -set TESTSIGNING ON
-</pre>
-    and restart Windows.
-    For more information, see
-    <a href="http://msdn.microsoft.com/en-us/library/windows/hardware/ff553484%28v=vs.85%29.aspx">The
-    TESTSIGNING Boot Configuration Option</a>.
-    </li>
-</ol>
-After following these steps you should be able to use the WinDivert driver.
 </p>
 
-<a name="visual_studio_2010_support"><h3>2.3 Visual Studio 2010 Support</h3></a>
+<a name="visual_studio_2010_support"><h3>2.2 Visual Studio 2010 Support</h3></a>
 <p>
 To build the WinDivert package for Visual Studio 2010:
 <ol>
@@ -182,7 +141,7 @@ This will build Visual Studio 2010 compatible files and place them in the
 </ol>
 </p>
 
-<a name="mingw_support"><h3>2.4 MinGW Support</h3></a>
+<a name="mingw_support"><h3>2.3 MinGW Support</h3></a>
 <p>
 To build the WinDivert package for MinGW:
 <ol>

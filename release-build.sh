@@ -56,6 +56,11 @@ do
     cp sys/divert.inf $INSTALL/x86/WinDivert.inf
     echo "\tcopy $INSTALL/x86/WinDivert.sys..."
     cp install/$TARGET/i386/WinDivert.sys $INSTALL/x86
+    if ! grep "DigiCert High Assurance EV Root" $INSTALL/x86/WinDivert.sys \
+        2>&1 >/dev/null
+    then
+        echo "\tWARNING: using unsigned WinDivert.sys..."
+    fi
     if [ $TARGET != MINGW ]
     then
         echo "\tcopy $INSTALL/x86/WinDivert.lib..."
@@ -86,6 +91,11 @@ do
         cp sys/divert.inf $INSTALL/amd64/WinDivert.inf
         echo "\tcopy $INSTALL/amd64/WinDivert.sys..."
         cp install/$TARGET/amd64/WinDivert.sys $INSTALL/amd64
+        if ! grep "DigiCert High Assurance EV Root" \
+            $INSTALL/amd64/WinDivert.sys 2>&1 >/dev/null
+        then
+            echo "\tWARNING: using unsigned WinDivert.sys..."
+        fi
         if [ $TARGET != MINGW ]
         then
             echo "\tcopy $INSTALL/amd64/WinDivert.lib..."

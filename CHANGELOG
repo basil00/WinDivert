@@ -10,3 +10,8 @@ WinDivert 1.0.3
     - DivertOpen() now returns more meaningful error codes on failure.
     - Two new helper API functions: DivertHelperParseIPvXAddress(..), X=4,6.
     - Renamed DivertHelperParse(..) to DivertHelperParsePacket(..).
+WinDivert 1.0.4
+    - Same as WinDivert 1.0.3 except:
+      * Released with signed drivers.
+      * MinGW compiled gcc-4.6
+      * Minor documentation changes.
