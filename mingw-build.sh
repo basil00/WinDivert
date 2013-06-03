@@ -47,19 +47,19 @@ do
         $CC -Wall -O2 -Iinclude/ -c dll/divert.c -o dll/divert.o
         $CC -Wall -shared -o "install/MINGW/$CPU/WinDivert.dll" dll/divert.o 
         echo "\tbuild install/MINGW/$CPU/netdump.exe..."
-        $CC -O2 -Iinclude/ examples/netdump/netdump.c \
+        $CC -s -O2 -Iinclude/ examples/netdump/netdump.c \
             -o "install/MINGW/$CPU/netdump.exe" -lWinDivert -lws2_32 \
             -L"install/MINGW/$CPU/"
         echo "\tbuild install/MINGW/$CPU/netfilter.exe..."
-        $CC -O2 -Iinclude/ examples/netfilter/netfilter.c \
+        $CC -s -O2 -Iinclude/ examples/netfilter/netfilter.c \
             -o "install/MINGW/$CPU/netfilter.exe" -lWinDivert -lws2_32 \
             -L"install/MINGW/$CPU/"
         echo "\tbuild install/MINGW/$CPU/passthru.exe..."
-        $CC -O2 -Iinclude/ examples/passthru/passthru.c \
+        $CC -s -O2 -Iinclude/ examples/passthru/passthru.c \
             -o "install/MINGW/$CPU/passthru.exe" -lWinDivert -lws2_32 \
             -L"install/MINGW/$CPU/"
         echo "\tbuild install/MINGW/$CPU/webfilter.exe..."
-        $CC -O2 -Iinclude/ examples/webfilter/webfilter.c \
+        $CC -s -O2 -Iinclude/ examples/webfilter/webfilter.c \
             -o "install/MINGW/$CPU/webfilter.exe" -lWinDivert -lws2_32 \
              -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/WinDivert.inf..."
