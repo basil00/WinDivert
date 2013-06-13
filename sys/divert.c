@@ -865,7 +865,7 @@ static NTSTATUS divert_register_callout(context_t context, UINT idx,
     filter.layerKey                  = layer->guid;
     filter.displayData.name          = layer->filter_name;
     filter.displayData.description   = layer->filter_desc;
-    filter.action.type               = FWP_ACTION_CALLOUT_UNKNOWN;
+    filter.action.type               = FWP_ACTION_CALLOUT_TERMINATING;
     filter.action.calloutKey         = context->callout_guid[idx];
     filter.subLayerKey               = context->sublayer_guid[idx];
     filter.weight.type               = FWP_EMPTY;
