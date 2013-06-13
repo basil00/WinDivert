@@ -556,15 +556,13 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     WdfControlFinishInitializing(device);
 
     // Create the packet injection handles.
-    status = FwpsInjectionHandleCreate0(AF_INET,
-        FWPS_INJECTION_TYPE_NETWORK, &inject_handle);
+    status = FwpsInjectionHandleCreate0(AF_INET, 0, &inject_handle);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create WFP packet injection handle", status);
         return status;
     }
-    status = FwpsInjectionHandleCreate0(AF_INET6,
-        FWPS_INJECTION_TYPE_NETWORK, &injectv6_handle);
+    status = FwpsInjectionHandleCreate0(AF_INET6, 0, &injectv6_handle);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create WFP ipv6 packet injection handle",
@@ -1733,7 +1731,7 @@ static void divert_classify_inbound_network_v4_callout(
         0, NULL);
     if (!NT_SUCCESS(status))
     {
-        result->actionType = FWP_ACTION_CONTINUE;
+        result->actionType = FWP_ACTION_PERMIT;
         return;
     }
     divert_classify_callout(DIVERT_DIRECTION_INBOUND,
@@ -1772,7 +1770,7 @@ static void divert_classify_inbound_network_v6_callout(
         0, NULL);
     if (!NT_SUCCESS(status))
     {
-        result->actionType = FWP_ACTION_CONTINUE;
+        result->actionType = FWP_ACTION_PERMIT;
         return;
     }
     divert_classify_callout(DIVERT_DIRECTION_INBOUND,
@@ -1799,7 +1797,7 @@ static void divert_classify_forward_network_v4_callout(
 {
     divert_classify_callout(DIVERT_DIRECTION_OUTBOUND,
         fixed_vals->incomingValue[
-            FWPS_FIELD_OUTBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32,
+            FWPS_FIELD_IPFORWARD_V4_DESTINATION_INTERFACE_INDEX].value.uint32,
         0, TRUE, fixed_vals, meta_vals, data, filter, flow_context, result);
 }
 
@@ -1814,7 +1812,7 @@ static void divert_classify_forward_network_v6_callout(
 {
     divert_classify_callout(DIVERT_DIRECTION_OUTBOUND,
         fixed_vals->incomingValue[
-            FWPS_FIELD_OUTBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32,
+            FWPS_FIELD_IPFORWARD_V6_DESTINATION_INTERFACE_INDEX].value.uint32,
         0, FALSE, fixed_vals, meta_vals, data, filter, flow_context, result);
 }
 
@@ -1858,7 +1856,7 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     }
     if (!divert_context_verify(context, DIVERT_CONTEXT_STATE_OPEN))
     {
-        result->actionType = FWP_ACTION_CONTINUE;
+        result->actionType = FWP_ACTION_PERMIT;
         return;
     }
     if (packet_state == FWPS_PACKET_INJECTED_BY_SELF ||
@@ -1867,7 +1865,7 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
         priority = (UINT32)packet_context;
         if (priority <= context->priority)
         {
-            result->actionType = FWP_ACTION_CONTINUE;
+            result->actionType = FWP_ACTION_PERMIT;
             return;
         }
     }
@@ -1904,7 +1902,7 @@ static void divert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     // No NET_BUFFER needs to be queued, permit the entire NET_BUFFER_LIST:
     if (buffers_fst == NULL)
     {
-        result->actionType = FWP_ACTION_CONTINUE;
+        result->actionType = FWP_ACTION_PERMIT;
         return;
     }
 
@@ -1970,7 +1968,7 @@ divert_classify_callout_exit:
 
     if ((context->flags & DIVERT_FLAG_SNIFF) != 0)
     {
-        result->actionType = FWP_ACTION_CONTINUE;
+        result->actionType = FWP_ACTION_PERMIT;
     }
     else
     {
