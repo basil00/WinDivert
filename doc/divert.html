@@ -267,8 +267,22 @@ Common errors include:
 <center>
 <table border="1" cellpadding="5" width="75%">
 <tr>
+<th>
+Name
+</th>
+<th>
+Code
+</th>
+<th>
+Description
+</th>
+</tr>
+<tr>
 <td>
 <tt>ERROR_INVALID_PARAMETER</tt>
+</td>
+<td>
+87
 </td>
 <td>
 This indicates an invalid packet filter string, layer, priority, or flags.
@@ -277,6 +291,9 @@ This indicates an invalid packet filter string, layer, priority, or flags.
 <tr>
 <td>
 <tt>ERROR_FILE_NOT_FOUND</tt>
+</td>
+<td>
+2
 </td>
 <td>
 One or more of the <tt>WinDivert.sys</tt>,
@@ -289,12 +306,18 @@ found.
 <tt>ERROR_ACCESS_DENIED</tt>
 </td>
 <td>
+5
+</td>
+<td>
 The calling application does not have Administrator privileges.
 </td>
 </tr>
 <tr>
 <td>
 <tt>ERROR_INVALID_IMAGE_HASH</tt>
+</td>
+<td>
+577
 </td>
 <td>
 The <tt>WinDivert.sys</tt> driver does not have a valid digital signature
@@ -328,6 +351,14 @@ parameter.
 Currently the following layers are supported.
 <center>
 <table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Layer
+</th>
+<th>
+Description
+</th>
+</tr>
 <tr>
 <td>
 <tt>DIVERT_LAYER_NETWORK = 0</tt>
@@ -366,6 +397,14 @@ priority, and <tt>1000</tt> the lowest priority.
 The following flags are supported.
 <center>
 <table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Flag
+</th>
+<th>
+Description
+</th>
+</tr>
 <tr>
 <td>
 <tt>DIVERT_FLAG_SNIFF</tt>
@@ -575,6 +614,14 @@ Sets a WinDivert parameter.
 Currently, the following WinDivert parameters are defined.
 <center>
 <table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Parameter
+</th>
+<th>
+Description
+</th>
+</tr>
 <tr>
 <td>
 <tt>DIVERT_PARAM_QUEUE_LEN</tt>
@@ -1029,6 +1076,7 @@ where <tt>op</tt> is one of the following:
 </p><p>
 <center>
 <table border="1" cellpadding="5">
+<tr><th>Operator</th><th>Description</th></tr>
 <tr><td><tt>==</tt> or <tt>=</tt></td><td>Equal</td></tr>
 <tr><td><tt>!=</tt></td><td>Not equal</td></tr>
 <tr><td><tt>&lt;</tt></td><td>Less-than</td></tr>
@@ -1048,6 +1096,7 @@ The possible fields are:
 </p><p>
 <center>
 <table border="1" cellpadding="5">
+<tr><th>Field</th><th>Description</th></tr>
 <tr><td><tt>outbound</tt></td><td>Is outbound?</td></tr>
 <tr><td><tt>inbound</tt></td><td>Is inbound?</td></tr>
 <tr><td><tt>ifIdx</tt></td><td>Interface index</td></tr>
@@ -1238,7 +1287,7 @@ They are
 <li><i>No IPv6 extension header support</i>:
     Currently there is no filter support for IPv6 packets with extension
     headers.
-    The work around is to capture all IPv6 traffic.
+    The work around is to capture all IPv6 traffic.</li>
 </ul>
 </p>
 
