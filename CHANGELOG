@@ -15,3 +15,5 @@ WinDivert 1.0.4
       * Released with signed drivers.
       * MinGW compiled gcc-4.6
       * Minor documentation changes.
+WinDivert 1.0.5
+    - Fix the DIVERT_NETWORK_FORWARD_LAYER implementation.
