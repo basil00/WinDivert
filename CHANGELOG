@@ -17,3 +17,4 @@ WinDivert 1.0.4
       * Minor documentation changes.
 WinDivert 1.0.5
     - Fix the DIVERT_NETWORK_FORWARD_LAYER implementation.
+    - Upgrade Visual Studio support to 2012.
