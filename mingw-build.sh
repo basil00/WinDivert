@@ -39,13 +39,15 @@ do
     fi
     echo "BUILD WDDK-$CPU"
     CC="$ENV-gcc"
+    STRIP="$ENV-strip"
     if [ -x "`which $CC`" ]
     then
         echo "\tmake install/MINGW/$CPU..."
         mkdir -p "install/MINGW/$CPU"
         echo "\tbuild install/MINGW/$CPU/WinDivert.dll..."
         $CC -Wall -O2 -Iinclude/ -c dll/divert.c -o dll/divert.o
-        $CC -Wall -shared -o "install/MINGW/$CPU/WinDivert.dll" dll/divert.o 
+        $CC -Wall -shared -o "install/MINGW/$CPU/WinDivert.dll" dll/divert.o
+        $STRIP --strip-debug "install/MINGW/$CPU/WinDivert.dll"
         echo "\tbuild install/MINGW/$CPU/netdump.exe..."
         $CC -s -O2 -Iinclude/ examples/netdump/netdump.c \
             -o "install/MINGW/$CPU/netdump.exe" -lWinDivert -lws2_32 \

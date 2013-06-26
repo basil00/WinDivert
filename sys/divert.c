@@ -556,13 +556,17 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     WdfControlFinishInitializing(device);
 
     // Create the packet injection handles.
-    status = FwpsInjectionHandleCreate0(AF_INET, 0, &inject_handle);
+    status = FwpsInjectionHandleCreate0(AF_INET, 
+        FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
+        &inject_handle);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create WFP packet injection handle", status);
         return status;
     }
-    status = FwpsInjectionHandleCreate0(AF_INET6, 0, &injectv6_handle);
+    status = FwpsInjectionHandleCreate0(AF_INET6, 
+        FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
+        &injectv6_handle);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create WFP ipv6 packet injection handle",
