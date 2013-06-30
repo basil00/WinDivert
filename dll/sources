@@ -1,5 +1,5 @@
 # sources
-# (C) 2012, all rights reserved,
+# (C) 2013, all rights reserved,
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -24,9 +24,9 @@ TARGETLIBS=\
     $(SDK_LIB_PATH)\kernel32.lib \
     $(SDK_LIB_PATH)\ws2_32.lib
 C_DEFINES=/DWIN32 /D_WINDOWS /D_USRDLL /DUSE_STDAFX /DUNICODE /D_UNICODE
-DLLENTRY=DivertDllEntry
-DLLDEF=divert.def
+DLLENTRY=WinDivertDllEntry
+DLLDEF=windivert.def
 USE_MSVCRT=1
 INCLUDES=$(DDK_INC_PATH);$(KMDF_INC_PATH)\$(KMDF_VER_PATH);..\include
-SOURCES=divert.c
+SOURCES=windivert.c
 

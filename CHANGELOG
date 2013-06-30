@@ -18,3 +18,17 @@ WinDivert 1.0.4
 WinDivert 1.0.5
     - Fix the DIVERT_NETWORK_FORWARD_LAYER implementation.
     - Upgrade Visual Studio support to 2012.
+WinDivert 1.1.0
+    - Re-brand "DIVERT" to "WINDIVERT" throughout the code-base.
+    - New flags:
+      * WINDIVERT_FLAG_PASSTHRU: Do not drop nor capture packets.  Useful
+        for injection-only handles.
+      * WINDIVERT_FLAG_NO_CHECKSUM: Do not guarantee that diverted packets
+        have a correct checksum.
+    - New default values and limits for various WinDivert parameters,
+      including WINDIVERT_PARAM_QUEUE_LEN, WINDIVERT_PARAM_QUEUE_TIME, and
+      the maximum filter length.
+    - New extended WinDivert functions that support asynchronous I/O:
+      * WinDivertRecvEx(..)
+      * WinDivertSendEx(..)
+    - The WinDivert driver now services reads (receives) out-of-band.

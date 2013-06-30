@@ -1,6 +1,6 @@
 /*
  * passthru.c
- * (C) 2012, all rights reserved,
+ * (C) 2013, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -21,7 +21,7 @@
  * This program does nothing except divert packets and re-inject them.  This is
  * useful for performance testing.
  *
- * usage: netdump.exe divert-filter num-threads
+ * usage: netdump.exe windivert-filter num-threads
  */
 
 #include <winsock2.h>
@@ -29,7 +29,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "divert.h"
+#include "windivert.h"
 
 #define MAXBUF  0xFFFF
 
@@ -56,7 +56,7 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Divert traffic matching the filter:
-    handle = DivertOpen(argv[1], (DIVERT_LAYER)0, 0, 0);
+    handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, 0, 0);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
@@ -64,7 +64,7 @@ int __cdecl main(int argc, char **argv)
             fprintf(stderr, "error: filter syntax error\n");
             exit(EXIT_FAILURE);
         }
-        fprintf(stderr, "error: failed to open Divert device (%d)\n",
+        fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
@@ -93,14 +93,14 @@ static DWORD passthru(LPVOID arg)
 {
     char packet[MAXBUF];
     UINT packet_len;
-    DIVERT_ADDRESS addr;
+    WINDIVERT_ADDRESS addr;
     HANDLE handle = (HANDLE)arg;
 
     // Main loop:
     while (TRUE)
     {
         // Read a matching packet.
-        if (!DivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
@@ -108,7 +108,7 @@ static DWORD passthru(LPVOID arg)
         }
        
         // Re-inject the matching packet.
-        if (!DivertSend(handle, packet, packet_len, &addr, NULL))
+        if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
         {
             fprintf(stderr, "warning: failed to reinject packet (%d)\n",
                 GetLastError());

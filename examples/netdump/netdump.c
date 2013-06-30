@@ -1,6 +1,6 @@
 /*
  * netdump.c
- * (C) 2012, all rights reserved,
+ * (C) 2013, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -18,10 +18,10 @@
 
 /*
  * DESCRIPTION:
- * This is a simple traffic monitor.  It uses a divert handle in SNIFF mode.
+ * This is a simple traffic monitor.  It uses a WinDivert handle in SNIFF mode.
  * The SNIFF mode copies packets and does not block the original.
  *
- * usage: netdump.exe divert-filter [priority]
+ * usage: netdump.exe windivert-filter [priority]
  *
  */
 
@@ -31,7 +31,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "divert.h"
+#include "windivert.h"
 
 #define MAXBUF  0xFFFF
 
@@ -45,13 +45,13 @@ int __cdecl main(int argc, char **argv)
     INT16 priority = 0;
     char packet[MAXBUF];
     UINT packet_len;
-    DIVERT_ADDRESS addr;
-    PDIVERT_IPHDR ip_header;
-    PDIVERT_IPV6HDR ipv6_header;
-    PDIVERT_ICMPHDR icmp_header;
-    PDIVERT_ICMPV6HDR icmpv6_header;
-    PDIVERT_TCPHDR tcp_header;
-    PDIVERT_UDPHDR udp_header;
+    WINDIVERT_ADDRESS addr;
+    PWINDIVERT_IPHDR ip_header;
+    PWINDIVERT_IPV6HDR ipv6_header;
+    PWINDIVERT_ICMPHDR icmp_header;
+    PWINDIVERT_ICMPV6HDR icmpv6_header;
+    PWINDIVERT_TCPHDR tcp_header;
+    PWINDIVERT_UDPHDR udp_header;
 
     // Check arguments.
     switch (argc)
@@ -62,7 +62,7 @@ int __cdecl main(int argc, char **argv)
             priority = (INT16)atoi(argv[2]);
             break;
         default:
-            fprintf(stderr, "usage: %s divert-filter [priority]\n",
+            fprintf(stderr, "usage: %s windivert-filter [priority]\n",
                 argv[0]);
             fprintf(stderr, "examples:\n");
             fprintf(stderr, "\t%s true\n", argv[0]);
@@ -76,7 +76,8 @@ int __cdecl main(int argc, char **argv)
     console = GetStdHandle(STD_OUTPUT_HANDLE);
 
     // Divert traffic matching the filter:
-    handle = DivertOpen(argv[1], (DIVERT_LAYER)0, priority, DIVERT_FLAG_SNIFF);
+    handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, priority,
+        WINDIVERT_FLAG_SNIFF);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
@@ -84,19 +85,19 @@ int __cdecl main(int argc, char **argv)
             fprintf(stderr, "error: filter syntax error\n");
             exit(EXIT_FAILURE);
         }
-        fprintf(stderr, "error: failed to open Divert device (%d)\n",
+        fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
 
     // Max-out the packet queue:
-    if (!DivertSetParam(handle, DIVERT_PARAM_QUEUE_LEN, 8192))
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LEN, 8192))
     {
         fprintf(stderr, "error: failed to set packet queue length (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
-    if (!DivertSetParam(handle, DIVERT_PARAM_QUEUE_TIME, 1024))
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_TIME, 2048))
     {
         fprintf(stderr, "error: failed to set packet queue time (%d)\n",
             GetLastError());
@@ -107,7 +108,7 @@ int __cdecl main(int argc, char **argv)
     while (TRUE)
     {
         // Read a matching packet.
-        if (!DivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
@@ -115,9 +116,9 @@ int __cdecl main(int argc, char **argv)
         }
        
         // Print info about the matching packet.
-        DivertHelperParse(packet, packet_len, &ip_header, &ipv6_header,
-            &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
-            NULL);
+        WinDivertHelperParsePacket(packet, packet_len, &ip_header,
+            &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
+            &udp_header, NULL, NULL);
         if (ip_header == NULL && ipv6_header == NULL)
         {
             fprintf(stderr, "warning: junk packet\n");
@@ -139,9 +140,10 @@ int __cdecl main(int argc, char **argv)
                 "Checksum=0x%.4X SrcAddr=%u.%u.%u.%u DstAddr=%u.%u.%u.%u]\n",
                 ip_header->Version, ip_header->HdrLength,
                 ntohs(ip_header->TOS), ntohs(ip_header->Length),
-                ntohs(ip_header->Id), DIVERT_IPHDR_GET_RESERVED(ip_header),
-                DIVERT_IPHDR_GET_DF(ip_header), DIVERT_IPHDR_GET_MF(ip_header),
-                ntohs(DIVERT_IPHDR_GET_FRAGOFF(ip_header)), ip_header->TTL,
+                ntohs(ip_header->Id), WINDIVERT_IPHDR_GET_RESERVED(ip_header),
+                WINDIVERT_IPHDR_GET_DF(ip_header),
+                WINDIVERT_IPHDR_GET_MF(ip_header),
+                ntohs(WINDIVERT_IPHDR_GET_FRAGOFF(ip_header)), ip_header->TTL,
                 ip_header->Protocol, ntohs(ip_header->Checksum),
                 src_addr[0], src_addr[1], src_addr[2], src_addr[3],
                 dst_addr[0], dst_addr[1], dst_addr[2], dst_addr[3]);
@@ -155,8 +157,8 @@ int __cdecl main(int argc, char **argv)
             printf("IPv6 [Version=%u TrafficClass=%u FlowLabel=%u Length=%u "
                 "NextHdr=%u HopLimit=%u SrcAddr=",
                 ipv6_header->Version,
-                DIVERT_IPV6HDR_GET_TRAFFICCLASS(ipv6_header),
-                ntohl(DIVERT_IPV6HDR_GET_FLOWLABEL(ipv6_header)),
+                WINDIVERT_IPV6HDR_GET_TRAFFICCLASS(ipv6_header),
+                ntohl(WINDIVERT_IPV6HDR_GET_FLOWLABEL(ipv6_header)),
                 ntohs(ipv6_header->Length), ipv6_header->NextHdr,
                 ipv6_header->HopLimit);
             for (i = 0; i < 8; i++)

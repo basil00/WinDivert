@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# (C) 2012, all rights reserved,
+# (C) 2013, all rights reserved,
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -44,16 +44,16 @@ do
     cp VERSION $INSTALL
     echo "\tmake $INSTALL/include..."
     mkdir -p $INSTALL/include
-    echo "\tcopy $INSTALL/include/divert.h..."
-    cp include/divert.h $INSTALL/include
+    echo "\tcopy $INSTALL/include/windivert.h..."
+    cp include/windivert.h $INSTALL/include
     echo "\tmake $INSTALL/doc..."
     mkdir -p $INSTALL/doc
     echo "\tcopy $INSTALL/doc/WinDivert.html..."
-    cp doc/divert.html $INSTALL/doc/WinDivert.html
+    cp doc/windivert.html $INSTALL/doc/WinDivert.html
     echo "\tmake $INSTALL/x86..."
     mkdir -p $INSTALL/x86
     echo "\tcopy $INSTALL/x86/WinDivert.inf..."
-    cp sys/divert.inf $INSTALL/x86/WinDivert.inf
+    cp sys/windivert.inf $INSTALL/x86/WinDivert.inf
     echo "\tcopy $INSTALL/x86/WinDivert.sys..."
     cp install/$TARGET/i386/WinDivert.sys $INSTALL/x86
     if ! grep "DigiCert High Assurance EV Root" $INSTALL/x86/WinDivert.sys \
@@ -88,7 +88,7 @@ do
         echo "\tmake $INSTALL/amd64..."
         mkdir -p $INSTALL/amd64
         echo "\tcopy $INSTALL/amd64/WinDivert.inf..."
-        cp sys/divert.inf $INSTALL/amd64/WinDivert.inf
+        cp sys/windivert.inf $INSTALL/amd64/WinDivert.inf
         echo "\tcopy $INSTALL/amd64/WinDivert.sys..."
         cp install/$TARGET/amd64/WinDivert.sys $INSTALL/amd64
         if ! grep "DigiCert High Assurance EV Root" \

@@ -1,6 +1,6 @@
 /*
- * divert.h
- * (C) 2012, all rights reserved,
+ * windivert.h
+ * (C) 2013, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -16,16 +16,16 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __DIVERT_H
-#define __DIVERT_H
+#ifndef __WINDIVERT_H
+#define __WINDIVERT_H
 
-#ifndef DIVERT_KERNEL
+#ifndef WINDIVERT_KERNEL
 #include <windows.h>
-#endif      /* DIVERT_KERNEL */
+#endif      /* WINDIVERT_KERNEL */
 
-#ifndef DIVERTEXPORT
-#define DIVERTEXPORT    __declspec(dllimport)
-#endif      /* DIVERTEXPORT */
+#ifndef WINDIVERTEXPORT
+#define WINDIVERTEXPORT     __declspec(dllimport)
+#endif      /* WINDIVERTEXPORT */
 
 #ifdef __MINGW32__
 #define __in
@@ -48,7 +48,7 @@ extern "C" {
 #endif
 
 /****************************************************************************/
-/* DIVERT API                                                               */
+/* WINDIVERT API                                                            */
 /****************************************************************************/
 
 /*
@@ -59,100 +59,118 @@ typedef struct
     UINT32 IfIdx;                       /* Packet's interface index. */
     UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
     UINT8  Direction;                   /* Packet's direction. */
-} DIVERT_ADDRESS, *PDIVERT_ADDRESS;
+} WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
 
-#define DIVERT_DIRECTION_OUTBOUND       0
-#define DIVERT_DIRECTION_INBOUND        1
-
-/*
- * Old names (deprecated).
- */
-#define DIVERT_PACKET_DIRECTION_OUTBOUND                \
-    DIVERT_DIRECTION_OUTBOUND
-#define DIVERT_PACKET_DIRECTION_INBOUND                 \
-    DIVERT_DIRECTION_INBOUND
+#define WINDIVERT_DIRECTION_OUTBOUND    0
+#define WINDIVERT_DIRECTION_INBOUND     1
 
 /*
  * Divert layers.
  */
 typedef enum
 {
-    DIVERT_LAYER_NETWORK = 0,           /* Network layer. */
-    DIVERT_LAYER_NETWORK_FORWARD = 1    /* Network layer (forwarded packets) */
-} DIVERT_LAYER, *PDIVERT_LAYER;
+    WINDIVERT_LAYER_NETWORK = 0,        /* Network layer. */
+    WINDIVERT_LAYER_NETWORK_FORWARD = 1 /* Network layer (forwarded packets) */
+} WINDIVERT_LAYER, *PWINDIVERT_LAYER;
 
 /*
  * Divert flags.
  */
-#define DIVERT_FLAG_SNIFF               1
-#define DIVERT_FLAG_DROP                2
+#define WINDIVERT_FLAG_SNIFF            1
+#define WINDIVERT_FLAG_DROP             2
+#define WINDIVERT_FLAG_PASSTHRU         4
+#define WINDIVERT_FLAG_NO_CHECKSUM      1024
 
 /*
  * Divert parameters.
  */
 typedef enum
 {
-    DIVERT_PARAM_QUEUE_LEN  = 0,        /* Packet queue length. */
-    DIVERT_PARAM_QUEUE_TIME = 1         /* Packet queue time. */
-} DIVERT_PARAM, *PDIVERT_PARAM;
-#define DIVERT_PARAM_MAX                DIVERT_PARAM_QUEUE_TIME
+    WINDIVERT_PARAM_QUEUE_LEN  = 0,     /* Packet queue length. */
+    WINDIVERT_PARAM_QUEUE_TIME = 1      /* Packet queue time. */
+} WINDIVERT_PARAM, *PWINDIVERT_PARAM;
+#define WINDIVERT_PARAM_MAX             WINDIVERT_PARAM_QUEUE_TIME
+
+#ifndef WINDIVERT_KERNEL
 
 /*
- * Open a divert handle.
+ * Open a WinDivert handle.
  */
-extern DIVERTEXPORT HANDLE DivertOpen(
+extern WINDIVERTEXPORT HANDLE WinDivertOpen(
     __in        const char *filter,
-    __in        DIVERT_LAYER layer,
+    __in        WINDIVERT_LAYER layer,
     __in        INT16 priority,
     __in        UINT64 flags);
 
 /*
- * Receive (read) a packet from a divert handle.
+ * Receive (read) a packet from a WinDivert handle.
  */
-extern DIVERTEXPORT BOOL DivertRecv(
+extern WINDIVERTEXPORT BOOL WinDivertRecv(
     __in        HANDLE handle,
     __out       PVOID pPacket,
     __in        UINT packetLen,
-    __out_opt   PDIVERT_ADDRESS pAddr,
+    __out_opt   PWINDIVERT_ADDRESS pAddr,
     __out_opt   UINT *readLen);
 
 /*
- * Send (write/inject) a packet to a divert handle.
+ * Receive (read) a packet from a WinDivert handle.
  */
-extern DIVERTEXPORT BOOL DivertSend(
+extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
+    __in        HANDLE handle,
+    __out       PVOID pPacket,
+    __in        UINT packetLen,
+    __in        UINT64 flags,
+    __out_opt   PWINDIVERT_ADDRESS pAddr,
+    __out_opt   UINT *readLen,
+    __inout_opt LPOVERLAPPED lpOverlapped);
+
+/*
+ * Send (write/inject) a packet to a WinDivert handle.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertSend(
     __in        HANDLE handle,
     __in        PVOID pPacket,
     __in        UINT packetLen,
-    __in        PDIVERT_ADDRESS pAddr,
+    __in        PWINDIVERT_ADDRESS pAddr,
     __out_opt   UINT *writeLen);
 
 /*
- * Close a divert handle.
+ * Send (write/inject) a packet to a WinDivert handle.
  */
-extern DIVERTEXPORT BOOL DivertClose(
+extern WINDIVERTEXPORT BOOL WinDivertSendEx(
+    __in        HANDLE handle,
+    __in        PVOID pPacket,
+    __in        UINT packetLen,
+    __in        UINT64 flags,
+    __in        PWINDIVERT_ADDRESS pAddr,
+    __out_opt   UINT *writeLen,
+    __inout_opt LPOVERLAPPED lpOverlapped);
+
+/*
+ * Close a WinDivert handle.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertClose(
     __in        HANDLE handle);
 
 /*
- * Set a divert handle parameter.
+ * Set a WinDivert handle parameter.
  */
-extern DIVERTEXPORT BOOL DivertSetParam(
+extern WINDIVERTEXPORT BOOL WinDivertSetParam(
     __in        HANDLE handle,
-    __in        DIVERT_PARAM param,
+    __in        WINDIVERT_PARAM param,
     __in        UINT64 value);
 
 /*
- * Get a divert handle parameter.
+ * Get a WinDivert handle parameter.
  */
-extern DIVERTEXPORT BOOL DivertGetParam(
+extern WINDIVERTEXPORT BOOL WinDivertGetParam(
     __in        HANDLE handle,
-    __in        DIVERT_PARAM param,
+    __in        WINDIVERT_PARAM param,
     __out       UINT64 *pValue);
 
 /****************************************************************************/
-/* DIVERT HELPER API                                                        */
+/* WINDIVERT HELPER API                                                     */
 /****************************************************************************/
-
-#ifndef DIVERT_NO_HELPER_API
 
 /*
  * IPv4/IPv6/ICMP/ICMPv6/TCP/UDP header definitions.
@@ -170,39 +188,39 @@ typedef struct
     UINT16 Checksum;
     UINT32 SrcAddr;
     UINT32 DstAddr;
-} DIVERT_IPHDR, *PDIVERT_IPHDR;
+} WINDIVERT_IPHDR, *PWINDIVERT_IPHDR;
 
-#define DIVERT_IPHDR_GET_FRAGOFF(hdr)                       \
+#define WINDIVERT_IPHDR_GET_FRAGOFF(hdr)                    \
     (((hdr)->FragOff0) & 0xFF1F)
-#define DIVERT_IPHDR_GET_MF(hdr)                            \
+#define WINDIVERT_IPHDR_GET_MF(hdr)                         \
     ((((hdr)->FragOff0) & 0x0020) != 0)
-#define DIVERT_IPHDR_GET_DF(hdr)                            \
+#define WINDIVERT_IPHDR_GET_DF(hdr)                         \
     ((((hdr)->FragOff0) & 0x0040) != 0)
-#define DIVERT_IPHDR_GET_RESERVED(hdr)                      \
+#define WINDIVERT_IPHDR_GET_RESERVED(hdr)                   \
     ((((hdr)->FragOff0) & 0x0080) != 0)
 
-#define DIVERT_IPHDR_SET_FRAGOFF(hdr, val)                  \
+#define WINDIVERT_IPHDR_SET_FRAGOFF(hdr, val)               \
     do                                                      \
     {                                                       \
         (hdr)->FragOff0 = (((hdr)->FragOff0) & 0x00E0) |    \
             ((val) & 0xFF1F);                               \
     }                                                       \
     while (FALSE)
-#define DIVERT_IPHDR_SET_MF(hdr, val)                       \
+#define WINDIVERT_IPHDR_SET_MF(hdr, val)                    \
     do                                                      \
     {                                                       \
         (hdr)->FragOff0 = (((hdr)->FragOff0) & 0xFFDF) |    \
             (((val) & 0x0001) << 5);                        \
     }                                                       \
     while (FALSE)
-#define DIVERT_IPHDR_SET_DF(hdr, val)                       \
+#define WINDIVERT_IPHDR_SET_DF(hdr, val)                    \
     do                                                      \
     {                                                       \
         (hdr)->FragOff0 = (((hdr)->FragOff0) & 0xFFBF) |    \
             (((val) & 0x0001) << 6);                        \
     }                                                       \
     while (FALSE)
-#define DIVERT_IPHDR_SET_RESERVED(hdr, val)                 \
+#define WINDIVERT_IPHDR_SET_RESERVED(hdr, val)              \
     do                                                      \
     {                                                       \
         (hdr)->FragOff0 = (((hdr)->FragOff0) & 0xFF7F) |    \
@@ -222,21 +240,21 @@ typedef struct
     UINT8  HopLimit;
     UINT32 SrcAddr[4];
     UINT32 DstAddr[4];
-} DIVERT_IPV6HDR, *PDIVERT_IPV6HDR;
+} WINDIVERT_IPV6HDR, *PWINDIVERT_IPV6HDR;
 
-#define DIVERT_IPV6HDR_GET_TRAFFICCLASS(hdr)                \
+#define WINDIVERT_IPV6HDR_GET_TRAFFICCLASS(hdr)             \
     ((((hdr)->TrafficClass0) << 4) | ((hdr)->TrafficClass1))
-#define DIVERT_IPV6HDR_GET_FLOWLABEL(hdr)                   \
+#define WINDIVERT_IPV6HDR_GET_FLOWLABEL(hdr)                \
     ((((UINT32)(hdr)->FlowLabel0) << 16) | ((UINT32)(hdr)->FlowLabel1))
 
-#define DIVERT_IPV6HDR_SET_TRAFFICCLASS(hdr, val)           \
+#define WINDIVERT_IPV6HDR_SET_TRAFFICCLASS(hdr, val)        \
     do                                                      \
     {                                                       \
         (hdr)->TrafficClass0 = ((UINT8)(val) >> 4);         \
         (hdr)->TrafficClass1 = (UINT8)(val);                \
     }                                                       \
     while (FALSE)
-#define DIVERT_IPV6HDR_SET_FLOWLABEL(hdr, val)              \
+#define WINDIVERT_IPV6HDR_SET_FLOWLABEL(hdr, val)           \
     do                                                      \
     {                                                       \
         (hdr)->FlowLabel0 = (UINT8)((val) >> 16);           \
@@ -250,7 +268,7 @@ typedef struct
     UINT8  Code;
     UINT16 Checksum;
     UINT32 Body;
-} DIVERT_ICMPHDR, *PDIVERT_ICMPHDR;
+} WINDIVERT_ICMPHDR, *PWINDIVERT_ICMPHDR;
 
 typedef struct
 {
@@ -258,7 +276,7 @@ typedef struct
     UINT8  Code;
     UINT16 Checksum;
     UINT32 Body;
-} DIVERT_ICMPV6HDR, *PDIVERT_ICMPV6HDR;
+} WINDIVERT_ICMPV6HDR, *PWINDIVERT_ICMPV6HDR;
 
 typedef struct
 {
@@ -278,7 +296,7 @@ typedef struct
     UINT16 Window;
     UINT16 Checksum;
     UINT16 UrgPtr;
-} DIVERT_TCPHDR, *PDIVERT_TCPHDR;
+} WINDIVERT_TCPHDR, *PWINDIVERT_TCPHDR;
 
 typedef struct
 {
@@ -286,65 +304,58 @@ typedef struct
     UINT16 DstPort;
     UINT16 Length;
     UINT16 Checksum;
-} DIVERT_UDPHDR, *PDIVERT_UDPHDR;
+} WINDIVERT_UDPHDR, *PWINDIVERT_UDPHDR;
 
 /*
  * Flags for DivertHelperCalcChecksums()
  */
-#define DIVERT_HELPER_NO_IP_CHECKSUM        1
-#define DIVERT_HELPER_NO_ICMP_CHECKSUM      2
-#define DIVERT_HELPER_NO_ICMPV6_CHECKSUM    4
-#define DIVERT_HELPER_NO_TCP_CHECKSUM       8
-#define DIVERT_HELPER_NO_UDP_CHECKSUM       16
+#define WINDIVERT_HELPER_NO_IP_CHECKSUM                     1
+#define WINDIVERT_HELPER_NO_ICMP_CHECKSUM                   2
+#define WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM                 4
+#define WINDIVERT_HELPER_NO_TCP_CHECKSUM                    8
+#define WINDIVERT_HELPER_NO_UDP_CHECKSUM                    16
 
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern DIVERTEXPORT BOOL DivertHelperParsePacket(
+extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __in        PVOID pPacket,
     __in        UINT packetLen,
-    __out_opt   PDIVERT_IPHDR *ppIpHdr,
-    __out_opt   PDIVERT_IPV6HDR *ppIpv6Hdr,
-    __out_opt   PDIVERT_ICMPHDR *ppIcmpHdr,
-    __out_opt   PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
-    __out_opt   PDIVERT_TCPHDR *ppTcpHdr,
-    __out_opt   PDIVERT_UDPHDR *ppUdpHdr,
+    __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
+    __out_opt   PWINDIVERT_IPV6HDR *ppIpv6Hdr,
+    __out_opt   PWINDIVERT_ICMPHDR *ppIcmpHdr,
+    __out_opt   PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
+    __out_opt   PWINDIVERT_TCPHDR *ppTcpHdr,
+    __out_opt   PWINDIVERT_UDPHDR *ppUdpHdr,
     __out_opt   PVOID *ppData,
     __out_opt   UINT *pDataLen);
 
 /*
- * Old name (deprecated).
- */
-#define DivertHelperParse(p, pl, ip, ip6, icmp, icmp6, tcp, udp, d, dl)     \
-    DivertHelperParsePacket((p), (pl), (ip), (ip6), (icmp), (icmp6), (tcp), \
-        (udp), (d), (dl))
-
-/*
  * Parse an IPv4 address.
  */
-extern DIVERTEXPORT BOOL DivertHelperParseIPv4Address(
+extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv4Address(
     __in        const char *addrStr,
     __out_opt   UINT32 *pAddr);
 
 /*
  * Parse an IPv6 address.
  */
-extern DIVERTEXPORT BOOL DivertHelperParseIPv6Address(
+extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
     __in        const char *addrStr,
     __out_opt   UINT32 *pAddr);
 
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
-extern DIVERTEXPORT UINT DivertHelperCalcChecksums(
+extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
     __inout     PVOID pPacket, 
     __in        UINT packetLen,
     __in        UINT64 flags);
 
-#endif      /* DIVERT_NO_HELPER_API */
+#endif      /* WINDIVERT_KERNEL */
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif      /* __DIVERT_H */
+#endif      /* __WINDIVERT_H */

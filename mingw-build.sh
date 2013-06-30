@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # mingw-build.sh
-# (C) 2012, all rights reserved,
+# (C) 2013, all rights reserved,
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Lesser General Public License as published by
@@ -45,8 +45,8 @@ do
         echo "\tmake install/MINGW/$CPU..."
         mkdir -p "install/MINGW/$CPU"
         echo "\tbuild install/MINGW/$CPU/WinDivert.dll..."
-        $CC -Wall -O2 -Iinclude/ -c dll/divert.c -o dll/divert.o
-        $CC -Wall -shared -o "install/MINGW/$CPU/WinDivert.dll" dll/divert.o
+        $CC -Wall -O2 -Iinclude/ -c dll/windivert.c -o dll/windivert.o
+        $CC -Wall -shared -o "install/MINGW/$CPU/WinDivert.dll" dll/windivert.o
         $STRIP --strip-debug "install/MINGW/$CPU/WinDivert.dll"
         echo "\tbuild install/MINGW/$CPU/netdump.exe..."
         $CC -s -O2 -Iinclude/ examples/netdump/netdump.c \

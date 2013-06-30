@@ -1,6 +1,6 @@
 /*
- * divert.c
- * (C) 2012, all rights reserved,
+ * windivert.c
+ * (C) 2013, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -29,8 +29,8 @@
 #include <string.h>
 
 #ifdef __MINGW32__
-#define wcscpy_s(s1, l, s2)     divert_wcscpy_s((s1), (l), (s2))
-static int divert_wcscpy_s(wchar_t *dst, size_t len, wchar_t *src)
+#define wcscpy_s(s1, l, s2)     windivert_wcscpy_s((s1), (l), (s2))
+static int windivert_wcscpy_s(wchar_t *dst, size_t len, wchar_t *src)
 {
     wcscpy(dst, src);
     return 0;
@@ -70,17 +70,17 @@ typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEREMOVE)(
         LPCWSTR inf_sec_name
     );
 
-// #define DIVERT_DEBUG
+// #define WINDIVERT_DEBUG
 
-#define DIVERTEXPORT
-#include "divert.h"
-#include "divert_device.h"
+#define WINDIVERTEXPORT
+#include "windivert.h"
+#include "windivert_device.h"
 
-#define DIVERT_DRIVER_NAME              L"WinDivert"
-#define DIVERT_DRIVER_SYS               L"\\" DIVERT_DRIVER_NAME L".sys"
-#define DIVERT_DRIVER_INF               L"\\" DIVERT_DRIVER_NAME L".inf"
-#define DIVERT_DRIVER_SECTION           L"divert.NT.Wdf"
-#define DIVERT_DRIVER_MATCH_DLL         L"\\WdfCoInstaller*.dll"
+#define WINDIVERT_DRIVER_NAME              L"WinDivert"
+#define WINDIVERT_DRIVER_SYS               L"\\" WINDIVERT_DRIVER_NAME L".sys"
+#define WINDIVERT_DRIVER_INF               L"\\" WINDIVERT_DRIVER_NAME L".inf"
+#define WINDIVERT_DRIVER_SECTION           L"windivert.NT.Wdf"
+#define WINDIVERT_DRIVER_MATCH_DLL         L"\\WdfCoInstaller*.dll"
 
 /*
  * ntoh and hton implementation to remove winsock dependency.
@@ -198,7 +198,7 @@ typedef struct
     UINT8  Zero;
     UINT8  Protocol;
     UINT16 Length;
-} DIVERT_PSEUDOHDR, *PDIVERT_PSEUDOHDR;
+} WINDIVERT_PSEUDOHDR, *PWINDIVERT_PSEUDOHDR;
 
 typedef struct
 {
@@ -207,7 +207,7 @@ typedef struct
     UINT32 Length;
     UINT32 NextHdr:8;
     UINT32 Zero:24;
-} DIVERT_PSEUDOV6HDR, *PDIVERT_PSEUDOV6HDR;
+} WINDIVERT_PSEUDOV6HDR, *PWINDIVERT_PSEUDOV6HDR;
 
 /*
  * Misc.
@@ -231,31 +231,34 @@ static BOOLEAN installed = FALSE;
 /*
  * Prototypes.
  */
-static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll);
-static BOOLEAN DivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
+static HMODULE WinDivertLoadCoInstaller(LPWSTR windivert_dll);
+static BOOLEAN WinDivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
     LPWSTR *inf_str_ptr, LPWSTR *dll_str_ptr);
-static BOOLEAN DivertDriverInstall(VOID);
-static BOOLEAN DivertDriverUnInstall(VOID);
-static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT8 arg8, UINT64 arg,
-    PVOID buf, UINT len, UINT *iolen);
-static BOOL DivertCompileFilter(const char *filter_str, DIVERT_LAYER layer,
-    divert_ioctl_filter_t filter, UINT16 *fp);
-static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b);
-static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
+static BOOLEAN WinDivertDriverInstall(VOID);
+static BOOLEAN WinDivertDriverUnInstall(VOID);
+static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
+    UINT64 arg, PVOID buf, UINT len, UINT *iolen);
+static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
+    UINT64 arg, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped);
+static BOOL WinDivertCompileFilter(const char *filter_str,
+    WINDIVERT_LAYER layer, windivert_ioctl_filter_t filter, UINT16 *fp);
+static int __cdecl WinDivertFilterTokenNameCompare(const void *a,
+    const void *b);
+static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
     FILTER_TOKEN *tokens, UINT tokensmax);
-static BOOL DivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
-    divert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op);
-static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT16 s,
+static BOOL WinDivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
+    windivert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op);
+static void WinDivertFilterUpdate(windivert_ioctl_filter_t filter, UINT16 s,
     UINT16 e, UINT16 success, UINT16 failure);
-static void DivertInitPseudoHeader(PDIVERT_IPHDR ip_header,
-    PDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len);
-static void DivertInitPseudoHeaderV6(PDIVERT_IPV6HDR ipv6_header,
-    PDIVERT_PSEUDOV6HDR pseudov6_header, UINT8 protocol, UINT len);
-static UINT16 DivertHelperCalcChecksum(PVOID pseudo_header,
+static void WinDivertInitPseudoHeader(PWINDIVERT_IPHDR ip_header,
+    PWINDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len);
+static void WinDivertInitPseudoHeaderV6(PWINDIVERT_IPV6HDR ipv6_header,
+    PWINDIVERT_PSEUDOV6HDR pseudov6_header, UINT8 protocol, UINT len);
+static UINT16 WinDivertHelperCalcChecksum(PVOID pseudo_header,
     UINT16 pseudo_header_len, PVOID data, UINT len);
 
-#ifdef DIVERT_DEBUG
-static void DivertFilterDump(divert_ioctl_filter_t filter, UINT16 len);
+#ifdef WINDIVERT_DEBUG
+static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len);
 #endif
 
 /*
@@ -269,19 +272,19 @@ PFN_WDFPOSTDEVICEREMOVE pfnWdfPostDeviceRemove = NULL;
 /*
  * Thread local.
  */
-static DWORD divert_tls_idx;
+static DWORD windivert_tls_idx;
 
 /*
  * Dll Entry
  */
-extern BOOL APIENTRY DivertDllEntry(HANDLE module, DWORD reason,
+extern BOOL APIENTRY WinDivertDllEntry(HANDLE module, DWORD reason,
     LPVOID reserved)
 {
     HANDLE event;
     switch (reason)
     {
         case DLL_PROCESS_ATTACH:
-            if ((divert_tls_idx = TlsAlloc()) == TLS_OUT_OF_INDEXES)
+            if ((windivert_tls_idx = TlsAlloc()) == TLS_OUT_OF_INDEXES)
             {
                 return FALSE;
             }
@@ -292,21 +295,21 @@ extern BOOL APIENTRY DivertDllEntry(HANDLE module, DWORD reason,
             {
                 return FALSE;
             }
-            TlsSetValue(divert_tls_idx, (LPVOID)event);
+            TlsSetValue(windivert_tls_idx, (LPVOID)event);
             break;
 
         case DLL_PROCESS_DETACH:
-            event = (HANDLE)TlsGetValue(divert_tls_idx);
+            event = (HANDLE)TlsGetValue(windivert_tls_idx);
             if (event != (HANDLE)NULL)
             {
                 CloseHandle(event);
             }
-            TlsFree(divert_tls_idx);
-            DivertDriverUnInstall();
+            TlsFree(windivert_tls_idx);
+            WinDivertDriverUnInstall();
             break;
 
         case DLL_THREAD_DETACH:
-            event = (HANDLE)TlsGetValue(divert_tls_idx);
+            event = (HANDLE)TlsGetValue(windivert_tls_idx);
             if (event != (HANDLE)NULL)
             {
                 CloseHandle(event);
@@ -319,7 +322,7 @@ extern BOOL APIENTRY DivertDllEntry(HANDLE module, DWORD reason,
 /*
  * Load the co-installer functions.
  */
-static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll)
+static HMODULE WinDivertLoadCoInstaller(LPWSTR windivert_dll)
 {
     static HMODULE library = NULL;
     
@@ -328,7 +331,7 @@ static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll)
         return library;
     }
     
-    library = LoadLibrary(divert_dll);
+    library = LoadLibrary(windivert_dll);
     if (library == NULL)
     {
         return NULL;
@@ -338,30 +341,30 @@ static HMODULE DivertLoadCoInstaller(LPWSTR divert_dll)
         library, "WdfPreDeviceInstallEx");
     if (pfnWdfPreDeviceInstallEx == NULL)
     {
-        goto DivertLoadInstallerError;
+        goto WinDivertLoadInstallerError;
     }
     pfnWdfPostDeviceInstall = (PFN_WDFPOSTDEVICEINSTALL)GetProcAddress(
         library, "WdfPostDeviceInstall");
     if (pfnWdfPostDeviceInstall == NULL)
     {
-        goto DivertLoadInstallerError;
+        goto WinDivertLoadInstallerError;
     }
     pfnWdfPreDeviceRemove = (PFN_WDFPREDEVICEREMOVE)GetProcAddress(
         library, "WdfPreDeviceRemove");
     if (pfnWdfPreDeviceRemove == NULL)
     {
-        goto DivertLoadInstallerError;
+        goto WinDivertLoadInstallerError;
     }
     pfnWdfPostDeviceRemove = (PFN_WDFPOSTDEVICEREMOVE)GetProcAddress(
         library, "WdfPostDeviceRemove");
     if (pfnWdfPostDeviceRemove == NULL)
     {
-        goto DivertLoadInstallerError;
+        goto WinDivertLoadInstallerError;
     }
 
     return library;
 
-DivertLoadInstallerError:
+WinDivertLoadInstallerError:
 
     FreeLibrary(library);
     pfnWdfPreDeviceInstallEx = NULL;
@@ -372,9 +375,9 @@ DivertLoadInstallerError:
 }
 
 /*
- * Locate the Divert driver files.
+ * Locate the WinDivert driver files.
  */
-static BOOLEAN DivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
+static BOOLEAN WinDivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
     LPWSTR *inf_str_ptr, LPWSTR *dll_str_ptr)
 {
     DWORD err;
@@ -389,61 +392,61 @@ static BOOLEAN DivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
     dir_len = GetCurrentDirectory(0, NULL);
     if (dir_len == 0)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     dir_len--;
-    sys_len = dir_len + wcslen(DIVERT_DRIVER_SYS);
-    inf_len = dir_len + wcslen(DIVERT_DRIVER_INF);
-    dll_len = dir_len + wcslen(DIVERT_DRIVER_MATCH_DLL);
+    sys_len = dir_len + wcslen(WINDIVERT_DRIVER_SYS);
+    inf_len = dir_len + wcslen(WINDIVERT_DRIVER_INF);
+    dll_len = dir_len + wcslen(WINDIVERT_DRIVER_MATCH_DLL);
     dir_str = (WCHAR *)malloc((dir_len+1)*sizeof(WCHAR));
     if (dir_str == NULL)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     if (GetCurrentDirectory(dir_len+1, dir_str) != dir_len)
     {
         SetLastError(ERROR_FILE_NOT_FOUND);
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     sys_str = (WCHAR *)malloc((sys_len+1)*sizeof(WCHAR));
     if (sys_str == NULL)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     inf_str = (WCHAR *)malloc((inf_len+1)*sizeof(WCHAR));
     if (inf_str == NULL)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     dll_str = (WCHAR *)malloc((dll_len+1)*sizeof(WCHAR));
     if (dll_str == NULL)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     if (wcscpy_s(sys_str, sys_len+1, dir_str) != 0 ||
         wcscpy_s(inf_str, inf_len+1, dir_str) != 0 ||
         wcscpy_s(dll_str, dll_len+1, dir_str) != 0 ||
         wcscpy_s(sys_str + dir_len, sys_len+1-dir_len,
-            DIVERT_DRIVER_SYS) != 0 ||
+            WINDIVERT_DRIVER_SYS) != 0 ||
         wcscpy_s(inf_str + dir_len, inf_len+1-dir_len,
-            DIVERT_DRIVER_INF) != 0 ||
+            WINDIVERT_DRIVER_INF) != 0 ||
         wcscpy_s(dll_str + dir_len, dll_len+1-dir_len,
-            DIVERT_DRIVER_MATCH_DLL))
+            WINDIVERT_DRIVER_MATCH_DLL))
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
 
     // Check the the files exist; and find the co-installer filename.
     find = FindFirstFile(sys_str, &find_data);
     if (find == INVALID_HANDLE_VALUE)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     FindClose(find);
     find = FindFirstFile(inf_str, &find_data);
     if (find == INVALID_HANDLE_VALUE)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     FindClose(find);
     find = FindFirstFile(dll_str, &find_data);
@@ -451,24 +454,24 @@ static BOOLEAN DivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
     dll_str = NULL;
     if (find == INVALID_HANDLE_VALUE)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     FindClose(find);
     dll_len = dir_len + 1 + wcslen(find_data.cFileName) + 1;
     dll_str = (WCHAR *)malloc((dll_len+1)*sizeof(WCHAR));
     if (dll_str == NULL)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     if (wcscpy_s(dll_str, dll_len+1, dir_str) != 0)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
     dll_str[dir_len] = L'\\';
     if (wcscpy_s(dll_str + dir_len + 1, dll_len+1-dir_len-1,
             find_data.cFileName) != 0)
     {
-        goto DivertDriverFilesError;
+        goto WinDivertDriverFilesError;
     }
 
     *dir_str_ptr = dir_str;
@@ -477,7 +480,7 @@ static BOOLEAN DivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
     *dll_str_ptr = dll_str;
     return TRUE;
 
-DivertDriverFilesError:
+WinDivertDriverFilesError:
     err = GetLastError();
     free(dir_str);
     free(sys_str);
@@ -491,15 +494,15 @@ DivertDriverFilesError:
 }
 
 /*
- * Install the Divert driver.
+ * Install the WinDivert driver.
  */
-static BOOLEAN DivertDriverInstall(VOID)
+static BOOLEAN WinDivertDriverInstall(VOID)
 {
     DWORD err;
     SC_HANDLE manager = NULL, service = NULL;
     WDF_COINSTALLER_INSTALL_OPTIONS client_options;
-    LPWSTR divert_dir = NULL, divert_sys = NULL, divert_inf = NULL,
-        divert_dll = NULL;
+    LPWSTR windivert_dir = NULL, windivert_sys = NULL, windivert_inf = NULL,
+        windivert_dll = NULL;
 
     // Do nothing if the driver is already installed:
     if (installed)
@@ -511,60 +514,62 @@ static BOOLEAN DivertDriverInstall(VOID)
     manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
     if (manager == NULL)
     {
-        goto DivertDriverInstallExit;
+        goto WinDivertDriverInstallExit;
     }
 
-    // Check if the divert service already exists; if so, start it.
-    service = OpenService(manager, DIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
+    // Check if the WinDivert service already exists; if so, start it.
+    service = OpenService(manager, WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
     if (service != NULL)
     {
         if (!StartService(service, 0, NULL))
         {
             err = GetLastError();
             installed = (err == ERROR_SERVICE_ALREADY_RUNNING);
-            goto DivertDriverInstallExit;
+            goto WinDivertDriverInstallExit;
         }
         installed = TRUE;
-        goto DivertDriverInstallExit;
+        goto WinDivertDriverInstallExit;
     }
 
     // Get driver files:
-    if (!DivertDriverFiles(&divert_dir, &divert_sys, &divert_inf, &divert_dll))
+    if (!WinDivertDriverFiles(&windivert_dir, &windivert_sys, &windivert_inf,
+            &windivert_dll))
     {
         return FALSE;
     }
 
     // Load the co-installer:
-    if (DivertLoadCoInstaller(divert_dll) == NULL)
+    if (WinDivertLoadCoInstaller(windivert_dll) == NULL)
     {
         return FALSE;
     }
 
     // Pre-install:
     WDF_COINSTALLER_INSTALL_OPTIONS_INIT(&client_options);
-    err = pfnWdfPreDeviceInstallEx(divert_inf, DIVERT_DRIVER_SECTION,
+    err = pfnWdfPreDeviceInstallEx(windivert_inf, WINDIVERT_DRIVER_SECTION,
         &client_options);
     if (err != ERROR_SUCCESS)
     {
         SetLastError(err);
-        goto DivertDriverInstallExit;
+        goto WinDivertDriverInstallExit;
     }
 
     // Create the service:
-    service = CreateService(manager, DIVERT_DEVICE_NAME, DIVERT_DEVICE_NAME,
-        SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER, SERVICE_DEMAND_START,
-        SERVICE_ERROR_NORMAL, divert_sys, NULL, NULL, NULL, NULL, NULL);
+    service = CreateService(manager, WINDIVERT_DEVICE_NAME,
+        WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS, SERVICE_KERNEL_DRIVER,
+        SERVICE_DEMAND_START, SERVICE_ERROR_NORMAL, windivert_sys, NULL, NULL,
+        NULL, NULL, NULL);
     if (service == NULL)
     {
         if (GetLastError() == ERROR_SERVICE_EXISTS) 
         {
             installed = TRUE;
         }
-        goto DivertDriverInstallExit;
+        goto WinDivertDriverInstallExit;
     }
 
     // Post-install:
-    err = pfnWdfPostDeviceInstall(divert_inf, NULL);
+    err = pfnWdfPostDeviceInstall(windivert_inf, NULL);
     if (err == ERROR_INVALID_PARAMETER)
     {
         // We ignore ERROR_INVALID_PARAMETER.  WdfPostDeviceInstall sometimes
@@ -575,7 +580,7 @@ static BOOLEAN DivertDriverInstall(VOID)
     if (err != ERROR_SUCCESS)
     {
         SetLastError(err);
-        goto DivertDriverInstallExit;
+        goto WinDivertDriverInstallExit;
     }
 
     // Start the service:
@@ -583,17 +588,17 @@ static BOOLEAN DivertDriverInstall(VOID)
     {
         err = GetLastError();
         installed = (err == ERROR_SERVICE_ALREADY_RUNNING);
-        goto DivertDriverInstallExit;
+        goto WinDivertDriverInstallExit;
     }
     
     installed = TRUE;
 
-DivertDriverInstallExit:
+WinDivertDriverInstallExit:
     err = GetLastError();
-    free(divert_dir);
-    free(divert_sys);
-    free(divert_inf);
-    free(divert_dll);
+    free(windivert_dir);
+    free(windivert_sys);
+    free(windivert_inf);
+    free(windivert_dll);
     if (service != NULL)
     {
         CloseServiceHandle(service);
@@ -607,14 +612,14 @@ DivertDriverInstallExit:
 }
 
 /*
- * Uninstall the Divert driver.
+ * Uninstall the WinDivert driver.
  */
-static BOOLEAN DivertDriverUnInstall(VOID)
+static BOOLEAN WinDivertDriverUnInstall(VOID)
 {
     DWORD err;
     SC_HANDLE manager = NULL, service = NULL;
-    LPWSTR divert_dir = NULL, divert_sys = NULL, divert_inf = NULL,
-        divert_dll = NULL;
+    LPWSTR windivert_dir = NULL, windivert_sys = NULL, windivert_inf = NULL,
+        windivert_dll = NULL;
 
     // Do nothing if the driver is not installed:
     if (!installed)
@@ -623,59 +628,60 @@ static BOOLEAN DivertDriverUnInstall(VOID)
     }
 
     // Get driver files:
-    if (!DivertDriverFiles(&divert_dir, &divert_sys, &divert_inf, &divert_dll))
+    if (!WinDivertDriverFiles(&windivert_dir, &windivert_sys, &windivert_inf,
+            &windivert_dll))
     {
         return FALSE;
     }
 
     // Load the co-installer:
-    if (DivertLoadCoInstaller(divert_dll) == NULL)
+    if (WinDivertLoadCoInstaller(windivert_dll) == NULL)
     {
         return FALSE;
     }
 
     // Pre-uninstall:
-    err = pfnWdfPreDeviceRemove(divert_inf, DIVERT_DRIVER_SECTION);
+    err = pfnWdfPreDeviceRemove(windivert_inf, WINDIVERT_DRIVER_SECTION);
     if (err != ERROR_SUCCESS)
     {
-        goto DivertDriverUnInstallExit;
+        goto WinDivertDriverUnInstallExit;
     }
 
     // Open the service manager:
     manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
     if (manager == NULL)
     {
-        goto DivertDriverUnInstallExit;
+        goto WinDivertDriverUnInstallExit;
     }
 
     // Open the service:
-    service = OpenService(manager, DIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
+    service = OpenService(manager, WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
     if (service == NULL)
     {
-        goto DivertDriverUnInstallExit;
+        goto WinDivertDriverUnInstallExit;
     }
 
     // Delete the service:
     if (!DeleteService(service))
     {
-        goto DivertDriverUnInstallExit;
+        goto WinDivertDriverUnInstallExit;
     }
 
     // Post-uninstall:
-    err = pfnWdfPostDeviceRemove(divert_inf, DIVERT_DRIVER_SECTION);
+    err = pfnWdfPostDeviceRemove(windivert_inf, WINDIVERT_DRIVER_SECTION);
     if (err != ERROR_SUCCESS)
     {
         SetLastError(err);
-        goto DivertDriverUnInstallExit;
+        goto WinDivertDriverUnInstallExit;
     }
 
     installed = FALSE;
 
-DivertDriverUnInstallExit:
-    free(divert_dir);
-    free(divert_sys);
-    free(divert_inf);
-    free(divert_dll);
+WinDivertDriverUnInstallExit:
+    free(windivert_dir);
+    free(windivert_sys);
+    free(windivert_inf);
+    free(windivert_dll);
     if (service != NULL)
     {
         CloseServiceHandle(service);
@@ -690,15 +696,14 @@ DivertDriverUnInstallExit:
 /*
  * Perform a DeviceIoControl.
  */
-static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT8 arg8, UINT64 arg,
-    PVOID buf, UINT len, UINT *iolen)
+static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
+    UINT64 arg, PVOID buf, UINT len, UINT *iolen)
 {
-    struct divert_ioctl_s ioctl;
-    DWORD iolen0;
     OVERLAPPED overlapped;
+    DWORD iolen0;
     HANDLE event;
 
-    event = (HANDLE)TlsGetValue(divert_tls_idx);
+    event = (HANDLE)TlsGetValue(windivert_tls_idx);
     if (event == (HANDLE)NULL)
     {
         event = CreateEvent(NULL, FALSE, FALSE, NULL);
@@ -706,64 +711,83 @@ static BOOL DivertIoControl(HANDLE handle, DWORD code, UINT8 arg8, UINT64 arg,
         {
             return FALSE;
         }
-        TlsSetValue(divert_tls_idx, (LPVOID)event);
+        TlsSetValue(windivert_tls_idx, (LPVOID)event);
     }
 
-    ioctl.version         = DIVERT_IOCTL_VERSION;
-    ioctl.magic           = DIVERT_IOCTL_MAGIC;
-    ioctl.arg8            = arg8;
-    ioctl.arg             = arg;
     overlapped.Offset     = 0;
     overlapped.OffsetHigh = 0;
     overlapped.hEvent     = event;
-    if (!DeviceIoControl(handle, code, &ioctl, sizeof(ioctl), buf, (DWORD)len,
-        &iolen0, &overlapped))
+    if (!WinDivertIoControlEx(handle, code, arg8, arg, buf, len, iolen,
+            &overlapped))
     {
         if (GetLastError() != ERROR_IO_PENDING ||
             !GetOverlappedResult(handle, &overlapped, &iolen0, TRUE))
         {
             return FALSE;
         }
-    }
-    if (iolen != NULL)
-    {
-        *iolen = (UINT)iolen0;
+        if (iolen != NULL)
+        {
+            *iolen = (UINT)iolen0;
+        }
     }
     return TRUE;
 }
 
 /*
- * Open a divert handle.
+ * Perform an (overlapped) DeviceIoControl.
  */
-extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
+static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
+    UINT64 arg, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped)
+{
+    struct windivert_ioctl_s ioctl;
+    BOOL result;
+    DWORD iolen0;
+
+    ioctl.version = WINDIVERT_IOCTL_VERSION;
+    ioctl.magic   = WINDIVERT_IOCTL_MAGIC;
+    ioctl.arg8    = arg8;
+    ioctl.arg     = arg;
+    result = DeviceIoControl(handle, code, &ioctl, sizeof(ioctl), buf,
+        (DWORD)len, &iolen0, overlapped);
+    if (result && iolen != NULL)
+    {
+        *iolen = (UINT)iolen0;
+    }
+    return result;
+}
+
+/*
+ * Open a WinDivert handle.
+ */
+extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     INT16 priority, UINT64 flags)
 {
-    struct divert_ioctl_filter_s ioctl_filter[DIVERT_FILTER_MAXLEN];
+    struct windivert_ioctl_filter_s ioctl_filter[WINDIVERT_FILTER_MAXLEN];
     UINT16 filter_len;
     DWORD err;
     HANDLE handle;
     UINT32 priority32;
 
     // Parameter checking.
-    if (flags > DIVERT_FLAGS_MAX || layer > DIVERT_LAYER_MAX)
+    if (!WINDIVERT_FLAGS_VALID(flags) || layer > WINDIVERT_LAYER_MAX)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
 
     // Parse the filter:
-    if (!DivertCompileFilter(filter, layer, ioctl_filter, &filter_len))
+    if (!WinDivertCompileFilter(filter, layer, ioctl_filter, &filter_len))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
 
-#ifdef DIVERT_DEBUG
-    DivertFilterDump(ioctl_filter, filter_len);
+#ifdef WINDIVERT_DEBUG
+    WinDivertFilterDump(ioctl_filter, filter_len);
 #endif
 
-    // Attempt to open the Divert device:
-    handle = CreateFile(L"\\\\.\\" DIVERT_DEVICE_NAME,
+    // Attempt to open the WinDivert device:
+    handle = CreateFile(L"\\\\.\\" WINDIVERT_DEVICE_NAME,
         GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, INVALID_HANDLE_VALUE);
     if (handle == INVALID_HANDLE_VALUE)
@@ -776,7 +800,7 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
 
         // Open failed because the device isn't installed; install it now.
         SetLastError(0);
-        if (!DivertDriverInstall())
+        if (!WinDivertDriverInstall())
         {
             if (GetLastError() == 0)
             {
@@ -784,7 +808,7 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
             }
             return INVALID_HANDLE_VALUE;
         }
-        handle = CreateFile(L"\\\\.\\" DIVERT_DEVICE_NAME,
+        handle = CreateFile(L"\\\\.\\" WINDIVERT_DEVICE_NAME,
             GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
             INVALID_HANDLE_VALUE);
@@ -799,10 +823,10 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
     }
 
     // Set the layer:
-    if (layer != DIVERT_LAYER_DEFAULT)
+    if (layer != WINDIVERT_LAYER_DEFAULT)
     {
-        if (!DivertIoControl(handle, IOCTL_DIVERT_SET_LAYER, 0, (UINT64)layer,
-                NULL, 0, NULL))
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_LAYER, 0,
+                (UINT64)layer, NULL, 0, NULL))
         {
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
@@ -812,8 +836,8 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
     // Set the flags:
     if (flags != 0)
     {
-        if (!DivertIoControl(handle, IOCTL_DIVERT_SET_FLAGS, 0, (UINT64)flags,
-                NULL, 0, NULL))
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_FLAGS, 0,
+                (UINT64)flags, NULL, 0, NULL))
         {
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
@@ -821,10 +845,10 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
     }
 
     // Set the priority:
-    priority32 = DIVERT_PRIORITY(priority);
-    if (priority32 != DIVERT_PRIORITY_DEFAULT)
+    priority32 = WINDIVERT_PRIORITY(priority);
+    if (priority32 != WINDIVERT_PRIORITY_DEFAULT)
     {
-        if (!DivertIoControl(handle, IOCTL_DIVERT_SET_PRIORITY, 0,
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PRIORITY, 0,
                 (UINT64)priority32, NULL, 0, NULL))
         {
             CloseHandle(handle);
@@ -833,8 +857,8 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
     }
 
     // Start the filter:
-    if (!DivertIoControl(handle, IOCTL_DIVERT_START_FILTER, 0, 0,
-            ioctl_filter, filter_len*sizeof(struct divert_ioctl_filter_s),
+    if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_START_FILTER, 0, 0,
+            ioctl_filter, filter_len*sizeof(struct windivert_ioctl_filter_s),
             NULL))
     {
         CloseHandle(handle);
@@ -846,51 +870,100 @@ extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
 }
 
 /*
- * Receive a divert packet.
+ * Receive a WinDivert packet.
  */
-extern BOOL DivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
-    PDIVERT_ADDRESS addr, UINT *readlen)
+extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
+    PWINDIVERT_ADDRESS addr, UINT *readlen)
 {
-    return DivertIoControl(handle, IOCTL_DIVERT_RECV, 0, (UINT64)addr, pPacket,
-        packetLen, readlen);
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, 0, (UINT64)addr,
+        pPacket, packetLen, readlen);
 }
 
 /*
- * Send a divert packet.
+ * Receive a WinDivert packet.
  */
-extern BOOL DivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
-    PDIVERT_ADDRESS addr, UINT *writelen)
+extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
+    UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *readlen,
+    LPOVERLAPPED overlapped)
 {
-    return DivertIoControl(handle, IOCTL_DIVERT_SEND, 0, (UINT64)addr, pPacket,
-        packetLen, writelen);
+    if (flags != 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    if (overlapped == NULL)
+    {
+        return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, 0,
+            (UINT64)addr, pPacket, packetLen, readlen);
+    }
+    else
+    {
+        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_RECV, 0,
+            (UINT64)addr, pPacket, packetLen, readlen, overlapped);
+    }
 }
 
 /*
- * Close a divert handle.
+ * Send a WinDivert packet.
  */
-extern BOOL DivertClose(HANDLE handle)
+extern BOOL WinDivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
+    PWINDIVERT_ADDRESS addr, UINT *writelen)
+{
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0, (UINT64)addr,
+        pPacket, packetLen, writelen);
+}
+
+/*
+ * Send a WinDivert packet.
+ */
+extern BOOL WinDivertSendEx(HANDLE handle, PVOID pPacket, UINT packetLen,
+    UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *writelen,
+    LPOVERLAPPED overlapped)
+{
+    if (flags != 0)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    if (overlapped == NULL)
+    {
+        return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0,
+            (UINT64)addr, pPacket, packetLen, writelen);
+    }
+    else
+    {
+        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_SEND, 0,
+            (UINT64)addr, pPacket, packetLen, writelen, overlapped);
+    }
+}
+
+/*
+ * Close a WinDivert handle.
+ */
+extern BOOL WinDivertClose(HANDLE handle)
 {
     return CloseHandle(handle);
 }
 
 /*
- * Set a divert parameter.
+ * Set a WinDivert parameter.
  */
-extern BOOL DivertSetParam(HANDLE handle, DIVERT_PARAM param, UINT64 value)
+extern BOOL WinDivertSetParam(HANDLE handle, WINDIVERT_PARAM param,
+    UINT64 value)
 {
     switch ((int)param)
     {
-        case DIVERT_PARAM_QUEUE_LEN:
-            if (value < DIVERT_PARAM_QUEUE_LEN_MIN ||
-                value > DIVERT_PARAM_QUEUE_LEN_MAX)
+        case WINDIVERT_PARAM_QUEUE_LEN:
+            if (value < WINDIVERT_PARAM_QUEUE_LEN_MIN ||
+                value > WINDIVERT_PARAM_QUEUE_LEN_MAX)
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
             break;
-        case DIVERT_PARAM_QUEUE_TIME:
-            if (value < DIVERT_PARAM_QUEUE_TIME_MIN ||
-                value > DIVERT_PARAM_QUEUE_TIME_MAX)
+        case WINDIVERT_PARAM_QUEUE_TIME:
+            if (value < WINDIVERT_PARAM_QUEUE_TIME_MIN ||
+                value > WINDIVERT_PARAM_QUEUE_TIME_MAX)
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
@@ -900,45 +973,46 @@ extern BOOL DivertSetParam(HANDLE handle, DIVERT_PARAM param, UINT64 value)
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
     }
-    return DivertIoControl(handle, IOCTL_DIVERT_SET_PARAM, (UINT8)param,
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PARAM, (UINT8)param,
         value, NULL, 0, NULL);
 }
 
 /*
- * Get a divert parameter.
+ * Get a WinDivert parameter.
  */
-extern BOOL DivertGetParam(HANDLE handle, DIVERT_PARAM param, UINT64 *pValue)
+extern BOOL WinDivertGetParam(HANDLE handle, WINDIVERT_PARAM param,
+    UINT64 *pValue)
 {
     switch ((int)param)
     {
-        case DIVERT_PARAM_QUEUE_LEN: case DIVERT_PARAM_QUEUE_TIME:
+        case WINDIVERT_PARAM_QUEUE_LEN: case WINDIVERT_PARAM_QUEUE_TIME:
             break;
         default:
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
     }
-    return DivertIoControl(handle, IOCTL_DIVERT_GET_PARAM, (UINT8)param,
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_GET_PARAM, (UINT8)param,
         0, pValue, sizeof(UINT64), NULL);
 }
 
 /*
  * Compile a filter.
  */
-static BOOL DivertCompileFilter(const char *filter_str, DIVERT_LAYER layer,
-    divert_ioctl_filter_t filter, UINT16 *fp)
+static BOOL WinDivertCompileFilter(const char *filter_str,
+    WINDIVERT_LAYER layer, windivert_ioctl_filter_t filter, UINT16 *fp)
 {
-    FILTER_TOKEN tokens[DIVERT_FILTER_MAXLEN*3];
+    FILTER_TOKEN tokens[WINDIVERT_FILTER_MAXLEN*3];
     UINT16 tp;
 
-    if (!DivertTokenizeFilter(filter_str, layer, tokens,
-            DIVERT_FILTER_MAXLEN*3-1))
+    if (!WinDivertTokenizeFilter(filter_str, layer, tokens,
+            WINDIVERT_FILTER_MAXLEN*3-1))
     {
         return FALSE;
     }
 
     tp = 0;
     *fp = 0;
-    if (!DivertParseFilter(tokens, &tp, filter, fp, FILTER_TOKEN_AND))
+    if (!WinDivertParseFilter(tokens, &tp, filter, fp, FILTER_TOKEN_AND))
     {
         return FALSE;
     }
@@ -952,7 +1026,8 @@ static BOOL DivertCompileFilter(const char *filter_str, DIVERT_LAYER layer,
 /*
  * Compare two FILTER_TOKEN_NAMEs.
  */
-static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b)
+static int __cdecl WinDivertFilterTokenNameCompare(const void *a,
+    const void *b)
 {
     PFILTER_TOKEN_NAME na = (PFILTER_TOKEN_NAME)a;
     PFILTER_TOKEN_NAME nb = (PFILTER_TOKEN_NAME)b;
@@ -962,7 +1037,7 @@ static int __cdecl DivertFilterTokenNameCompare(const void *a, const void *b)
 /*
  * Tokenize the given filter string.
  */
-static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
+static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
     FILTER_TOKEN *tokens, UINT tokensmax)
 {
     static const FILTER_TOKEN_NAME token_names[] =
@@ -1136,12 +1211,12 @@ static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
             key.name = token;
             result = (PFILTER_TOKEN_NAME)bsearch((const void *)&key,
                 token_names, sizeof(token_names) / sizeof(FILTER_TOKEN_NAME),
-                sizeof(FILTER_TOKEN_NAME), DivertFilterTokenNameCompare);
+                sizeof(FILTER_TOKEN_NAME), WinDivertFilterTokenNameCompare);
             if (result != NULL)
             {
                 switch (layer)
                 {
-                    case DIVERT_LAYER_NETWORK_FORWARD:
+                    case WINDIVERT_LAYER_NETWORK_FORWARD:
                         if (result->kind == FILTER_TOKEN_INBOUND ||
                             result->kind == FILTER_TOKEN_OUTBOUND)
                         {
@@ -1178,7 +1253,7 @@ static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
             }
 
             // Check for IPv4 address:
-            if (DivertHelperParseIPv4Address(token, tokens[tp].val))
+            if (WinDivertHelperParseIPv4Address(token, tokens[tp].val))
             {
                 tokens[tp].kind = FILTER_TOKEN_NUMBER;
                 tp++;
@@ -1187,7 +1262,7 @@ static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
 
             // Check for IPv6 address:
             SetLastError(0);
-            if (DivertHelperParseIPv6Address(token, tokens[tp].val))
+            if (WinDivertHelperParseIPv6Address(token, tokens[tp].val))
             {
                 tokens[tp].kind = FILTER_TOKEN_NUMBER;
                 tp++;
@@ -1206,15 +1281,15 @@ static BOOL DivertTokenizeFilter(const char *filter, DIVERT_LAYER layer,
 /*
  * Parse the given filter.
  */
-static BOOL DivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
-    divert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op)
+static BOOL WinDivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
+    windivert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op)
 {
     BOOL testop, fused, result, negate;
     FILTER_TOKEN token;
     UINT16 f, s;
     s = *fp;
 
-DivertParseFilterNext:
+WinDivertParseFilterNext:
 
     testop = TRUE;
     fused = TRUE;
@@ -1223,12 +1298,12 @@ DivertParseFilterNext:
 
     *tp = *tp + 1;
     f = *fp;
-    if (f >= DIVERT_FILTER_MAXLEN)
+    if (f >= WINDIVERT_FILTER_MAXLEN)
     {
         return FALSE;
     }
-    filter[f].success = DIVERT_FILTER_RESULT_ACCEPT;
-    filter[f].failure = DIVERT_FILTER_RESULT_REJECT;
+    filter[f].success = WINDIVERT_FILTER_RESULT_ACCEPT;
+    filter[f].failure = WINDIVERT_FILTER_RESULT_REJECT;
     filter[f].arg[1] = 0;
     filter[f].arg[2] = 0;
     filter[f].arg[3] = 0;
@@ -1241,7 +1316,7 @@ DivertParseFilterNext:
     switch (token.kind)
     {
         case FILTER_TOKEN_OPEN:
-            result = DivertParseFilter(tokens, tp, filter, fp,
+            result = WinDivertParseFilter(tokens, tp, filter, fp,
                 FILTER_TOKEN_AND);
             result = (result? (tokens[*tp].kind == FILTER_TOKEN_CLOSE): FALSE);
             if (!result)
@@ -1253,181 +1328,181 @@ DivertParseFilterNext:
             fused = FALSE;
             break;
         case FILTER_TOKEN_TRUE: case FILTER_TOKEN_FALSE:
-            filter[f].field  = DIVERT_FILTER_FIELD_ZERO;
-            filter[f].test   = DIVERT_FILTER_TEST_EQ;
+            filter[f].field  = WINDIVERT_FILTER_FIELD_ZERO;
+            filter[f].test   = WINDIVERT_FILTER_TEST_EQ;
             filter[f].arg[0] = (token.kind == FILTER_TOKEN_FALSE);
             testop = FALSE;
             break;
         case FILTER_TOKEN_OUTBOUND:
-            filter[f].field = DIVERT_FILTER_FIELD_OUTBOUND;
+            filter[f].field = WINDIVERT_FILTER_FIELD_OUTBOUND;
             break;
         case FILTER_TOKEN_INBOUND:
-            filter[f].field = DIVERT_FILTER_FIELD_INBOUND;
+            filter[f].field = WINDIVERT_FILTER_FIELD_INBOUND;
             break;
         case FILTER_TOKEN_IF_IDX:
-            filter[f].field = DIVERT_FILTER_FIELD_IFIDX;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IFIDX;
             break;
         case FILTER_TOKEN_SUB_IF_IDX:
-            filter[f].field = DIVERT_FILTER_FIELD_SUBIFIDX;
+            filter[f].field = WINDIVERT_FILTER_FIELD_SUBIFIDX;
             break;
         case FILTER_TOKEN_IP:
-            filter[f].field = DIVERT_FILTER_FIELD_IP;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP;
             break;
         case FILTER_TOKEN_IPV6:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6;
             break;
         case FILTER_TOKEN_ICMP:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMP;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMP;
             break;
         case FILTER_TOKEN_ICMPV6:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMPV6;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMPV6;
             break;
         case FILTER_TOKEN_TCP:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP;
             break;
         case FILTER_TOKEN_UDP:
-            filter[f].field = DIVERT_FILTER_FIELD_UDP;
+            filter[f].field = WINDIVERT_FILTER_FIELD_UDP;
             break;
         case FILTER_TOKEN_IP_HDR_LENGTH:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_HDRLENGTH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_HDRLENGTH;
             break;
         case FILTER_TOKEN_IP_TOS:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_TOS;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_TOS;
             break;
         case FILTER_TOKEN_IP_LENGTH:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_LENGTH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_LENGTH;
             break;
         case FILTER_TOKEN_IP_ID:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_ID;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_ID;
             break;
         case FILTER_TOKEN_IP_DF:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_DF;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_DF;
             break;
         case FILTER_TOKEN_IP_MF:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_MF;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_MF;
             break;
         case FILTER_TOKEN_IP_FRAG_OFF:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_FRAGOFF;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_FRAGOFF;
             break;
         case FILTER_TOKEN_IP_TTL:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_TTL;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_TTL;
             break;
         case FILTER_TOKEN_IP_PROTOCOL:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_PROTOCOL;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_PROTOCOL;
             break;
         case FILTER_TOKEN_IP_CHECKSUM:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_CHECKSUM;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_CHECKSUM;
             break;
         case FILTER_TOKEN_IP_SRC_ADDR:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_SRCADDR;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_SRCADDR;
             break;
         case FILTER_TOKEN_IP_DST_ADDR:
-            filter[f].field = DIVERT_FILTER_FIELD_IP_DSTADDR;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IP_DSTADDR;
             break;
         case FILTER_TOKEN_IPV6_TRAFFIC_CLASS:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS;
             break;
         case FILTER_TOKEN_IPV6_FLOW_LABEL:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6_FLOWLABEL;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL;
             break;
         case FILTER_TOKEN_IPV6_LENGTH:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6_LENGTH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6_LENGTH;
             break;
         case FILTER_TOKEN_IPV6_NEXT_HDR:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6_NEXTHDR;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR;
             break;
         case FILTER_TOKEN_IPV6_HOP_LIMIT:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6_HOPLIMIT;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT;
             break;
         case FILTER_TOKEN_IPV6_SRC_ADDR:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6_SRCADDR;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6_SRCADDR;
             break;
         case FILTER_TOKEN_IPV6_DST_ADDR:
-            filter[f].field = DIVERT_FILTER_FIELD_IPV6_DSTADDR;
+            filter[f].field = WINDIVERT_FILTER_FIELD_IPV6_DSTADDR;
             break;
         case FILTER_TOKEN_ICMP_TYPE:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMP_TYPE;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMP_TYPE;
             break;
         case FILTER_TOKEN_ICMP_CODE:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMP_CODE;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMP_CODE;
             break;
         case FILTER_TOKEN_ICMP_CHECKSUM:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMP_CHECKSUM;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM;
             break;
         case FILTER_TOKEN_ICMP_BODY:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMP_BODY;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMP_BODY;
             break;
         case FILTER_TOKEN_ICMPV6_TYPE:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMPV6_TYPE;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMPV6_TYPE;
             break;
         case FILTER_TOKEN_ICMPV6_CODE:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMPV6_CODE;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMPV6_CODE;
             break;
         case FILTER_TOKEN_ICMPV6_CHECKSUM:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMPV6_CHECKSUM;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM;
             break;
         case FILTER_TOKEN_ICMPV6_BODY:
-            filter[f].field = DIVERT_FILTER_FIELD_ICMPV6_BODY;
+            filter[f].field = WINDIVERT_FILTER_FIELD_ICMPV6_BODY;
             break;
         case FILTER_TOKEN_TCP_SRC_PORT:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_SRCPORT;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_SRCPORT;
             break;
         case FILTER_TOKEN_TCP_DST_PORT:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_DSTPORT;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_DSTPORT;
             break;
         case FILTER_TOKEN_TCP_SEQ_NUM:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_SEQNUM;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_SEQNUM;
             break;
         case FILTER_TOKEN_TCP_ACK_NUM:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_ACKNUM;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_ACKNUM;
             break;
         case FILTER_TOKEN_TCP_HDR_LENGTH:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_HDRLENGTH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH;
             break;
         case FILTER_TOKEN_TCP_URG:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_URG;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_URG;
             break;
         case FILTER_TOKEN_TCP_ACK:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_ACK;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_ACK;
             break;
         case FILTER_TOKEN_TCP_PSH:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_PSH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_PSH;
             break;
         case FILTER_TOKEN_TCP_RST:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_RST;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_RST;
             break;
         case FILTER_TOKEN_TCP_SYN:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_SYN;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_SYN;
             break;
         case FILTER_TOKEN_TCP_FIN:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_FIN;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_FIN;
             break;
         case FILTER_TOKEN_TCP_WINDOW:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_WINDOW;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_WINDOW;
             break;
         case FILTER_TOKEN_TCP_CHECKSUM:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_CHECKSUM;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_CHECKSUM;
             break;
         case FILTER_TOKEN_TCP_URG_PTR:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_URGPTR;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_URGPTR;
             break;
         case FILTER_TOKEN_TCP_PAYLOAD_LENGTH:
-            filter[f].field = DIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH;
             break;
         case FILTER_TOKEN_UDP_SRC_PORT:
-            filter[f].field = DIVERT_FILTER_FIELD_UDP_SRCPORT;
+            filter[f].field = WINDIVERT_FILTER_FIELD_UDP_SRCPORT;
             break;
         case FILTER_TOKEN_UDP_DST_PORT:
-            filter[f].field = DIVERT_FILTER_FIELD_UDP_DSTPORT;
+            filter[f].field = WINDIVERT_FILTER_FIELD_UDP_DSTPORT;
             break;
         case FILTER_TOKEN_UDP_LENGTH:
-            filter[f].field = DIVERT_FILTER_FIELD_UDP_LENGTH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_UDP_LENGTH;
             break;
         case FILTER_TOKEN_UDP_CHECKSUM:
-            filter[f].field = DIVERT_FILTER_FIELD_UDP_CHECKSUM;
+            filter[f].field = WINDIVERT_FILTER_FIELD_UDP_CHECKSUM;
             break;
         case FILTER_TOKEN_UDP_PAYLOAD_LENGTH:
-            filter[f].field = DIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH;
+            filter[f].field = WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH;
             break;
         default:
             return FALSE;
@@ -1446,25 +1521,25 @@ DivertParseFilterNext:
             switch (token.kind)
             {
                 case FILTER_TOKEN_EQ:
-                    filter[f].test = DIVERT_FILTER_TEST_EQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_EQ;
                     break;
                 case FILTER_TOKEN_NEQ:
-                    filter[f].test = DIVERT_FILTER_TEST_NEQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_NEQ;
                     break;
                 case FILTER_TOKEN_LT:
-                    filter[f].test = DIVERT_FILTER_TEST_LT;
+                    filter[f].test = WINDIVERT_FILTER_TEST_LT;
                     break;
                 case FILTER_TOKEN_LEQ:
-                    filter[f].test = DIVERT_FILTER_TEST_LEQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_LEQ;
                     break;
                 case FILTER_TOKEN_GT:
-                    filter[f].test = DIVERT_FILTER_TEST_GT;
+                    filter[f].test = WINDIVERT_FILTER_TEST_GT;
                     break;
                 case FILTER_TOKEN_GEQ:
-                    filter[f].test = DIVERT_FILTER_TEST_GEQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_GEQ;
                     break;
                 default:
-                    filter[f].test = DIVERT_FILTER_TEST_NEQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_NEQ;
                     filter[f].arg[0] = 0;
                     testop = FALSE;
                     break;
@@ -1475,25 +1550,25 @@ DivertParseFilterNext:
             switch (token.kind)
             {
                 case FILTER_TOKEN_EQ:
-                    filter[f].test = DIVERT_FILTER_TEST_NEQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_NEQ;
                     break;
                 case FILTER_TOKEN_NEQ:
-                    filter[f].test = DIVERT_FILTER_TEST_EQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_EQ;
                     break;
                 case FILTER_TOKEN_LT:
-                    filter[f].test = DIVERT_FILTER_TEST_GEQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_GEQ;
                     break;
                 case FILTER_TOKEN_LEQ:
-                    filter[f].test = DIVERT_FILTER_TEST_GT;
+                    filter[f].test = WINDIVERT_FILTER_TEST_GT;
                     break;
                 case FILTER_TOKEN_GT:
-                    filter[f].test = DIVERT_FILTER_TEST_LEQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_LEQ;
                     break;
                 case FILTER_TOKEN_GEQ:
-                    filter[f].test = DIVERT_FILTER_TEST_LT;
+                    filter[f].test = WINDIVERT_FILTER_TEST_LT;
                     break;
                 default:
-                    filter[f].test = DIVERT_FILTER_TEST_EQ;
+                    filter[f].test = WINDIVERT_FILTER_TEST_EQ;
                     filter[f].arg[0] = 0;
                     testop = FALSE;
                     break;
@@ -1530,13 +1605,13 @@ DivertParseFilterNext:
     switch (token.kind)
     {
         case FILTER_TOKEN_AND:
-            DivertFilterUpdate(filter, f, *fp, *fp,
-                DIVERT_FILTER_RESULT_REJECT);
-            goto DivertParseFilterNext;
+            WinDivertFilterUpdate(filter, f, *fp, *fp,
+                WINDIVERT_FILTER_RESULT_REJECT);
+            goto WinDivertParseFilterNext;
         case FILTER_TOKEN_OR:
-            DivertFilterUpdate(filter, f, *fp, DIVERT_FILTER_RESULT_ACCEPT,
-                *fp);
-            goto DivertParseFilterNext;
+            WinDivertFilterUpdate(filter, f, *fp,
+                WINDIVERT_FILTER_RESULT_ACCEPT, *fp);
+            goto WinDivertParseFilterNext;
         default:
             break;
     }
@@ -1546,7 +1621,7 @@ DivertParseFilterNext:
 /*
  * Update success.
  */
-static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT16 s,
+static void WinDivertFilterUpdate(windivert_ioctl_filter_t filter, UINT16 s,
     UINT16 e, UINT16 success, UINT16 failure)
 {
     UINT16 i;
@@ -1555,290 +1630,44 @@ static void DivertFilterUpdate(divert_ioctl_filter_t filter, UINT16 s,
     {
         switch (filter[i].success)
         {
-            case DIVERT_FILTER_RESULT_ACCEPT:
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
                 filter[i].success = success;
                 break;
-            case DIVERT_FILTER_RESULT_REJECT:
+            case WINDIVERT_FILTER_RESULT_REJECT:
                 filter[i].success = failure;
                 break;
         }
         switch (filter[i].failure)
         {
-            case DIVERT_FILTER_RESULT_ACCEPT:
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
                 filter[i].failure = success;
                 break;
-            case DIVERT_FILTER_RESULT_REJECT:
+            case WINDIVERT_FILTER_RESULT_REJECT:
                 filter[i].failure = failure;
                 break;
         }
     }
 }
 
-#ifdef DIVERT_DEBUG
-/*
- * Print a filter (debugging).
- */
-static void DivertFilterDump(divert_ioctl_filter_t filter, UINT16 len)
-{
-    UINT16 i;
-
-    for (i = 0; i < len; i++)
-    {
-        printf("label_%u:\n\tif (", i);
-        switch (filter[i].field)
-        {
-            case DIVERT_FILTER_FIELD_ZERO:
-                printf("zero ");
-                break;
-            case DIVERT_FILTER_FIELD_INBOUND:
-                printf("inbound ");
-                break;
-            case DIVERT_FILTER_FIELD_OUTBOUND:
-                printf("outbound ");
-                break;
-            case DIVERT_FILTER_FIELD_IFIDX:
-                printf("ifIdx ");
-                break;
-            case DIVERT_FILTER_FIELD_SUBIFIDX:
-                printf("subIfIdx ");
-                break;
-            case DIVERT_FILTER_FIELD_IP:
-                printf("ip ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6:
-                printf("ipv6 ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMP:
-                printf("icmp ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMPV6:
-                printf("icmpv6 ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP:
-                printf("tcp ");
-                break;
-            case DIVERT_FILTER_FIELD_UDP:
-                printf("udp ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_HDRLENGTH:
-                printf("ip.HdrLength ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_TOS:
-                printf("ip.TOS ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_LENGTH:
-                printf("ip.Length ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_ID:
-                printf("ip.Id ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_DF:
-                printf("ip.DF ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_MF:
-                printf("ip.MF ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_FRAGOFF:
-                printf("ip.FragOff ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_TTL:
-                printf("ip.TTL ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_PROTOCOL:
-                printf("ip.Protocol ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_CHECKSUM:
-                printf("ip.Checksum ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_SRCADDR:
-                printf("ip.SrcAddr ");
-                break;
-            case DIVERT_FILTER_FIELD_IP_DSTADDR:
-                printf("ip.DstAddr ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
-                printf("ipv6.TrafficClass ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
-                printf("ipv6.FlowLabel ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6_LENGTH:
-                printf("ipv6.Length ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6_NEXTHDR:
-                printf("ipv6.NextHdr ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6_HOPLIMIT:
-                printf("ipv6.HopLimit ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6_SRCADDR:
-                printf("ipv6.SrcAddr ");
-                break;
-            case DIVERT_FILTER_FIELD_IPV6_DSTADDR:
-                printf("ipv6.DstAddr ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMP_TYPE:
-                printf("icmp.Type ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMP_CODE:
-                printf("icmp.Code ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMP_CHECKSUM:
-                printf("icmp.Checksum ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMP_BODY:
-                printf("icmp.Body ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMPV6_TYPE:
-                printf("icmpv6.Type ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMPV6_CODE:
-                printf("icmpv6.Code ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMPV6_CHECKSUM:
-                printf("icmpv6.Checksum ");
-                break;
-            case DIVERT_FILTER_FIELD_ICMPV6_BODY:
-                printf("icmpv6.Body ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_SRCPORT:
-                printf("tcp.SrcPort ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_DSTPORT:
-                printf("tcp.DstPort ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_SEQNUM:
-                printf("tcp.SeqNum ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_ACKNUM:
-                printf("tcp.AckNum ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_HDRLENGTH:
-                printf("tcp.HdrLength ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_URG:
-                printf("tcp.Urg ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_ACK:
-                printf("tcp.Ack ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_PSH:
-                printf("tcp.Psh ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_RST:
-                printf("tcp.Rst ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_SYN:
-                printf("tcp.Syn ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_FIN:
-                printf("tcp.Fin ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_WINDOW:
-                printf("tcp.Window ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_CHECKSUM:
-                printf("tcp.Checksum ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_URGPTR:
-                printf("tcp.UrgPtr ");
-                break;
-            case DIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
-                printf("tcp.PayloadLength " );
-                break;
-            case DIVERT_FILTER_FIELD_UDP_SRCPORT:
-                printf("udp.SrcPort ");
-                break;
-            case DIVERT_FILTER_FIELD_UDP_DSTPORT:
-                printf("udp.DstPort ");
-                break;
-            case DIVERT_FILTER_FIELD_UDP_LENGTH:
-                printf("udp.Length ");
-                break;
-            case DIVERT_FILTER_FIELD_UDP_CHECKSUM:
-                printf("udp.Checksum ");
-                break;
-            case DIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
-                printf("udp.PayloadLength ");
-                break;
-            default:
-                printf("unknown.Field ");       
-                break;
-        }
-        switch (filter[i].test)
-        {
-            case DIVERT_FILTER_TEST_EQ:
-                printf("== ");
-                break;
-            case DIVERT_FILTER_TEST_NEQ:
-                printf("!= ");
-                break;
-            case DIVERT_FILTER_TEST_LT:
-                printf("< ");
-                break;
-            case DIVERT_FILTER_TEST_LEQ:
-                printf("<= ");
-                break;
-            case DIVERT_FILTER_TEST_GT:
-                printf("> ");
-                break;
-            case DIVERT_FILTER_TEST_GEQ:
-                printf(">= ");
-                break;
-            default:
-                printf("?? ");
-                break;
-        }
-        printf("%u)\n", filter[i].arg[0]);
-        switch (filter[i].success)
-        {
-            case DIVERT_FILTER_RESULT_ACCEPT:
-                printf("\t\treturn ACCEPT;\n");
-                break;
-            case DIVERT_FILTER_RESULT_REJECT:
-                printf("\t\treturn REJECT;\n");
-                break;
-            default:
-                printf("\t\tgoto label_%u;\n", filter[i].success);
-                break;
-        }
-        printf("\telse\n");
-        switch (filter[i].failure)
-        {
-            case DIVERT_FILTER_RESULT_ACCEPT:
-                printf("\t\treturn ACCEPT;\n");
-                break;
-            case DIVERT_FILTER_RESULT_REJECT:
-                printf("\t\treturn REJECT;\n");
-                break;
-            default:
-                printf("\t\tgoto label_%u;\n", filter[i].failure);
-                break;
-        }
-    }
-}
-
-#endif      /* DIVERT_DEBUG */
-
 /****************************************************************************/
-/* DIVERT HELPER IMPLEMENTATION                                             */
+/* WINDIVERT HELPER IMPLEMENTATION                                          */
 /****************************************************************************/
 
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern BOOL DivertHelperParsePacket(PVOID pPacket, UINT packetLen,
-    PDIVERT_IPHDR *ppIpHdr, PDIVERT_IPV6HDR *ppIpv6Hdr,
-    PDIVERT_ICMPHDR *ppIcmpHdr, PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
-    PDIVERT_TCPHDR *ppTcpHdr, PDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
+extern BOOL WinDivertHelperParsePacket(PVOID pPacket, UINT packetLen,
+    PWINDIVERT_IPHDR *ppIpHdr, PWINDIVERT_IPV6HDR *ppIpv6Hdr,
+    PWINDIVERT_ICMPHDR *ppIcmpHdr, PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
+    PWINDIVERT_TCPHDR *ppTcpHdr, PWINDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
     UINT *pDataLen)
 {
-    PDIVERT_IPHDR ip_header = NULL;
-    PDIVERT_IPV6HDR ipv6_header = NULL;
-    PDIVERT_ICMPHDR icmp_header = NULL;
-    PDIVERT_ICMPV6HDR icmpv6_header = NULL;
-    PDIVERT_TCPHDR tcp_header = NULL;
-    PDIVERT_UDPHDR udp_header = NULL;
+    PWINDIVERT_IPHDR ip_header = NULL;
+    PWINDIVERT_IPV6HDR ipv6_header = NULL;
+    PWINDIVERT_ICMPHDR icmp_header = NULL;
+    PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
+    PWINDIVERT_TCPHDR tcp_header = NULL;
+    PWINDIVERT_UDPHDR udp_header = NULL;
     UINT16 header_len;
     UINT8 trans_proto;
     PVOID data = NULL;
@@ -1847,22 +1676,22 @@ extern BOOL DivertHelperParsePacket(PVOID pPacket, UINT packetLen,
 
     if (pPacket == NULL || packetLen < sizeof(UINT8))
     {
-        goto DivertHelperParsePacketExit;
+        goto WinDivertHelperParsePacketExit;
     }
     data = pPacket;
     data_len = packetLen;
 
-    ip_header = (PDIVERT_IPHDR)data;
+    ip_header = (PWINDIVERT_IPHDR)data;
     switch (ip_header->Version)
     {
         case 4:
-            if (data_len < sizeof(DIVERT_IPHDR) ||
+            if (data_len < sizeof(WINDIVERT_IPHDR) ||
                 ip_header->HdrLength < 5 ||
                 data_len < ip_header->HdrLength*sizeof(UINT32) ||
                 ntohs(ip_header->Length) != data_len)
             {
                 ip_header = NULL;
-                goto DivertHelperParsePacketExit;
+                goto WinDivertHelperParsePacketExit;
             }
             trans_proto = ip_header->Protocol;
             header_len = ip_header->HdrLength*sizeof(UINT32); 
@@ -1871,70 +1700,70 @@ extern BOOL DivertHelperParsePacket(PVOID pPacket, UINT packetLen,
             break;
         case 6:
             ip_header = NULL;
-            ipv6_header = (PDIVERT_IPV6HDR)data;
-            if (data_len < sizeof(DIVERT_IPV6HDR) ||
+            ipv6_header = (PWINDIVERT_IPV6HDR)data;
+            if (data_len < sizeof(WINDIVERT_IPV6HDR) ||
                 ntohs(ipv6_header->Length) !=
-                    data_len - sizeof(DIVERT_IPV6HDR))
+                    data_len - sizeof(WINDIVERT_IPV6HDR))
             {
                 ipv6_header = NULL;
-                goto DivertHelperParsePacketExit;
+                goto WinDivertHelperParsePacketExit;
             }
             trans_proto = ipv6_header->NextHdr;
-            data = (PVOID)((UINT8 *)data + sizeof(DIVERT_IPV6HDR));
-            data_len -= sizeof(DIVERT_IPV6HDR);
+            data = (PVOID)((UINT8 *)data + sizeof(WINDIVERT_IPV6HDR));
+            data_len -= sizeof(WINDIVERT_IPV6HDR);
             break;
         default:
             ip_header = NULL;
-            goto DivertHelperParsePacketExit;
+            goto WinDivertHelperParsePacketExit;
     }
 
     switch (trans_proto)
     {
         case IPPROTO_TCP:
-            tcp_header = (PDIVERT_TCPHDR)data;
-            if (data_len < sizeof(DIVERT_TCPHDR) ||
+            tcp_header = (PWINDIVERT_TCPHDR)data;
+            if (data_len < sizeof(WINDIVERT_TCPHDR) ||
                 tcp_header->HdrLength < 5 ||
                 data_len < tcp_header->HdrLength*sizeof(UINT32))
             {
                 tcp_header = NULL;
-                goto DivertHelperParsePacketExit;
+                goto WinDivertHelperParsePacketExit;
             }
             header_len = tcp_header->HdrLength*sizeof(UINT32);
             data = ((UINT8 *)data + header_len);
             data_len -= header_len;
             break;
         case IPPROTO_UDP:
-            udp_header = (PDIVERT_UDPHDR)data;
-            if (data_len < sizeof(DIVERT_UDPHDR) ||
+            udp_header = (PWINDIVERT_UDPHDR)data;
+            if (data_len < sizeof(WINDIVERT_UDPHDR) ||
                 ntohs(udp_header->Length) != data_len)
             {
                 udp_header = NULL;
-                goto DivertHelperParsePacketExit;
+                goto WinDivertHelperParsePacketExit;
             }
-            data = ((UINT8 *)data + sizeof(DIVERT_UDPHDR));
-            data_len -= sizeof(DIVERT_UDPHDR);
+            data = ((UINT8 *)data + sizeof(WINDIVERT_UDPHDR));
+            data_len -= sizeof(WINDIVERT_UDPHDR);
             break;
         case IPPROTO_ICMP:
-            icmp_header = (PDIVERT_ICMPHDR)data;
+            icmp_header = (PWINDIVERT_ICMPHDR)data;
             if (ip_header == NULL ||
-                data_len < sizeof(DIVERT_ICMPHDR))
+                data_len < sizeof(WINDIVERT_ICMPHDR))
             {
                 icmp_header = NULL;
-                goto DivertHelperParsePacketExit;
+                goto WinDivertHelperParsePacketExit;
             }
-            data = ((UINT8 *)data + sizeof(DIVERT_ICMPHDR));
-            data_len -= sizeof(DIVERT_ICMPHDR);
+            data = ((UINT8 *)data + sizeof(WINDIVERT_ICMPHDR));
+            data_len -= sizeof(WINDIVERT_ICMPHDR);
             break;
         case IPPROTO_ICMPV6:
-            icmpv6_header = (PDIVERT_ICMPV6HDR)data;
+            icmpv6_header = (PWINDIVERT_ICMPV6HDR)data;
             if (ipv6_header == NULL ||
-                data_len < sizeof(DIVERT_ICMPV6HDR))
+                data_len < sizeof(WINDIVERT_ICMPV6HDR))
             {
                 icmpv6_header = NULL;
-                goto DivertHelperParsePacketExit;
+                goto WinDivertHelperParsePacketExit;
             }
-            data = ((UINT8 *)data + sizeof(DIVERT_ICMPV6HDR));
-            data_len -= sizeof(DIVERT_ICMPV6HDR);
+            data = ((UINT8 *)data + sizeof(WINDIVERT_ICMPV6HDR));
+            data_len -= sizeof(WINDIVERT_ICMPV6HDR);
             break;
         default:
             break;
@@ -1945,7 +1774,7 @@ extern BOOL DivertHelperParsePacket(PVOID pPacket, UINT packetLen,
         data = NULL;
     }
 
-DivertHelperParsePacketExit:
+WinDivertHelperParsePacketExit:
     success = TRUE;
     if (ppIpHdr != NULL)
     {
@@ -1992,56 +1821,56 @@ DivertHelperParsePacketExit:
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
-extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
+extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     UINT64 flags)
 {
-    DIVERT_PSEUDOHDR pseudo_header;
-    DIVERT_PSEUDOV6HDR pseudov6_header;
-    PDIVERT_IPHDR ip_header;
-    PDIVERT_IPV6HDR ipv6_header;
-    PDIVERT_ICMPHDR icmp_header;
-    PDIVERT_ICMPV6HDR icmpv6_header;
-    PDIVERT_TCPHDR tcp_header;
-    PDIVERT_UDPHDR udp_header;
+    WINDIVERT_PSEUDOHDR pseudo_header;
+    WINDIVERT_PSEUDOV6HDR pseudov6_header;
+    PWINDIVERT_IPHDR ip_header;
+    PWINDIVERT_IPV6HDR ipv6_header;
+    PWINDIVERT_ICMPHDR icmp_header;
+    PWINDIVERT_ICMPV6HDR icmpv6_header;
+    PWINDIVERT_TCPHDR tcp_header;
+    PWINDIVERT_UDPHDR udp_header;
     UINT payload_len, checksum_len;
     UINT count = 0;
 
-    DivertHelperParsePacket(pPacket, packetLen, &ip_header, &ipv6_header,
+    WinDivertHelperParsePacket(pPacket, packetLen, &ip_header, &ipv6_header,
         &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
         &payload_len);
 
-    if (ip_header != NULL && !(flags & DIVERT_HELPER_NO_IP_CHECKSUM))
+    if (ip_header != NULL && !(flags & WINDIVERT_HELPER_NO_IP_CHECKSUM))
     {
         ip_header->Checksum = 0;
-        ip_header->Checksum = DivertHelperCalcChecksum(NULL, 0,
+        ip_header->Checksum = WinDivertHelperCalcChecksum(NULL, 0,
             ip_header, ip_header->HdrLength*sizeof(UINT32));
         count++;
     }
 
     if (icmp_header != NULL)
     {
-        if (flags & DIVERT_HELPER_NO_ICMP_CHECKSUM)
+        if (flags & WINDIVERT_HELPER_NO_ICMP_CHECKSUM)
         {
             return count;
         }
         icmp_header->Checksum = 0;
-        icmp_header->Checksum = DivertHelperCalcChecksum(NULL, 0,
-            icmp_header, payload_len + sizeof(DIVERT_ICMPHDR));
+        icmp_header->Checksum = WinDivertHelperCalcChecksum(NULL, 0,
+            icmp_header, payload_len + sizeof(WINDIVERT_ICMPHDR));
         count++;
         return count;
     }
 
     if (icmpv6_header != NULL)
     {
-        if (flags & DIVERT_HELPER_NO_ICMPV6_CHECKSUM)
+        if (flags & WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM)
         {
             return count;
         }
-        checksum_len = payload_len + sizeof(DIVERT_ICMPV6HDR);
-        DivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
+        checksum_len = payload_len + sizeof(WINDIVERT_ICMPV6HDR);
+        WinDivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
             IPPROTO_ICMPV6, checksum_len);
         icmpv6_header->Checksum = 0;
-        icmpv6_header->Checksum = DivertHelperCalcChecksum(&pseudov6_header,
+        icmpv6_header->Checksum = WinDivertHelperCalcChecksum(&pseudov6_header,
             sizeof(pseudov6_header), icmpv6_header, checksum_len);
         count++;
         return count;
@@ -2049,25 +1878,25 @@ extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (tcp_header != NULL)
     {
-        if (flags & DIVERT_HELPER_NO_TCP_CHECKSUM)
+        if (flags & WINDIVERT_HELPER_NO_TCP_CHECKSUM)
         {
             return count;
         }
         checksum_len = payload_len + tcp_header->HdrLength*sizeof(UINT32);
         if (ip_header != NULL)
         {
-            DivertInitPseudoHeader(ip_header, &pseudo_header, IPPROTO_TCP,
+            WinDivertInitPseudoHeader(ip_header, &pseudo_header, IPPROTO_TCP,
                 checksum_len);
             tcp_header->Checksum = 0;
-            tcp_header->Checksum = DivertHelperCalcChecksum(&pseudo_header,
+            tcp_header->Checksum = WinDivertHelperCalcChecksum(&pseudo_header,
                 sizeof(pseudo_header), tcp_header, checksum_len);
         }
         else
         {
-            DivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
+            WinDivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
                 IPPROTO_TCP, checksum_len);
             tcp_header->Checksum = 0;
-            tcp_header->Checksum = DivertHelperCalcChecksum(&pseudov6_header,
+            tcp_header->Checksum = WinDivertHelperCalcChecksum(&pseudov6_header,
                 sizeof(pseudov6_header), tcp_header, checksum_len);
         }
         count++;
@@ -2076,17 +1905,17 @@ extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (udp_header != NULL)
     {
-        if (flags & DIVERT_HELPER_NO_UDP_CHECKSUM)
+        if (flags & WINDIVERT_HELPER_NO_UDP_CHECKSUM)
         {
             return count;
         }
-        checksum_len = payload_len + sizeof(DIVERT_UDPHDR);
+        checksum_len = payload_len + sizeof(WINDIVERT_UDPHDR);
         if (ip_header != NULL)
         {
-            DivertInitPseudoHeader(ip_header, &pseudo_header, IPPROTO_UDP, 
+            WinDivertInitPseudoHeader(ip_header, &pseudo_header, IPPROTO_UDP, 
                 checksum_len);
             udp_header->Checksum = 0;
-            udp_header->Checksum = DivertHelperCalcChecksum(&pseudo_header,
+            udp_header->Checksum = WinDivertHelperCalcChecksum(&pseudo_header,
                 sizeof(pseudo_header), udp_header, checksum_len);
             if (udp_header->Checksum == 0)
             {
@@ -2095,10 +1924,10 @@ extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         }
         else
         {
-            DivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
+            WinDivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
                 IPPROTO_UDP, checksum_len);
             udp_header->Checksum = 0;
-            udp_header->Checksum = DivertHelperCalcChecksum(&pseudov6_header,
+            udp_header->Checksum = WinDivertHelperCalcChecksum(&pseudov6_header,
                 sizeof(pseudov6_header), udp_header, checksum_len);
         }
         count++;
@@ -2109,8 +1938,8 @@ extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 /*
  * Initialize the IP pseudo header.
  */
-static void DivertInitPseudoHeader(PDIVERT_IPHDR ip_header,
-    PDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len)
+static void WinDivertInitPseudoHeader(PWINDIVERT_IPHDR ip_header,
+    PWINDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len)
 {
     pseudo_header->SrcAddr  = ip_header->SrcAddr;
     pseudo_header->DstAddr  = ip_header->DstAddr;
@@ -2122,8 +1951,8 @@ static void DivertInitPseudoHeader(PDIVERT_IPHDR ip_header,
 /*
  * Initialize the IPv6 pseudo header.
  */
-static void DivertInitPseudoHeaderV6(PDIVERT_IPV6HDR ipv6_header,
-    PDIVERT_PSEUDOV6HDR pseudov6_header, UINT8 protocol, UINT len)
+static void WinDivertInitPseudoHeaderV6(PWINDIVERT_IPV6HDR ipv6_header,
+    PWINDIVERT_PSEUDOV6HDR pseudov6_header, UINT8 protocol, UINT len)
 {
     memcpy(pseudov6_header->SrcAddr, ipv6_header->SrcAddr,
         sizeof(pseudov6_header->SrcAddr));
@@ -2137,7 +1966,7 @@ static void DivertInitPseudoHeaderV6(PDIVERT_IPV6HDR ipv6_header,
 /*
  * Generic checksum computation.
  */
-static UINT16 DivertHelperCalcChecksum(PVOID pseudo_header,
+static UINT16 WinDivertHelperCalcChecksum(PVOID pseudo_header,
     UINT16 pseudo_header_len, PVOID data, UINT len)
 {
     register const UINT16 *data16 = (const UINT16 *)pseudo_header;
@@ -2174,7 +2003,7 @@ static UINT16 DivertHelperCalcChecksum(PVOID pseudo_header,
 /*
  * Parse an IPv4 address.
  */
-extern BOOL DivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
+extern BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
 {
     UINT32 addr = 0;
     UINT part, i;
@@ -2210,7 +2039,7 @@ extern BOOL DivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
 /*
  * Parse an IPv6 address.
  */
-extern BOOL DivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
+extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
 {
     UINT16 addr[8] = {0};
     UINT part;
@@ -2310,4 +2139,254 @@ extern BOOL DivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
 
     return TRUE;
 }
+
+/***************************************************************************/
+/* DEBUGGING                                                               */
+/***************************************************************************/
+
+#ifdef WINDIVERT_DEBUG
+/*
+ * Print a filter (debugging).
+ */
+static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len)
+{
+    UINT16 i;
+
+    for (i = 0; i < len; i++)
+    {
+        printf("label_%u:\n\tif (", i);
+        switch (filter[i].field)
+        {
+            case WINDIVERT_FILTER_FIELD_ZERO:
+                printf("zero ");
+                break;
+            case WINDIVERT_FILTER_FIELD_INBOUND:
+                printf("inbound ");
+                break;
+            case WINDIVERT_FILTER_FIELD_OUTBOUND:
+                printf("outbound ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IFIDX:
+                printf("ifIdx ");
+                break;
+            case WINDIVERT_FILTER_FIELD_SUBIFIDX:
+                printf("subIfIdx ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP:
+                printf("ip ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6:
+                printf("ipv6 ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMP:
+                printf("icmp ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMPV6:
+                printf("icmpv6 ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP:
+                printf("tcp ");
+                break;
+            case WINDIVERT_FILTER_FIELD_UDP:
+                printf("udp ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
+                printf("ip.HdrLength ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_TOS:
+                printf("ip.TOS ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_LENGTH:
+                printf("ip.Length ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_ID:
+                printf("ip.Id ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_DF:
+                printf("ip.DF ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_MF:
+                printf("ip.MF ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_FRAGOFF:
+                printf("ip.FragOff ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_TTL:
+                printf("ip.TTL ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_PROTOCOL:
+                printf("ip.Protocol ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_CHECKSUM:
+                printf("ip.Checksum ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_SRCADDR:
+                printf("ip.SrcAddr ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IP_DSTADDR:
+                printf("ip.DstAddr ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
+                printf("ipv6.TrafficClass ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
+                printf("ipv6.FlowLabel ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6_LENGTH:
+                printf("ipv6.Length ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR:
+                printf("ipv6.NextHdr ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT:
+                printf("ipv6.HopLimit ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
+                printf("ipv6.SrcAddr ");
+                break;
+            case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
+                printf("ipv6.DstAddr ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMP_TYPE:
+                printf("icmp.Type ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMP_CODE:
+                printf("icmp.Code ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM:
+                printf("icmp.Checksum ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMP_BODY:
+                printf("icmp.Body ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMPV6_TYPE:
+                printf("icmpv6.Type ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMPV6_CODE:
+                printf("icmpv6.Code ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM:
+                printf("icmpv6.Checksum ");
+                break;
+            case WINDIVERT_FILTER_FIELD_ICMPV6_BODY:
+                printf("icmpv6.Body ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_SRCPORT:
+                printf("tcp.SrcPort ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_DSTPORT:
+                printf("tcp.DstPort ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_SEQNUM:
+                printf("tcp.SeqNum ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_ACKNUM:
+                printf("tcp.AckNum ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH:
+                printf("tcp.HdrLength ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_URG:
+                printf("tcp.Urg ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_ACK:
+                printf("tcp.Ack ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_PSH:
+                printf("tcp.Psh ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_RST:
+                printf("tcp.Rst ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_SYN:
+                printf("tcp.Syn ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_FIN:
+                printf("tcp.Fin ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_WINDOW:
+                printf("tcp.Window ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_CHECKSUM:
+                printf("tcp.Checksum ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_URGPTR:
+                printf("tcp.UrgPtr ");
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
+                printf("tcp.PayloadLength " );
+                break;
+            case WINDIVERT_FILTER_FIELD_UDP_SRCPORT:
+                printf("udp.SrcPort ");
+                break;
+            case WINDIVERT_FILTER_FIELD_UDP_DSTPORT:
+                printf("udp.DstPort ");
+                break;
+            case WINDIVERT_FILTER_FIELD_UDP_LENGTH:
+                printf("udp.Length ");
+                break;
+            case WINDIVERT_FILTER_FIELD_UDP_CHECKSUM:
+                printf("udp.Checksum ");
+                break;
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
+                printf("udp.PayloadLength ");
+                break;
+            default:
+                printf("unknown.Field ");       
+                break;
+        }
+        switch (filter[i].test)
+        {
+            case WINDIVERT_FILTER_TEST_EQ:
+                printf("== ");
+                break;
+            case WINDIVERT_FILTER_TEST_NEQ:
+                printf("!= ");
+                break;
+            case WINDIVERT_FILTER_TEST_LT:
+                printf("< ");
+                break;
+            case WINDIVERT_FILTER_TEST_LEQ:
+                printf("<= ");
+                break;
+            case WINDIVERT_FILTER_TEST_GT:
+                printf("> ");
+                break;
+            case WINDIVERT_FILTER_TEST_GEQ:
+                printf(">= ");
+                break;
+            default:
+                printf("?? ");
+                break;
+        }
+        printf("%u)\n", filter[i].arg[0]);
+        switch (filter[i].success)
+        {
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
+                printf("\t\treturn ACCEPT;\n");
+                break;
+            case WINDIVERT_FILTER_RESULT_REJECT:
+                printf("\t\treturn REJECT;\n");
+                break;
+            default:
+                printf("\t\tgoto label_%u;\n", filter[i].success);
+                break;
+        }
+        printf("\telse\n");
+        switch (filter[i].failure)
+        {
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
+                printf("\t\treturn ACCEPT;\n");
+                break;
+            case WINDIVERT_FILTER_RESULT_REJECT:
+                printf("\t\treturn REJECT;\n");
+                break;
+            default:
+                printf("\t\tgoto label_%u;\n", filter[i].failure);
+                break;
+        }
+    }
+}
+
+#endif      /* WINDIVERT_DEBUG */
 

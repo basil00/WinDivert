@@ -28,7 +28,7 @@
       <AdditionalIncludeDirectories>..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
-      <ModuleDefinitionFile>divert.def</ModuleDefinitionFile>
+      <ModuleDefinitionFile>windivert.def</ModuleDefinitionFile>
     </Link> 
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
@@ -52,10 +52,10 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
   <ItemGroup>
-    <ClCompile Include="divert.c"/>
+    <ClCompile Include="windivert.c"/>
   </ItemGroup>
   <ItemGroup>
-    <None Include="divert.def"/>
+    <None Include="windivert.def"/>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
 </Project>

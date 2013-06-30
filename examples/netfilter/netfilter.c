@@ -1,6 +1,6 @@
 /*
  * netfilter.c
- * (C) 2012, all rights reserved,
+ * (C) 2013, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -20,9 +20,9 @@
  * DESCRIPTION:
  * This is a simple traffic filter/firewall using WinDivert.
  *
- * usage: netfilter.exe divert-filter [priority]
+ * usage: netfilter.exe windivert-filter [priority]
  *
- * Any traffic that matches the divert-filter will be blocked using one of
+ * Any traffic that matches the windivert-filter will be blocked using one of
  * the following methods:
  * - TCP: send a TCP RST to the packet's source.
  * - UDP: send a ICMP(v6) "destination unreachable" to the packet's source.
@@ -37,7 +37,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "divert.h"
+#include "windivert.h"
 
 #define MAXBUF  0xFFFF
 
@@ -46,37 +46,37 @@
  */
 typedef struct
 {
-    DIVERT_IPHDR ip;
-    DIVERT_TCPHDR tcp;
+    WINDIVERT_IPHDR ip;
+    WINDIVERT_TCPHDR tcp;
 } TCPPACKET, *PTCPPACKET;
 
 typedef struct
 {
-    DIVERT_IPV6HDR ipv6;
-    DIVERT_TCPHDR tcp;
+    WINDIVERT_IPV6HDR ipv6;
+    WINDIVERT_TCPHDR tcp;
 } TCPV6PACKET, *PTCPV6PACKET;
 
 typedef struct
 {
-    DIVERT_IPHDR ip;
-    DIVERT_ICMPHDR icmp;
+    WINDIVERT_IPHDR ip;
+    WINDIVERT_ICMPHDR icmp;
     UINT8 data[];
 } ICMPPACKET, *PICMPPACKET;
 
 typedef struct
 {
-    DIVERT_IPV6HDR ipv6;
-    DIVERT_ICMPV6HDR icmpv6;
+    WINDIVERT_IPV6HDR ipv6;
+    WINDIVERT_ICMPV6HDR icmpv6;
     UINT8 data[];
 } ICMPV6PACKET, *PICMPV6PACKET;
 
 /*
  * Prototypes.
  */
-static void PacketIpInit(PDIVERT_IPHDR packet);
+static void PacketIpInit(PWINDIVERT_IPHDR packet);
 static void PacketIpTcpInit(PTCPPACKET packet);
 static void PacketIpIcmpInit(PICMPPACKET packet);
-static void PacketIpv6Init(PDIVERT_IPV6HDR packet);
+static void PacketIpv6Init(PWINDIVERT_IPV6HDR packet);
 static void PacketIpv6TcpInit(PTCPV6PACKET packet);
 static void PacketIpv6Icmpv6Init(PICMPV6PACKET packet);
 
@@ -90,13 +90,13 @@ int __cdecl main(int argc, char **argv)
     INT16 priority = 0;
     char packet[MAXBUF];
     UINT packet_len;
-    DIVERT_ADDRESS recv_addr, send_addr;
-    PDIVERT_IPHDR ip_header;
-    PDIVERT_IPV6HDR ipv6_header;
-    PDIVERT_ICMPHDR icmp_header;
-    PDIVERT_ICMPV6HDR icmpv6_header;
-    PDIVERT_TCPHDR tcp_header;
-    PDIVERT_UDPHDR udp_header;
+    WINDIVERT_ADDRESS recv_addr, send_addr;
+    PWINDIVERT_IPHDR ip_header;
+    PWINDIVERT_IPV6HDR ipv6_header;
+    PWINDIVERT_ICMPHDR icmp_header;
+    PWINDIVERT_ICMPV6HDR icmpv6_header;
+    PWINDIVERT_TCPHDR tcp_header;
+    PWINDIVERT_UDPHDR udp_header;
     UINT payload_len;
     
     TCPPACKET reset0;
@@ -106,8 +106,8 @@ int __cdecl main(int argc, char **argv)
 
     TCPV6PACKET resetv6_0;
     PTCPV6PACKET resetv6 = &resetv6_0;
-    UINT8 dnrv6_0[sizeof(ICMPV6PACKET) + sizeof(DIVERT_IPV6HDR) +
-        sizeof(DIVERT_TCPHDR)];
+    UINT8 dnrv6_0[sizeof(ICMPV6PACKET) + sizeof(WINDIVERT_IPV6HDR) +
+        sizeof(WINDIVERT_TCPHDR)];
     PICMPV6PACKET dnrv6 = (PICMPV6PACKET)dnrv6_0;
 
     // Check arguments.
@@ -119,7 +119,7 @@ int __cdecl main(int argc, char **argv)
             priority = (INT16)atoi(argv[2]);
             break;
         default:
-            fprintf(stderr, "usage: %s divert-filter [priority]\n",
+            fprintf(stderr, "usage: %s windivert-filter [priority]\n",
                 argv[0]);
             fprintf(stderr, "examples:\n");
             fprintf(stderr, "\t%s true\n", argv[0]);
@@ -140,8 +140,8 @@ int __cdecl main(int argc, char **argv)
     resetv6->tcp.Rst = 1;
     resetv6->tcp.Ack = 1;
     PacketIpv6Icmpv6Init(dnrv6);
-    dnrv6->ipv6.Length = htons(sizeof(DIVERT_ICMPV6HDR) + 4 +
-        sizeof(DIVERT_IPV6HDR) + sizeof(DIVERT_TCPHDR));
+    dnrv6->ipv6.Length = htons(sizeof(WINDIVERT_ICMPV6HDR) + 4 +
+        sizeof(WINDIVERT_IPV6HDR) + sizeof(WINDIVERT_TCPHDR));
     dnrv6->icmpv6.Type = 1;     // Destination not reachable.
     dnrv6->icmpv6.Code = 4;     // Port not reachable.
 
@@ -149,7 +149,7 @@ int __cdecl main(int argc, char **argv)
     console = GetStdHandle(STD_OUTPUT_HANDLE);
 
     // Divert traffic matching the filter:
-    handle = DivertOpen(argv[1], (DIVERT_LAYER)0, priority, 0);
+    handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, priority, 0);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
@@ -157,7 +157,7 @@ int __cdecl main(int argc, char **argv)
             fprintf(stderr, "error: filter syntax error\n");
             exit(EXIT_FAILURE);
         }
-        fprintf(stderr, "error: failed to open Divert device (%d)\n",
+        fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
@@ -166,7 +166,7 @@ int __cdecl main(int argc, char **argv)
     while (TRUE)
     {
         // Read a matching packet.
-        if (!DivertRecv(handle, packet, sizeof(packet), &recv_addr,
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &recv_addr,
                 &packet_len))
         {
             fprintf(stderr, "warning: failed to read packet\n");
@@ -174,9 +174,9 @@ int __cdecl main(int argc, char **argv)
         }
        
         // Print info about the matching packet.
-        DivertHelperParse(packet, packet_len, &ip_header, &ipv6_header,
-            &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
-            &payload_len);
+        WinDivertHelperParsePacket(packet, packet_len, &ip_header,
+            &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
+            &udp_header, NULL, &payload_len);
         if (ip_header == NULL && ipv6_header == NULL)
         {
             continue;
@@ -267,11 +267,12 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + 1):
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
-                DivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET), 0);
+                WinDivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET),
+                    0);
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Direction = !recv_addr.Direction;
-                if (!DivertSend(handle, (PVOID)reset, sizeof(TCPPACKET),
+                if (!WinDivertSend(handle, (PVOID)reset, sizeof(TCPPACKET),
                         &send_addr, NULL))
                 {
                     fprintf(stderr, "warning: failed to send TCP reset (%d)\n",
@@ -294,12 +295,12 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + 1):
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
-                DivertHelperCalcChecksums((PVOID)resetv6, sizeof(TCPV6PACKET),
-                    0);
+                WinDivertHelperCalcChecksums((PVOID)resetv6,
+                    sizeof(TCPV6PACKET), 0);
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Direction = !recv_addr.Direction;
-                if (!DivertSend(handle, (PVOID)resetv6, sizeof(TCPV6PACKET),
+                if (!WinDivertSend(handle, (PVOID)resetv6, sizeof(TCPV6PACKET),
                         &send_addr, NULL))
                 {
                     fprintf(stderr, "warning: failed to send TCP (IPV6) "
@@ -324,11 +325,11 @@ int __cdecl main(int argc, char **argv)
                 dnr->ip.SrcAddr = ip_header->DstAddr;
                 dnr->ip.DstAddr = ip_header->SrcAddr;
                 
-                DivertHelperCalcChecksums((PVOID)dnr, icmp_length, 0);
+                WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length, 0);
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = DIVERT_DIRECTION_OUTBOUND;
-                if (!DivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
+                send_addr.Direction = WINDIVERT_DIRECTION_OUTBOUND;
+                if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
                     NULL))
                 {
                     fprintf(stderr, "warning: failed to send ICMP message "
@@ -338,8 +339,8 @@ int __cdecl main(int argc, char **argv)
         
             if (ipv6_header != NULL)
             {
-                UINT icmpv6_length = sizeof(DIVERT_IPV6HDR) +
-                    sizeof(DIVERT_TCPHDR);
+                UINT icmpv6_length = sizeof(WINDIVERT_IPV6HDR) +
+                    sizeof(WINDIVERT_TCPHDR);
                 memcpy(dnrv6->data, ipv6_header, icmpv6_length);
                 icmpv6_length += sizeof(ICMPV6PACKET);
                 memcpy(dnrv6->ipv6.SrcAddr, ipv6_header->DstAddr,
@@ -347,11 +348,11 @@ int __cdecl main(int argc, char **argv)
                 memcpy(dnrv6->ipv6.DstAddr, ipv6_header->SrcAddr,
                     sizeof(dnrv6->ipv6.DstAddr));
                 
-                DivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length, 0);
+                WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length, 0);
 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = DIVERT_DIRECTION_OUTBOUND;
-                if (!DivertSend(handle, (PVOID)dnrv6, icmpv6_length,
+                send_addr.Direction = WINDIVERT_DIRECTION_OUTBOUND;
+                if (!WinDivertSend(handle, (PVOID)dnrv6, icmpv6_length,
                         &send_addr, NULL))
                 {
                     fprintf(stderr, "warning: failed to send ICMPv6 message "
@@ -366,11 +367,11 @@ int __cdecl main(int argc, char **argv)
 /*
  * Initialize a PACKET.
  */
-static void PacketIpInit(PDIVERT_IPHDR packet)
+static void PacketIpInit(PWINDIVERT_IPHDR packet)
 {
-    memset(packet, 0, sizeof(DIVERT_IPHDR));
+    memset(packet, 0, sizeof(WINDIVERT_IPHDR));
     packet->Version = 4;
-    packet->HdrLength = sizeof(DIVERT_IPHDR) / sizeof(UINT32);
+    packet->HdrLength = sizeof(WINDIVERT_IPHDR) / sizeof(UINT32);
     packet->Id = ntohs(0xDEAD);
     packet->TTL = 64;
 }
@@ -384,7 +385,7 @@ static void PacketIpTcpInit(PTCPPACKET packet)
     PacketIpInit(&packet->ip);
     packet->ip.Length = htons(sizeof(TCPPACKET));
     packet->ip.Protocol = IPPROTO_TCP;
-    packet->tcp.HdrLength = sizeof(DIVERT_TCPHDR) / sizeof(UINT32);
+    packet->tcp.HdrLength = sizeof(WINDIVERT_TCPHDR) / sizeof(UINT32);
 }
 
 /*
@@ -400,9 +401,9 @@ static void PacketIpIcmpInit(PICMPPACKET packet)
 /*
  * Initialize a PACKETV6.
  */
-static void PacketIpv6Init(PDIVERT_IPV6HDR packet)
+static void PacketIpv6Init(PWINDIVERT_IPV6HDR packet)
 {
-    memset(packet, 0, sizeof(DIVERT_IPV6HDR));
+    memset(packet, 0, sizeof(WINDIVERT_IPV6HDR));
     packet->Version = 6;
     packet->HopLimit = 64;
 }
@@ -414,9 +415,9 @@ static void PacketIpv6TcpInit(PTCPV6PACKET packet)
 {
     memset(packet, 0, sizeof(TCPV6PACKET));
     PacketIpv6Init(&packet->ipv6);
-    packet->ipv6.Length = htons(sizeof(DIVERT_TCPHDR));
+    packet->ipv6.Length = htons(sizeof(WINDIVERT_TCPHDR));
     packet->ipv6.NextHdr = IPPROTO_TCP;
-    packet->tcp.HdrLength = sizeof(DIVERT_TCPHDR) / sizeof(UINT32);
+    packet->tcp.HdrLength = sizeof(WINDIVERT_TCPHDR) / sizeof(UINT32);
 }
 
 /*

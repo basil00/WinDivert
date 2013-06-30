@@ -1,11 +1,11 @@
-WinDivert 1.0: Windows Packet Divert
+WinDivert 1.1: Windows Packet Divert
 ====================================
 
 1. Introduction
 ---------------
 
 Windows Packet Divert (WinDivert) is a user-mode packet capture-and-divert
-package for Windows Vista, Windows 2008, and Windows 7.
+package for Windows Vista, Windows 2008, Windows 7, and Windows 8.
 
 With WinDivert developers can write user-mode programs that capture and
 modify or drop network packets sent to/from the Windows network stack.
@@ -99,7 +99,7 @@ following then happens
 
     sh mingw-build.sh
 
-For more detailed build instructions, see doc\divert.html
+For more detailed build instructions, see doc\windivert.html
 
 5. License
 ----------

@@ -1,0 +1,15 @@
+LIBRARY WinDivert
+EXPORTS
+    WinDivertDllEntry
+    WinDivertOpen
+    WinDivertRecv
+    WinDivertRecvEx
+    WinDivertSend
+    WinDivertSendEx
+    WinDivertClose
+    WinDivertSetParam
+    WinDivertGetParam
+    WinDivertHelperCalcChecksums
+    WinDivertHelperParsePacket
+    WinDivertHelperParseIPv4Address
+    WinDivertHelperParseIPv6Address

@@ -1,6 +1,6 @@
 /*
  * webfilter.c
- * (C) 2012, all rights reserved,
+ * (C) 2013, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -31,7 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "divert.h"
+#include "windivert.h"
 
 #define MAXBUF 0xFFFF
 #define MAXURL 4096
@@ -56,8 +56,8 @@ typedef struct
  */
 typedef struct
 {
-    DIVERT_IPHDR  ip;
-    DIVERT_TCPHDR tcp;
+    WINDIVERT_IPHDR  ip;
+    WINDIVERT_TCPHDR tcp;
 } PACKET, *PPACKET;
 typedef struct 
 {
@@ -105,11 +105,11 @@ static BOOL BlackListPayloadMatch(PBLACKLIST blacklist, char *data,
 int __cdecl main(int argc, char **argv)
 {
     HANDLE handle;
-    DIVERT_ADDRESS addr;
+    WINDIVERT_ADDRESS addr;
     UINT8 packet[MAXBUF];
     UINT packet_len;
-    PDIVERT_IPHDR ip_header;
-    PDIVERT_TCPHDR tcp_header;
+    PWINDIVERT_IPHDR ip_header;
+    PWINDIVERT_TCPHDR tcp_header;
     PVOID payload;
     UINT payload_len;
     PACKET reset0;
@@ -158,37 +158,37 @@ int __cdecl main(int argc, char **argv)
     finish->tcp.Ack = 1;
 
     // Open the Divert device:
-    handle = DivertOpen(
+    handle = WinDivertOpen(
             "outbound && "              // Outbound traffic only
             "ip && "                    // Only IPv4 supported
             "tcp.DstPort == 80 && "     // HTTP (port 80) only
             "tcp.PayloadLength > 0",    // TCP data packets only
-            (DIVERT_LAYER)0, priority, 0
+            WINDIVERT_LAYER_NETWORK, priority, 0
         );
     if (handle == INVALID_HANDLE_VALUE)
     {
-        fprintf(stderr, "error: failed to open Divert device (%d)\n",
+        fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
-    printf("OPENED divert\n");
+    printf("OPENED WinDivert\n");
 
     // Main loop:
     while (TRUE)
     {
-        if (!DivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
             continue;
         }
 
-        if (!DivertHelperParse(packet, packet_len, &ip_header, NULL, NULL,
-                NULL, &tcp_header, NULL, &payload, &payload_len) ||
+        if (!WinDivertHelperParsePacket(packet, packet_len, &ip_header, NULL,
+                NULL, NULL, &tcp_header, NULL, &payload, &payload_len) ||
             !BlackListPayloadMatch(blacklist, payload, (UINT16)payload_len))
         {
             // Packet does not match the blacklist; simply reinject it.
-            if (!DivertSend(handle, packet, packet_len, &addr, NULL))
+            if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
             {
                 fprintf(stderr, "warning: failed to reinject packet (%d)\n",
                     GetLastError());
@@ -207,8 +207,8 @@ int __cdecl main(int argc, char **argv)
         reset->tcp.DstPort      = htons(80);
         reset->tcp.SeqNum       = tcp_header->SeqNum;
         reset->tcp.AckNum       = tcp_header->AckNum;
-        DivertHelperCalcChecksums((PVOID)reset, sizeof(PACKET), 0);
-        if (!DivertSend(handle, (PVOID)reset, sizeof(PACKET), &addr, NULL))
+        WinDivertHelperCalcChecksums((PVOID)reset, sizeof(PACKET), 0);
+        if (!WinDivertSend(handle, (PVOID)reset, sizeof(PACKET), &addr, NULL))
         {
             fprintf(stderr, "warning: failed to send reset packet (%d)\n",
                 GetLastError());
@@ -221,9 +221,10 @@ int __cdecl main(int argc, char **argv)
         blockpage->header.tcp.SeqNum       = tcp_header->AckNum;
         blockpage->header.tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        DivertHelperCalcChecksums((PVOID)blockpage, blockpage_len, 0);
+        WinDivertHelperCalcChecksums((PVOID)blockpage, blockpage_len, 0);
         addr.Direction = !addr.Direction;     // Reverse direction.
-        if (!DivertSend(handle, (PVOID)blockpage, blockpage_len, &addr, NULL))
+        if (!WinDivertSend(handle, (PVOID)blockpage, blockpage_len, &addr,
+                NULL))
         {
             fprintf(stderr, "warning: failed to send block page packet (%d)\n",
                 GetLastError());
@@ -239,8 +240,8 @@ int __cdecl main(int argc, char **argv)
             htonl(ntohl(tcp_header->AckNum) + sizeof(block_data) - 1); 
         finish->tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        DivertHelperCalcChecksums((PVOID)finish, sizeof(PACKET), 0);
-        if (!DivertSend(handle, (PVOID)finish, sizeof(PACKET), &addr, NULL))
+        WinDivertHelperCalcChecksums((PVOID)finish, sizeof(PACKET), 0);
+        if (!WinDivertSend(handle, (PVOID)finish, sizeof(PACKET), &addr, NULL))
         {
             fprintf(stderr, "warning: failed to send finish packet (%d)\n",
                 GetLastError());
@@ -255,11 +256,11 @@ static void PacketInit(PPACKET packet)
 {
     memset(packet, 0, sizeof(PACKET));
     packet->ip.Version = 4;
-    packet->ip.HdrLength = sizeof(DIVERT_IPHDR) / sizeof(UINT32);
+    packet->ip.HdrLength = sizeof(WINDIVERT_IPHDR) / sizeof(UINT32);
     packet->ip.Length = htons(sizeof(PACKET));
     packet->ip.TTL = 64;
     packet->ip.Protocol = IPPROTO_TCP;
-    packet->tcp.HdrLength = sizeof(DIVERT_TCPHDR) / sizeof(UINT32);
+    packet->tcp.HdrLength = sizeof(WINDIVERT_TCPHDR) / sizeof(UINT32);
 }
 
 /*
