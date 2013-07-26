@@ -32,6 +32,7 @@
 #define __out
 #define __out_opt
 #define __inout
+#define __inout_opt
 #include <stdint.h>
 #define INT8    int8_t
 #define UINT8   uint8_t
@@ -349,6 +350,91 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
  */
 extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
     __inout     PVOID pPacket, 
+    __in        UINT packetLen,
+    __in        UINT64 flags);
+
+
+/****************************************************************************/
+/* WINDIVERT LEGACY API                                                     */
+/****************************************************************************/
+
+/*
+ * Deprecated API:
+ */
+typedef WINDIVERT_ADDRESS DIVERT_ADDRESS;
+typedef PWINDIVERT_ADDRESS PDIVERT_ADDRESS;
+#define DIVERT_DIRECTION_OUTBOUND           WINDIVERT_DIRECTION_OUTBOUND
+#define DIVERT_DIRECTION_INBOUND            WINDIVERT_DIRECTION_INBOUND
+typedef WINDIVERT_LAYER DIVERT_LAYER;
+typedef PWINDIVERT_LAYER PDIVERT_LAYER;
+#define DIVERT_FLAG_SNIFF                   WINDIVERT_FLAG_SNIFF
+#define DIVERT_FLAG_DROP                    WINDIVERT_FLAG_DROP
+typedef WINDIVERT_PARAM DIVERT_PARAM;
+typedef PWINDIVERT_PARAM PDIVERT_PARAM;
+typedef WINDIVERT_IPHDR DIVERT_IPHDR;
+typedef PWINDIVERT_IPHDR PDIVERT_IPHDR;
+typedef WINDIVERT_IPV6HDR DIVERT_IPV6HDR;
+typedef PWINDIVERT_IPV6HDR PDIVERT_IPV6HDR;
+typedef WINDIVERT_ICMPHDR DIVERT_ICMPHDR;
+typedef PWINDIVERT_ICMPHDR PDIVERT_ICMPHDR;
+typedef WINDIVERT_ICMPV6HDR DIVERT_ICMPV6HDR;
+typedef PWINDIVERT_ICMPV6HDR PDIVERT_ICMPV6HDR;
+typedef WINDIVERT_TCPHDR DIVERT_TCPHDR;
+typedef PWINDIVERT_TCPHDR PDIVERT_TCPHDR;
+typedef WINDIVERT_UDPHDR DIVERT_UDPHDR;
+typedef PWINDIVERT_UDPHDR PDIVERT_UDPHDR;
+#define DIVERT_HELPER_NO_IP_CHECKSUM        WINDIVERT_HELPER_NO_IP_CHECKSUM
+#define DIVERT_HELPER_NO_ICMP_CHECKSUM      WINDIVERT_HELPER_NO_ICMP_CHECKSUM
+#define DIVERT_HELPER_NO_ICMPV6_CHECKSUM    WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM
+#define DIVERT_HELPER_NO_TCP_CHECKSUM       WINDIVERT_HELPER_NO_TCP_CHECKSUM
+#define DIVERT_HELPER_NO_UDP_CHECKSUM       WINDIVERT_HELPER_NO_UDP_CHECKSUM
+
+extern WINDIVERTEXPORT HANDLE DivertOpen(
+    __in        const char *filter,
+    __in        DIVERT_LAYER layer,
+    __in        INT16 priority,
+    __in        UINT64 flags);
+extern WINDIVERTEXPORT BOOL DivertRecv(
+    __in        HANDLE handle,
+    __out       PVOID pPacket,
+    __in        UINT packetLen,
+    __out_opt   PDIVERT_ADDRESS pAddr,
+    __out_opt   UINT *readLen);
+extern WINDIVERTEXPORT BOOL DivertSend(
+    __in        HANDLE handle,
+    __in        PVOID pPacket,
+    __in        UINT packetLen,
+    __in        PDIVERT_ADDRESS pAddr,
+    __out_opt   UINT *writeLen);
+extern WINDIVERTEXPORT BOOL DivertClose(
+    __in        HANDLE handle);
+extern WINDIVERTEXPORT BOOL DivertSetParam(
+    __in        HANDLE handle,
+    __in        DIVERT_PARAM param,
+    __in        UINT64 value);
+extern WINDIVERTEXPORT BOOL DivertGetParam(
+    __in        HANDLE handle,
+    __in        DIVERT_PARAM param,
+    __out       UINT64 *pValue);
+extern WINDIVERTEXPORT BOOL DivertHelperParsePacket(
+    __in        PVOID pPacket,
+    __in        UINT packetLen,
+    __out_opt   PDIVERT_IPHDR *ppIpHdr,
+    __out_opt   PDIVERT_IPV6HDR *ppIpv6Hdr,
+    __out_opt   PDIVERT_ICMPHDR *ppIcmpHdr,
+    __out_opt   PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
+    __out_opt   PDIVERT_TCPHDR *ppTcpHdr,
+    __out_opt   PDIVERT_UDPHDR *ppUdpHdr,
+    __out_opt   PVOID *ppData,
+    __out_opt   UINT *pDataLen);
+extern WINDIVERTEXPORT BOOL DivertHelperParseIPv4Address(
+    __in        const char *addrStr,
+    __out_opt   UINT32 *pAddr);
+extern WINDIVERTEXPORT BOOL DivertHelperParseIPv6Address(
+    __in        const char *addrStr,
+    __out_opt   UINT32 *pAddr);
+extern WINDIVERTEXPORT UINT DivertHelperCalcChecksums(
+    __inout     PVOID pPacket,
     __in        UINT packetLen,
     __in        UINT64 flags);
 
