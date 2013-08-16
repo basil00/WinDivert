@@ -1,10 +1,10 @@
 <!doctype html>
 <html>
 <head>
-    <title>WinDivert 1.0 Documentation</title>
+    <title>WinDivert 1.1 Documentation</title>
 </head>
 <body>
-<h1>WinDivert 1.0: Windows Packet Divert</h1>
+<h1>WinDivert 1.1: Windows Packet Divert</h1>
 <h2>Table of Contents</h2>
 <ul>
 <li><a href="#introduction">1. Introduction</a></li>
@@ -18,26 +18,26 @@
 <li><a href="#uninstalling">4. Uninstalling</a></li>
 <li><a href="#programming_api">5. Programming API</a></li>
 <ul>
-<li><a href="#divert_address">5.1 DIVERT_ADDRESS</a></li>
-<li><a href="#divert_open">5.2 DivertOpen</a></li>
-<li><a href="#divert_recv">5.3 DivertRecv</a></li>
-<li><a href="#divert_send">5.4 DivertSend</a></li>
-<li><a href="#divert_close">5.5 DivertClose</a></li>
-<li><a href="#divert_set_param">5.6 DivertSetParam</a></li>
-<li><a href="#divert_get_param">5.7 DivertGetParam</a></li>
+<li><a href="#divert_address">5.1 WINDIVERT_ADDRESS</a></li>
+<li><a href="#divert_open">5.2 WinDivertOpen</a></li>
+<li><a href="#divert_recv">5.3 WinDivertRecv</a></li>
+<li><a href="#divert_send">5.4 WinDivertSend</a></li>
+<li><a href="#divert_close">5.5 WinDivertClose</a></li>
+<li><a href="#divert_set_param">5.6 WinDivertSetParam</a></li>
+<li><a href="#divert_get_param">5.7 WinDivertGetParam</a></li>
 </ul>
 <li><a href="#helper_programming_api">6. Helper Programming API</a></li>
 <ul>
-<li><a href="#divert_iphdr">6.1 DIVERT_IPHDR</a></li>
-<li><a href="#divert_ipv6hdr">6.2 DIVERT_IPV6HDR</a></li>
-<li><a href="#divert_icmphdr">6.3 DIVERT_ICMPHDR</a></li>
-<li><a href="#divert_icmpv6hdr">6.4 DIVERT_ICMPV6HDR</a></li>
-<li><a href="#divert_tcphdr">6.5 DIVERT_TCPHDR</a></li>
-<li><a href="#divert_udphdr">6.6 DIVERT_UDPHDR</a></li>
-<li><a href="#divert_helper_parse_packet">6.7 DivertHelperParsePacket</a></li>
-<li><a href="#divert_help_parse_ipv4_address">6.8 DivertHelperParseIPv4Address</li>
-<li><a href="#divert_help_parse_ipv6_address">6.9 DivertHelperParseIPv6Address</li>
-<li><a href="#divert_helper_calc_checksums">6.10 DivertHelperCalcChecksums</a></li>
+<li><a href="#divert_iphdr">6.1 WINDIVERT_IPHDR</a></li>
+<li><a href="#divert_ipv6hdr">6.2 WINDIVERT_IPV6HDR</a></li>
+<li><a href="#divert_icmphdr">6.3 WINDIVERT_ICMPHDR</a></li>
+<li><a href="#divert_icmpv6hdr">6.4 WINDIVERT_ICMPV6HDR</a></li>
+<li><a href="#divert_tcphdr">6.5 WINDIVERT_TCPHDR</a></li>
+<li><a href="#divert_udphdr">6.6 WINDIVERT_UDPHDR</a></li>
+<li><a href="#divert_helper_parse_packet">6.7 WinDivertHelperParsePacket</a></li>
+<li><a href="#divert_help_parse_ipv4_address">6.8 WinDivertHelperParseIPv4Address</li>
+<li><a href="#divert_help_parse_ipv6_address">6.9 WinDivertHelperParseIPv6Address</li>
+<li><a href="#divert_helper_calc_checksums">6.10 WinDivertHelperCalcChecksums</a></li>
 </ul>
 <li><a href="#filter_language">7. Filter Language</a></li>
 <ul>
@@ -168,7 +168,7 @@ application's home directory.
 </p>
 <p>
 The WinDivert driver is installed on demand, i.e., when your application
-makes a call to <a href="#divert_open"><tt>DivertOpen()</tt></a> from
+makes a call to <a href="#divert_open"><tt>WinDivertOpen()</tt></a> from
 <tt>WinDivert.dll</tt>.
 The driver is installed silently.
 The calling application must be running with Administrator privileges.
@@ -184,8 +184,8 @@ terminates or unloads the <tt>WinDivert.dll</tt> library.
 The WinDivert driver can also be removed manually by issuing the following
 commands at the command prompt
 <pre>
-sc stop WinDivert1.0
-sc delete WinDivert1.0
+sc stop WinDivert1.1
+sc delete WinDivert1.1
 </pre>
 </p>
 
@@ -202,7 +202,7 @@ To use the WinDivert package, a program/application must:
 library.</li>
 </ol>
 
-<a name="divert_address"><h3>5.1 DIVERT_ADDRESS</h3></a>
+<a name="divert_address"><h3>5.1 WINDIVERT_ADDRESS</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -210,7 +210,7 @@ typedef struct
     UINT32 IfIdx;
     UINT32 SubIfIdx;
     UINT8  Direction;
-} <b>DIVERT_ADDRESS</b>, *<b>PDIVERT_ADDRESS</b>;
+} <b>WINDIVERT_ADDRESS</b>, *<b>PWINDIVERT_ADDRESS</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
@@ -223,26 +223,26 @@ typedef struct
 <li> <tt>Direction</tt>: The packet's direction.
 The possible values are
 <ul>
-<li> <tt>DIVERT_DIRECTION_OUTBOUND</tt> with value 0 for <i>outbound</i>
+<li> <tt>WINDIVERT_DIRECTION_OUTBOUND</tt> with value 0 for <i>outbound</i>
 packets.</li>
-<li> <tt>DIVERT_DIRECTION_INBOUND</tt> with value 1 for <i>inbound</i>
+<li> <tt>WINDIVERT_DIRECTION_INBOUND</tt> with value 1 for <i>inbound</i>
 packets.</li>
 </ul></li>
 </ul>
 </p><p>
 <b>Remarks</b><br>
-The <tt>DIVERT_ADDRESS</tt> structure represents the "address" of a captured
+The <tt>WINDIVERT_ADDRESS</tt> structure represents the "address" of a captured
 or injected packet.
 The address includes the packet's network interfaces and the packet direction.
 </p>
 </dd></dl>
 
-<a name="divert_open"><h3>5.2 DivertOpen</h3></a>
+<a name="divert_open"><h3>5.2 WinDivertOpen</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-HANDLE <b>DivertOpen</b>(
+HANDLE <b>WinDivertOpen</b>(
     __in const char *filter,
-    __in DIVERT_LAYER layer,
+    __in WINDIVERT_LAYER layer,
     __in INT16 priority,
     __in UINT64 flags
 );
@@ -334,7 +334,7 @@ Opens a WinDivert handle for the given filter.
 Unless otherwise specified by <tt>flags</tt>, any packet that matches the
 filter will be diverted to the handle.
 Diverted packets can be read by the application with
-<a href="#divert_recv"><tt>DivertRecv()</tt></a>.
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
 </p>
 <p>
 A typical application is only interested in a subset of all network traffic.
@@ -361,7 +361,7 @@ Description
 </tr>
 <tr>
 <td>
-<tt>DIVERT_LAYER_NETWORK = 0</tt>
+<tt>WINDIVERT_LAYER_NETWORK = 0</tt>
 </td>
 <td>
 The network layer.
@@ -370,7 +370,7 @@ This is the default.
 </tr>
 <tr>
 <td>
-<tt>DIVERT_LAYER_NETWORK_FORWARD</tt>
+<tt>WINDIVERT_LAYER_NETWORK_FORWARD</tt>
 </td>
 <td>
 The network layer (forwarded packets).
@@ -407,7 +407,7 @@ Description
 </tr>
 <tr>
 <td>
-<tt>DIVERT_FLAG_SNIFF</tt>
+<tt>WINDIVERT_FLAG_SNIFF</tt>
 </td>
 <td>
 This flag opens the WinDivert handle in <i>packet sniffing</i> mode.
@@ -419,33 +419,51 @@ applications that currently use <tt>Winpcap</tt>.
 </tr>
 <tr>
 <td>
-<tt>DIVERT_FLAG_DROP</tt>
+<tt>WINDIVERT_FLAG_DROP</tt>
 </td>
 <td>
 This flag indicates that the user application does not intend to read matching
-packets with <a href="#divert_recv"><tt>DivertRecv()</tt></a>, instead the
+packets with <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>, instead the
 packets should be silently dropped.
 This is useful for implementing simple packet filters using the
 WinDivert <a href="#filter_language">filter language</a>.
 </td>
 </tr>
+<tr>
+<td>
+<tt>WINDIVERT_FLAG_PASSTHRU</tt>
+</td>
+<td>
+This flag creates a WinDivert handle in "passthru" mode that does not divert
+packets.
+Such handle can still be used for packet injection.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_FLAG_NO_CHECKSUM</tt>
+</td>
+<td>
+By default WinDivert ensures that each diverted packet has a valid checksum.
+If the checksum is missing (e.g. with TCP checksum offloading), WinDivert
+will calculate it before passing the packet to the user application.
+This flag disables this behavior.
 </table>
 </center>
-If both <tt>DIVERT_FLAG_SNIFF</tt> and <tt>DIVERT_FLAG_DROP</tt> flags 
-are set, the WinDivert handle will be in "passthru" mode that neither
-captures nor drops any packet.
-Such a handle is useful for applications that only require packet injection.
+Note that only one of <tt>WINDIVERT_FLAG_SNIFF</tt>,
+<tt>WINDIVERT_FLAG_DROP</tt>, or <tt>WINDIVERT_FLAG_PASSTHRU</tt>
+may be set at the same time.
 </p>
 </dd></dl>
 
-<a name="divert_recv"><h3>5.3 DivertRecv</h3></a>
+<a name="divert_recv"><h3>5.3 WinDivertRecv</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertRecv</b>(
+BOOL <b>WinDivertRecv</b>(
     __in HANDLE handle,
     __out PVOID pPacket,
     __in UINT packetLen,
-    __out_opt PDIVERT_ADDRESS pAddr,
+    __out_opt PWINDIVERT_ADDRESS pAddr,
     __out_opt UINT *recvLen
 );
 </pre>
@@ -455,10 +473,10 @@ BOOL <b>DivertRecv</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>handle</tt>: A valid WinDivert handle created by
-     <a href="#divert_open"><tt>DivertOpen()</tt></a>.</li>
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 <li> <tt>pPacket</tt>: A buffer for the captured packet.</li>
 <li> <tt>packetLen</tt>: The length of the buffer <tt>pPacket</tt>.</li>
-<li> <tt>pAddr</tt>: The <tt>DIVERT_ADDRESS</tt> of the captured packet.</li>
+<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> of the captured packet.</li>
 <li> <tt>recvLen</tt>: The total number of bytes written to <tt>pPacket</tt>.
      Can be <tt>NULL</tt> if this information is not required.</li>
 </ul>
@@ -470,7 +488,7 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Receives a diverted packet that matched the filter passed to
-<a href="#divert_open"><tt>DivertOpen()</tt></a>.
+<a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
 The received packet is guaranteed to match the filter.
 </p><p>
 The contents of the captured packet are written to <tt>pPacket</tt>.
@@ -481,31 +499,31 @@ written to <tt>pPacket</tt> is placed there.
 If non-<tt>NULL</tt>, the address of the captured packet is written to
 <tt>pAddr</tt>.
 </p><p>
-An application should call <a href="#divert_recv"><tt>DivertRecv()</tt></a>
+An application should call <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>
 <i>as soon as possible</i>
-after a successful call to <a href="#divert_open"><tt>DivertOpen()</tt></a>.
+after a successful call to <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
 When a WinDivert handle is open, any packet that matches the filter will
 be captured and queued until handled by
-<a href="#divert_recv"><tt>DivertRecv()</tt></a>.
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
 Packets are not queued indefinitely, and if not handled in a timely manner,
 any captured packet may be dropped.
 The amount of time a packet is queued can be controlled with the
-<a href="#divert_set_param"><tt>DivertSetParam()</tt></a> function.
+<a href="#divert_set_param"><tt>WinDivertSetParam()</tt></a> function.
 </p>
 <p>
-<a href="#divert_recv"><tt>DivertRecv()</tt></a> should not be used on any
-WinDivert handle created with the <tt>DIVERT_FLAG_DROP</tt> set.
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a> should not be used on any
+WinDivert handle created with the <tt>WINDIVERT_FLAG_DROP</tt> set.
 </p>
 </dd></dl>
 
-<a name="divert_send"><h3>5.4 DivertSend</h3></a>
+<a name="divert_send"><h3>5.4 WinDivertSend</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertSend</b>(
+BOOL <b>WinDivertSend</b>(
     __in HANDLE handle,
     __in PVOID pPacket,
     __in UINT packetLen,
-    __in PDIVERT_ADDRESS pAddr,
+    __in PWINDIVERT_ADDRESS pAddr,
     __out_opt UINT *sendLen
 );
 </pre>
@@ -515,10 +533,10 @@ BOOL <b>DivertSend</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>handle</tt>: A valid WinDivert handle created by
-     <a href="#divert_open"><tt>DivertOpen()</tt></a>.</li>
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 <li> <tt>pPacket</tt>: A buffer containing the packet to be injected.</li>
 <li> <tt>packetLen</tt>: The total length of the buffer <tt>pPacket</tt>.</li> 
-<li> <tt>pAddr</tt>: The <tt>DIVERT_ADDRESS</tt> for the injected packet.</li>
+<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> for the injected packet.</li>
 <li> <tt>sendLen</tt>: The total number of bytes injected.
      Can be <tt>NULL</tt> if this information is not required.</li>
 </ul>
@@ -531,16 +549,16 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 <b>Remarks</b><br>
 Injects a packet into the network stack.
 The injected packet may be one received from
-<a href="#divert_recv"><tt>DivertRecv()</tt></a>, or a
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>, or a
 modified version, or a completely new packet.
 Injected packets can be captured and diverted again by other WinDivert
 handles with lower priorities.
 </p><p>
 The <tt>pAddr</tt> parameter determines how the packet is injected.
-If the <tt>Direction</tt> field is <tt>DIVERT_DIRECTION_OUTBOUND</tt>,
+If the <tt>Direction</tt> field is <tt>WINDIVERT_DIRECTION_OUTBOUND</tt>,
 the packet is injected into the <i>outbound</i> path (i.e. a packet leaving
 this computer).
-Else, if <tt>Direction</tt> is <tt>DIVERT_DIRECTION_INBOUND</tt>,
+Else, if <tt>Direction</tt> is <tt>WINDIVERT_DIRECTION_INBOUND</tt>,
 the packet is injected into the <i>inbound</i> path (i.e. a packet arriving at
 this computer).
 Note that the <tt>Direction</tt> field, and <i>not</i> the IP addresses in 
@@ -548,7 +566,7 @@ the injected packet, is used to determine the packet's direction.
 </p><p>
 For packets injected into the <i>inbound</i> path, the <tt>IfIdx</tt> and
 <tt>SubIfIdx</tt> fields are assumed to contain valid interface numbers.
-These may be retrieved from <a href="#divert_recv"><tt>DivertRecv()</tt></a>
+These may be retrieved from <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>
 (for packet modification),
 or from the <a href="http://msdn.microsoft.com/en-us/library/aa366073%28v=VS.85%29.aspx">IP Helper API</a>.
 </p><p>
@@ -560,10 +578,10 @@ and may be changed in the future.
 </p>
 </dd></dl>
 
-<a name="divert_close"><h3>5.5 DivertClose</h3></a>
+<a name="divert_close"><h3>5.5 WinDivertClose</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertClose</b>(
+BOOL <b>WinDivertClose</b>(
     __in HANDLE handle
 );
 </pre>
@@ -573,7 +591,7 @@ BOOL <b>DivertClose</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>handle</tt>: A valid WinDivert handle created by
-     <a href="#divert_open"><tt>DivertOpen()</tt></a>.</li>
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 </ul>
 </p><p>
 <b>Return Value</b><br>
@@ -582,16 +600,16 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Closes a WinDivert handle created by
-<a href="#divert_open"><tt>DivertOpen()</tt></a>.
+<a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
 </p>
 <dd></dl>
 
-<a name="divert_set_param"><h3>5.6 DivertSetParam</h3></a>
+<a name="divert_set_param"><h3>5.6 WinDivertSetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertSetParam</b>(
+BOOL <b>WinDivertSetParam</b>(
     __in HANDLE handle,
-    __in DIVERT_PARAM param,
+    __in WINDIVERT_PARAM param,
     __in UINT64 value);
 </pre>
 </td></tr></table>
@@ -600,7 +618,7 @@ BOOL <b>DivertSetParam</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>handle</tt>: A valid WinDivert handle created by
-     <a href="#divert_open"><tt>DivertOpen()</tt></a>.</li>
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 <li> <tt>param</tt>: A WinDivert parameter name.</li>
 <li> <tt>value</tt>: The parameter's new value.</li>
 </ul>
@@ -624,18 +642,18 @@ Description
 </tr>
 <tr>
 <td>
-<tt>DIVERT_PARAM_QUEUE_LEN</tt>
+<tt>WINDIVERT_PARAM_QUEUE_LEN</tt>
 </td>
 <td>
 Sets the maximum length of the packet queue for
-<a href="#divert_recv"><tt>DivertRecv()</tt></a>.
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
 Currently the default value is 512, the minimum is 1, and the maximum 
 is 8192.
 </td>
 </tr>
 <tr>
 <td>
-<tt>DIVERT_PARAM_QUEUE_TIME</tt>
+<tt>WINDIVERT_PARAM_QUEUE_TIME</tt>
 </td>
 <td>
 Sets the minimum time, in milliseconds, a packet can be queued before it is
@@ -645,8 +663,8 @@ processed by the application as soon as is possible.
 Note that this sets the <i>minimum</i> time a packet can be queued before 
 it can be dropped.
 The actual time may be exceed this value.
-Currently the default value is 256, the minimum is 32, and the maximum is
-1024.
+Currently the default value is 512, the minimum is 128, and the maximum is
+2048.
 </td>
 </tr>
 </table>
@@ -654,12 +672,12 @@ Currently the default value is 256, the minimum is 32, and the maximum is
 </p>
 <dd></dl>
 
-<a name="divert_get_param"><h3>5.7 DivertGetParam</h3></a>
+<a name="divert_get_param"><h3>5.7 WinDivertGetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertGetParam</b>(
+BOOL <b>WinDivertGetParam</b>(
     __in HANDLE handle,
-    __in DIVERT_PARAM param,
+    __in WINDIVERT_PARAM param,
     __out UINT64 *pValue);
 </pre>
 </td></tr></table>
@@ -668,7 +686,7 @@ BOOL <b>DivertGetParam</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>handle</tt>: A valid WinDivert handle created by
-     <a href="#divert_open"><tt>DivertOpen()</tt></a>.</li>
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 <li> <tt>param</tt>: A WinDivert parameter name.</li>
 <li> <tt>value</tt>: The parameter's current value.</li>
 </ul>
@@ -679,7 +697,7 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Gets a WinDivert parameter.
-See <a href="#divert_set_param"><tt>DivertSetParam()</tt></a> for the list
+See <a href="#divert_set_param"><tt>WinDivertSetParam()</tt></a> for the list
 of parameters.
 </p>
 <dd></dl>
@@ -691,7 +709,7 @@ The WinDivert helper programming API is a collection of definitions
 and functions designed to make writing WinDivert applications easier.
 The use of the helper API is completely optional.
 
-<a name="divert_iphdr"><h3>6.1 DIVERT_IPHDR</h3>
+<a name="divert_iphdr"><h3>6.1 WINDIVERT_IPHDR</h3>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -707,7 +725,7 @@ typedef struct
     UINT16 Checksum;
     UINT32 SrcAddr;
     UINT32 DstAddr;
-} <b>DIVERT_IPHDR</b>, *<b>PDIVERT_IPHDR</b>;
+} <b>WINDIVERT_IPHDR</b>, *<b>PWINDIVERT_IPHDR</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
@@ -722,19 +740,19 @@ IPv4 header definition.
 The following fields can only be get/set using the following macro
 definitions:
 <ul>
-<li><i>FragOff</i> with <tt>DIVERT_IPHDR_GET_FRAGOFF(<i>hdr</i>)</tt> and
-    <tt>DIVERT_IPHDR_SET_FRAGOFF(<i>hdr</i>, <i>val</i>)</tt></li>
-<li><i>MF</i> with <tt>DIVERT_IPHDR_GET_MF(<i>hdr</i>)</tt> and
-    <tt>DIVERT_IPHDR_SET_MF(<i>hdr</i>, <i>val</i>)</tt></li>
-<li><i>DF</i> with <tt>DIVERT_IPHDR_GET_DF(<i>hdr</i>)</tt> and
-    <tt>DIVERT_IPHDR_SET_DF(<i>hdr</i>, <i>val</i>)</tt></li>
-<li><i>Reserved</i> with <tt>DIVERT_IPHDR_GET_RESERVED(<i>hdr</i>)</tt> and
-    <tt>DIVERT_IPHDR_SET_RESERVED(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>FragOff</i> with <tt>WINDIVERT_IPHDR_GET_FRAGOFF(<i>hdr</i>)</tt> and
+    <tt>WINDIVERT_IPHDR_SET_FRAGOFF(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>MF</i> with <tt>WINDIVERT_IPHDR_GET_MF(<i>hdr</i>)</tt> and
+    <tt>WINDIVERT_IPHDR_SET_MF(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>DF</i> with <tt>WINDIVERT_IPHDR_GET_DF(<i>hdr</i>)</tt> and
+    <tt>WINDIVERT_IPHDR_SET_DF(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>Reserved</i> with <tt>WINDIVERT_IPHDR_GET_RESERVED(<i>hdr</i>)</tt> and
+    <tt>WINDIVERT_IPHDR_SET_RESERVED(<i>hdr</i>, <i>val</i>)</tt></li>
 </ul>
 </p>
 </dl></dd>
 
-<a name="divert_ipv6hdr"><h3>6.2 DIVERT_IPV6HDR</h3></a>
+<a name="divert_ipv6hdr"><h3>6.2 WINDIVERT_IPV6HDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -746,7 +764,7 @@ typedef struct
     UINT8  HopLimit;
     UINT32 SrcAddr[4];
     UINT32 DstAddr[4];
-} <b>DIVERT_IPV6HDR</b>, *<b>PDIVERT_IPV6HDR</b>;
+} <b>WINDIVERT_IPV6HDR</b>, *<b>PWINDIVERT_IPV6HDR</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
@@ -761,15 +779,15 @@ The following fields can only be get/set using the following macro
 definitions:
 <ul>
 <li><i>TrafficClass</i> with
-    <tt>DIVERT_IPV6HDR_GET_TRAFFICCLASS(<i>hdr</i>)</tt> and
-    <tt>DIVERT_IPV6HDR_SET_TRAFFICCLASS(<i>hdr</i>, <i>val</i>)</tt></li>
-<li><i>FlowLabel</i> with <tt>DIVERT_IPV6HDR_GET_FLOWLABEL(<i>hdr</i>)</tt> and
-    <tt>DIVERT_IPV6HDR_SET_FLOWLABEL(<i>hdr</i>, <i>val</i>)</tt></li>
+    <tt>WINDIVERT_IPV6HDR_GET_TRAFFICCLASS(<i>hdr</i>)</tt> and
+    <tt>WINDIVERT_IPV6HDR_SET_TRAFFICCLASS(<i>hdr</i>, <i>val</i>)</tt></li>
+<li><i>FlowLabel</i> with <tt>WINDIVERT_IPV6HDR_GET_FLOWLABEL(<i>hdr</i>)</tt> and
+    <tt>WINDIVERT_IPV6HDR_SET_FLOWLABEL(<i>hdr</i>, <i>val</i>)</tt></li>
 </ul>
 </p>
 </dl></dd>
 
-<a name="divert_icmphdr"><h3>6.3 DIVERT_ICMPHDR</h3></a>
+<a name="divert_icmphdr"><h3>6.3 WINDIVERT_ICMPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -778,7 +796,7 @@ typedef struct
     UINT8  Code;
     UINT16 Checksum;
     UINT32 Body;
-} <b>DIVERT_ICMPHDR</b>, *<b>PDIVERT_ICMPHDR</b>;
+} <b>WINDIVERT_ICMPHDR</b>, *<b>PWINDIVERT_ICMPHDR</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
@@ -791,7 +809,7 @@ ICMP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_icmpv6hdr"><h3>6.4 DIVERT_ICMPV6HDR</h3></a>
+<a name="divert_icmpv6hdr"><h3>6.4 WINDIVERT_ICMPV6HDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -800,7 +818,7 @@ typedef struct
     UINT8  Code;
     UINT16 Checksum;
     UINT32 Body;
-} <b>DIVERT_ICMPV6HDR</b>, *<b>PDIVERT_ICMPV6HDR</b>;
+} <b>WINDIVERT_ICMPV6HDR</b>, *<b>PWINDIVERT_ICMPV6HDR</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
@@ -813,7 +831,7 @@ ICMPv6 header definition.
 </p>
 </dl></dd>
 
-<a name="divert_tcphdr"><h3>6.5 DIVERT_TCPHDR</h3></a>
+<a name="divert_tcphdr"><h3>6.5 WINDIVERT_TCPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -834,7 +852,7 @@ typedef struct
     UINT16 Window;
     UINT16 Checksum;
     UINT16 UrgPtr;
-} <b>DIVERT_TCPHDR</b>, *<b>PDIVERT_TCPHDR</b>;
+} <b>WINDIVERT_TCPHDR</b>, *<b>PWINDIVERT_TCPHDR</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
@@ -847,7 +865,7 @@ TCP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_udphdr"><h3>6.6 DIVERT_UDPHDR</h3></a>
+<a name="divert_udphdr"><h3>6.6 WINDIVERT_UDPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -856,7 +874,7 @@ typedef struct
     UINT16 DstPort;
     UINT16 Length;
     UINT16 Checksum;
-} <b>DIVERT_UDPHDR</b>, *<b>PDIVERT_UDPHDR</b>;
+} <b>WINDIVERT_UDPHDR</b>, *<b>PWINDIVERT_UDPHDR</b>;
 </pre>
 </td></tr></table>
 <dl><dd>
@@ -869,18 +887,18 @@ UDP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_helper_parse_packet"><h3>6.7 DivertHelperParsePacket</h3></a>
+<a name="divert_helper_parse_packet"><h3>6.7 WinDivertHelperParsePacket</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertHelperParsePacket</b>(
+BOOL <b>WinDivertHelperParsePacket</b>(
     __in PVOID pPacket,
     __in UINT packetLen,
-    __out_opt PDIVERT_IPHDR *ppIpHdr,
-    __out_opt PDIVERT_IPV6HDR *ppIpv6Hdr,
-    __out_opt PDIVERT_ICMPHDR *ppIcmpHdr,
-    __out_opt PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
-    __out_opt PDIVERT_TCPHDR *ppTcpHdr,
-    __out_opt PDIVERT_UDPHDR *ppUdpHdr,
+    __out_opt PWINDIVERT_IPHDR *ppIpHdr,
+    __out_opt PWINDIVERT_IPV6HDR *ppIpv6Hdr,
+    __out_opt PWINDIVERT_ICMPHDR *ppIcmpHdr,
+    __out_opt PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
+    __out_opt PWINDIVERT_TCPHDR *ppTcpHdr,
+    __out_opt PWINDIVERT_UDPHDR *ppUdpHdr,
     __out_opt PVOID *ppData,
     __out_opt UINT *pDataLen
 );
@@ -892,12 +910,12 @@ BOOL <b>DivertHelperParsePacket</b>(
 <ul>
 <li> <tt>pPacket</tt>: The packet to be parsed.</li>
 <li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
-<li> <tt>ppIpHdr</tt>: Output pointer to a <tt>DIVERT_IPHDR</tt>.</li>
-<li> <tt>ppIpv6Hdr</tt>: Output pointer to a <tt>DIVERT_IPV6HDR</tt>.</li>
-<li> <tt>ppIcmpHdr</tt>: Output pointer to a <tt>DIVERT_ICMPHDR</tt>.</li>
-<li> <tt>ppIcmpv6Hdr</tt>: Output pointer to a <tt>DIVERT_ICMPV6HDR</tt>.</li>
-<li> <tt>ppTcpHdr</tt>: Output pointer to a <tt>DIVERT_TCPHDR</tt>.</li>
-<li> <tt>ppUdpHdr</tt>: Output pointer to a <tt>DIVERT_UDPHDR</tt>.</li>
+<li> <tt>ppIpHdr</tt>: Output pointer to a <tt>WINDIVERT_IPHDR</tt>.</li>
+<li> <tt>ppIpv6Hdr</tt>: Output pointer to a <tt>WINDIVERT_IPV6HDR</tt>.</li>
+<li> <tt>ppIcmpHdr</tt>: Output pointer to a <tt>WINDIVERT_ICMPHDR</tt>.</li>
+<li> <tt>ppIcmpv6Hdr</tt>: Output pointer to a <tt>WINDIVERT_ICMPV6HDR</tt>.</li>
+<li> <tt>ppTcpHdr</tt>: Output pointer to a <tt>WINDIVERT_TCPHDR</tt>.</li>
+<li> <tt>ppUdpHdr</tt>: Output pointer to a <tt>WINDIVERT_UDPHDR</tt>.</li>
 <li> <tt>ppData</tt>: Output pointer to the packet's data/payload.</li>
 <li> <tt>pDataLen</tt> Output data/payload length.</li>
 </ul>
@@ -910,7 +928,7 @@ when both <tt>ppIpHdr</tt> and <tt>ppIpv6Hdr</tt> are non-<tt>NULL</tt>.
 </p><p>
 <b>Remarks</b><br>
 Parses a raw packet (e.g. from <a
-href="#divert_recv"><tt>DivertRecv()</tt></a>) into the
+href="#divert_recv"><tt>WinDivertRecv()</tt></a>) into the
 various packet headers and/or payloads that may or may not be present.
 </p><p>
 Each output parameter may be <tt>NULL</tt> or non-<tt>NULL</tt>.
@@ -929,10 +947,10 @@ for parsing.
 <p>
 </dd></dl>
 
-<a name="divert_help_parse_ipv4_address"><h3>6.8 DivertHelperParseIPv4Address</h3></a>
+<a name="divert_help_parse_ipv4_address"><h3>6.8 WinDivertHelperParseIPv4Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertHelperParseIPv4Address</b>(
+BOOL <b>WinDivertHelperParseIPv4Address</b>(
     __in const char *addrStr,
     __out_opt UINT32 *pAddr
 );
@@ -956,10 +974,10 @@ If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>.
 </p>
 <dd></dl>
 
-<a name="divert_help_parse_ipv6_address"><h3>6.9 DivertHelperParseIPv6Address</h3></a>
+<a name="divert_help_parse_ipv6_address"><h3>6.9 WinDivertHelperParseIPv6Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>DivertHelperParseIPv6Address</b>(
+BOOL <b>WinDivertHelperParseIPv6Address</b>(
     __in const char *addrStr,
     __out_opt UINT32 *pAddr
 );
@@ -985,10 +1003,10 @@ to hold a 16-byte IPv6 address.
 </p>
 <dd></dl>
 
-<a name="divert_helper_calc_checksums"><h3>6.10 DivertHelperCalcChecksums</h3></a>
+<a name="divert_helper_calc_checksums"><h3>6.10 WinDivertHelperCalcChecksums</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-UINT <b>DivertHelperCalcChecksums</b>(
+UINT <b>WinDivertHelperCalcChecksums</b>(
     __inout PVOID pPacket,
     __in UINT packetLen,
     __in UINT64 flags
@@ -1003,15 +1021,15 @@ UINT <b>DivertHelperCalcChecksums</b>(
 <li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
 <li> <tt>flags</tt>: One or more of the following flags:
 <ul>
-<li> <tt>DIVERT_HELPER_NO_IP_CHECKSUM</tt>: Do not calculate the IPv4
+<li> <tt>WINDIVERT_HELPER_NO_IP_CHECKSUM</tt>: Do not calculate the IPv4
     checksum.</li>
-<li> <tt>DIVERT_HELPER_NO_ICMP_CHECKSUM</tt>: Do not calculate the ICMP
+<li> <tt>WINDIVERT_HELPER_NO_ICMP_CHECKSUM</tt>: Do not calculate the ICMP
     checksum.</li>
-<li> <tt>DIVERT_HELPER_NO_ICMPV6_CHECKSUM</tt>: Do not calculate the ICMPv6
+<li> <tt>WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM</tt>: Do not calculate the ICMPv6
     checksum.</li>
-<li> <tt>DIVERT_HELPER_NO_TCP_CHECKSUM</tt>: Do not calculate the TCP
+<li> <tt>WINDIVERT_HELPER_NO_TCP_CHECKSUM</tt>: Do not calculate the TCP
     checksum.</li>
-<li> <tt>DIVERT_HELPER_NO_UDP_CHECKSUM</tt>: Do not calculate the UDP
+<li> <tt>WINDIVERT_HELPER_NO_UDP_CHECKSUM</tt>: Do not calculate the UDP
     checksum.</li>
 </ul></li>
 </ul>
@@ -1024,7 +1042,7 @@ The number of checksums calculated.
 in the given packet.
 Individual checksum calculations may be disabled via the appropriate flag.
 Typically this function should be invoked on a modified packet before it is
-injected with <a href="#divert_send"><tt>DivertSend()</tt></a>.
+injected with <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
 </p><p>
 This function will calculate each checksum from scratch, even if the existing
 checksum is correct.
@@ -1038,7 +1056,7 @@ instead (not provided by this API).
 <a name="filter_language"><h2>7. Filter Language</h2></a>
 
 <p>
-The <a href="#divert_open"><tt>DivertOpen()</tt></a> function accepts a
+The <a href="#divert_open"><tt>WinDivertOpen()</tt></a> function accepts a
 string containing a <i>filter expression</i>.
 Only packets that match the filter expression are diverted.
 Any other packet is allowed to continue as per normal.
@@ -1049,7 +1067,7 @@ For example, a URL blacklist filter would only be interested in packets that
 contain URLs.
 This could be achieved via the following filter.
 <pre>
-HANDLE handle = DivertOpen(
+HANDLE handle = WinDivertOpen(
     "outbound and "
     "tcp.PayloadLength &gt; 0 and "
     "tcp.DstPort == 80", 0, 0, 0);
@@ -1107,13 +1125,13 @@ The possible fields are:
 <tr><td><tt>icmpv6</tt></td><td>Is ICMPv6?</td></tr>
 <tr><td><tt>tcp</tt></td><td>Is TCP?</td></tr>
 <tr><td><tt>udp</tt></td><td>Is UDP?</td></tr>
-<tr><td><tt>ip.*</tt></td><td>IPv4 fields (see <tt>DIVERT_IPHDR</tt>)</td></tr>
-<tr><td><tt>ipv6.*</tt></td><td>IPv6 fields (see <tt>DIVERT_IPV6HDR</tt>)</td></tr>
-<tr><td><tt>icmp.*</tt></td><td>ICMP fields (see <tt>DIVERT_ICMPHDR</tt>)</td></tr>
-<tr><td><tt>icmpv6.*</tt></td><td>ICMPV6 fields (see <tt>DIVERT_ICMPV6HDR</tt>)</td></tr>
-<tr><td><tt>tcp.*</tt></td><td>TCP fields (see <tt>DIVERT_TCPHDR</tt>)</td></tr>
+<tr><td><tt>ip.*</tt></td><td>IPv4 fields (see <tt>WINDIVERT_IPHDR</tt>)</td></tr>
+<tr><td><tt>ipv6.*</tt></td><td>IPv6 fields (see <tt>WINDIVERT_IPV6HDR</tt>)</td></tr>
+<tr><td><tt>icmp.*</tt></td><td>ICMP fields (see <tt>WINDIVERT_ICMPHDR</tt>)</td></tr>
+<tr><td><tt>icmpv6.*</tt></td><td>ICMPV6 fields (see <tt>WINDIVERT_ICMPV6HDR</tt>)</td></tr>
+<tr><td><tt>tcp.*</tt></td><td>TCP fields (see <tt>WINDIVERT_TCPHDR</tt>)</td></tr>
 <tr><td><tt>tcp.PayloadLength</tt></td><td>The TCP payload length</td></tr>
-<tr><td><tt>udp.*</tt></td><td>UDP fields (see <tt>DIVERT_UDPHDR</tt>)</td></tr>
+<tr><td><tt>udp.*</tt></td><td>UDP fields (see <tt>WINDIVERT_UDPHDR</tt>)</td></tr>
 <tr><td><tt>udp.PayloadLength</tt></td><td>The UDP payload length</td></tr>
 </table>
 </center>
@@ -1130,7 +1148,7 @@ contain a TCP header.
 <li>
 Divert all outbound web traffic:
 <pre>
-HANDLE handle = DivertOpen(
+HANDLE handle = WinDivertOpen(
         "outbound and "
         "(tcp.DstPort == 80 or udp.DstPort == 53)",
         0, 0, 0
@@ -1140,7 +1158,7 @@ HANDLE handle = DivertOpen(
 <li>
 Divert all inbound TCP SYNs:
 <pre>
-HANDLE handle = DivertOpen(
+HANDLE handle = WinDivertOpen(
         "inbound and "
         "tcp.Syn",
         0, 0, 0
@@ -1150,7 +1168,7 @@ HANDLE handle = DivertOpen(
 <li>
 Divert only (inbound) local traffic:
 <pre>
-HANDLE handle = DivertOpen(
+HANDLE handle = WinDivertOpen(
         "inbound and ("
         "(ip.DstAddr &gt;= 127.0.0.1 and ip.DstAddr &lt;= 127.255.255.255) or"
         "ipv6.DstAddr == ::1)",
@@ -1161,13 +1179,13 @@ HANDLE handle = DivertOpen(
 <li>
 Divert all traffic:
 <pre>
-HANDLE handle = DivertOpen("true", 0, 0, 0);
+HANDLE handle = WinDivertOpen("true", 0, 0, 0);
 </pre>
 </li>
 <li>
 Divert no traffic:
 <pre>
-HANDLE handle = DivertOpen("false", 0, 0, 0);
+HANDLE handle = WinDivertOpen("false", 0, 0, 0);
 </pre>
 This is useful for packet injection.
 </ol>
@@ -1233,12 +1251,12 @@ The following basic template for a WinDivert application.
 The basic idea is to open a WinDivert handle, then enter a
 capture-modify-reinject loop:
 <pre>
-    HANDLE handle;          // Divert handle
-    DIVERT_ADDRESS addr;    // Packet address
+    HANDLE handle;          // WinDivert handle
+    WINDIVERT_ADDRESS addr; // Packet address
     char packet[MAXBUF];    // Packet buffer
     UINT packetLen;
 
-    handle = DivertOpen("...", 0, 0, 0);   // Open some filter
+    handle = WinDivertOpen("...", 0, 0, 0);   // Open some filter
     if (handle == INVALID_HANDLE_VALUE)
     {
         // Handle error
@@ -1248,7 +1266,7 @@ capture-modify-reinject loop:
     // Main capture-modify-inject loop:
     while (TRUE)
     {
-        if (!DivertRecv(handle, packet, sizeof(packet), &amp;addr, &amp;packetLen))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &amp;addr, &amp;packetLen))
         {
             // Handle recv error
             continue;
@@ -1256,7 +1274,7 @@ capture-modify-reinject loop:
 
         // Modify packet.
 
-        if (!DivertSend(handle, packet, packetLen, &amp;addr, NULL))
+        if (!WinDivertSend(handle, packet, packetLen, &amp;addr, NULL))
         {
             // Handle send error
             continue;
@@ -1264,9 +1282,9 @@ capture-modify-reinject loop:
     }
 </pre>
 For applications that do not need to modify the packet, a better approach is
-to open the WinDivert handle with the <tt>DIVERT_FLAG_SNIFF</tt> flag set,
+to open the WinDivert handle with the <tt>WINDIVERT_FLAG_SNIFF</tt> flag set,
 and not re-inject the packet with
-<a href="#divert_send"><tt>DivertSend()</tt></a>.
+<a href="#divert_send"><tt>WinDivertSend()</tt></a>.
 See the <tt>netdump.exe</tt> sample program for an example of this usage.
 </p>
 
