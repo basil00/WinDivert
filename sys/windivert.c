@@ -1615,16 +1615,8 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 goto windivert_ioctl_exit;
             }
 
-            if ((context->flags & WINDIVERT_FLAG_PASSTHRU) != 0)
-            {
-                // Passthru mode.
-                is_inbound = is_outbound = is_ipv4 = is_ipv6 = FALSE;
-            }
-            else
-            {
-                windivert_filter_analyze(context->filter, &is_inbound,
-                    &is_outbound, &is_ipv4, &is_ipv6);
-            }
+            windivert_filter_analyze(context->filter, &is_inbound,
+                &is_outbound, &is_ipv4, &is_ipv6);
             status = windivert_register_callouts(context, is_inbound,
                 is_outbound, is_ipv4, is_ipv6);
 
@@ -1935,8 +1927,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
         packet_state = FwpsQueryPacketInjectionState0(injectv6_handle,
             buffers, &packet_context);
     }
-    if (!windivert_context_verify(context, WINDIVERT_CONTEXT_STATE_OPEN) ||
-        (context->flags & WINDIVERT_FLAG_PASSTHRU) != 0)
+    if (!windivert_context_verify(context, WINDIVERT_CONTEXT_STATE_OPEN))
     {
         result->actionType = FWP_ACTION_PERMIT;
         return;

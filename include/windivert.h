@@ -79,7 +79,6 @@ typedef enum
  */
 #define WINDIVERT_FLAG_SNIFF            1
 #define WINDIVERT_FLAG_DROP             2
-#define WINDIVERT_FLAG_PASSTHRU         4
 #define WINDIVERT_FLAG_NO_CHECKSUM      1024
 
 /*
