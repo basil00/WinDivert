@@ -192,9 +192,6 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, windivert_req_context_get);
 struct packet_s
 {
     LIST_ENTRY entry;                       // Entry for queue
-    PNET_BUFFER buffer;                     // The packet
-    PNET_BUFFER_LIST buffers;               // The NBL contain the packet
-    PNET_BUFFER_LIST clone;                 // Clone of buffer
     UINT8 direction;                        // Packet direction
     UINT32 if_idx;                          // Interface index
     UINT32 sub_if_idx;                      // Sub-interface index
@@ -202,6 +199,8 @@ struct packet_s
     BOOL tcp_checksum;                      // TCP checksum is valid
     BOOL udp_checksum;                      // UDP checksum is valid
     BOOL timer_ticktock;                    // Time-out ticktock
+    ULONG data_len;                         // Length of data
+    char data[];                            // Packet data
 };
 typedef struct packet_s *packet_t;
 #define WINDIVERT_NET_BUFFER_LIST_TAG       'Lvid'
@@ -1210,18 +1209,10 @@ static void windivert_read_service(context_t context)
             goto windivert_read_service_complete;
         }
         dst_len = MmGetMdlByteCount(dst_mdl);
-        src_len = NET_BUFFER_DATA_LENGTH(packet->buffer);
+        src_len = packet->data_len;
         dst_len = (src_len < dst_len? src_len: dst_len);
-        src = NdisGetDataBuffer(packet->buffer, dst_len, NULL, 1, 0);
-        if (src == NULL)
-        {
-            NdisGetDataBuffer(packet->buffer, dst_len, dst, 1, 0);
-        }
-        else
-        {
-            RtlCopyMemory(dst, src, dst_len);
-        }
-        
+        RtlCopyMemory(dst, packet->data, dst_len);
+
         // Write the address information.
         req_context = windivert_req_context_get(request);
         addr = req_context->addr;
@@ -2060,6 +2051,8 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     KLOCK_QUEUE_HANDLE lock_handle;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksum_info;
     PLIST_ENTRY entry;
+    ULONG length;
+    PVOID src;
     packet_t packet;
     NTSTATUS status;
 
@@ -2068,36 +2061,28 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
         return TRUE;
     }
 
+    length = NET_BUFFER_DATA_LENGTH(buffer);
     packet = (packet_t)ExAllocatePoolWithTag(NonPagedPool,
-        WINDIVERT_PACKET_SIZE, WINDIVERT_PACKET_TAG);
+        WINDIVERT_PACKET_SIZE + length, WINDIVERT_PACKET_TAG);
     if (packet == NULL)
     {
         return FALSE;
     }
 
-    if ((context->flags & WINDIVERT_FLAG_SNIFF) != 0)
+    // Copy the packet data
+    src = NdisGetDataBuffer(buffer, length, NULL, 1, 0);
+    if (src == NULL)
     {
-        // Clone the buffer
-        status = FwpsAllocateNetBufferAndNetBufferList0(
-            pool_handle, 0, 0, NET_BUFFER_FIRST_MDL(buffer),
-            NET_BUFFER_DATA_OFFSET(buffer), NET_BUFFER_DATA_LENGTH(buffer),
-            &packet->clone);
-        if (!NT_SUCCESS(status))
-        {
-            ExFreePoolWithTag(packet, WINDIVERT_PACKET_TAG);
-            return FALSE;
-        }
-        buffer = NET_BUFFER_LIST_FIRST_NB(packet->clone);
+        NdisGetDataBuffer(buffer, length, packet->data, 1, 0);
     }
     else
     {
-        packet->clone = NULL;
+        RtlCopyMemory(packet->data, src, length);
     }
-    
+    packet->data_len = length;
+ 
     checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
         TcpIpChecksumNetBufferListInfo);
-    packet->buffer = buffer;
-    packet->buffers = buffers;
     packet->direction = direction;
     packet->if_idx = if_idx;
     packet->sub_if_idx = sub_if_idx;
@@ -2116,7 +2101,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     }
     packet->timer_ticktock = context->timer_ticktock;
     entry = &packet->entry;
-    FwpsReferenceNetBufferList0(buffers, FALSE);
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
     {
@@ -2151,11 +2135,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
  */
 static void windivert_free_packet(packet_t packet)
 {
-    FwpsDereferenceNetBufferList0(packet->buffers, FALSE);
-    if (packet->clone != NULL)
-    {
-        FwpsFreeNetBufferList0(packet->clone);
-    }
     ExFreePoolWithTag(packet, WINDIVERT_PACKET_TAG);
 }
 
