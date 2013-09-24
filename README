@@ -75,11 +75,11 @@ following then happens
 
 (1) a new packet enters the network stack and is intercepted by WinDivert.sys
 (2a) if the packet matches a PROGRAM-defined filter, it is diverted.  The
-    PROGRAM reads the packet with a call to the DivertRecv() function.
+    PROGRAM reads the packet with a call to the WinDivertRecv() function.
 (2b) if the packet does not match the filter, the packet is permitted to
     continue as normal.
 (3) PROGRAM either drops, modifies, or re-injects the packet.  If the
-    (modified) packet is re-injected, via a call to DivertSend(), it is
+    (modified) packet is re-injected, via a call to WinDivertSend(), it is
     inserted back into the Windows network stack.
 
 4. Building
