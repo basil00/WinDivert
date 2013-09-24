@@ -194,9 +194,9 @@ sc delete WinDivert1.1
 <p>
 To use the WinDivert package, a program/application must:
 <ol>
-<li> Include the <tt>divert.h</tt> header file
+<li> Include the <tt>windivert.h</tt> header file
 <pre>
-#include "divert.h"
+#include "windivert.h"
 </pre></li>
 <li> Link or dynamically load the <tt>WinDivert.dll</tt> dynamic link
 library.</li>
@@ -297,7 +297,7 @@ This indicates an invalid packet filter string, layer, priority, or flags.
 </td>
 <td>
 One or more of the <tt>WinDivert.sys</tt>,
-<tt>WinDivert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files were not
+<tt>WinDivert.inf</tt>, or <tt>WdfCoInstaller*.dll</tt> files were not
 found.
 </td>
 </tr>
@@ -321,9 +321,25 @@ The calling application does not have Administrator privileges.
 </td>
 <td>
 The <tt>WinDivert.sys</tt> driver does not have a valid digital signature
-(see the <a href="#driver_signing">driver signing requirements</a> above),
-or <tt>WinDivert.sys</tt> is the wrong version, i.e. 32-bit on
-64-bit Windows or vice versa.
+(see the <a href="#driver_signing">driver signing requirements</a> above).
+</td>
+</tr>
+<tr>
+<td>
+<tt>ERROR_DRIVER_BLOCKED</tt>
+</td>
+<td>
+1275
+</td>
+<td>
+This error occurs for various reasons, including:
+<ol>
+<li> attempting to load the 32-bit <tt>WinDivert.sys</tt> driver on a 64-bit
+system (or vice versa);</li>
+<li> the <tt>WinDivert.sys</tt> driver is blocked by security software; or
+<li> you are using a virtualization environment that does not support
+drivers.</li>
+</ol>
 </td>
 </tr>
 </table>
