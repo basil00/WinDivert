@@ -75,6 +75,8 @@ static void DEBUG_ERROR(PCCH format, NTSTATUS status, ...)
 #define DEBUG_ERROR(format, status, ...)
 #endif      // DEBUG_ON
 
+#define WINDIVERT_TAG                           'viDW'
+
 /*
  * WinDivert packet filter.
  */
@@ -95,7 +97,6 @@ typedef struct filter_s *filter_t;
 #define WINDIVERT_FILTER_PROTOCOL_ICMPV6        4
 #define WINDIVERT_FILTER_PROTOCOL_TCP           5
 #define WINDIVERT_FILTER_PROTOCOL_UDP           6
-#define WINDIVERT_FILTER_TAG                    'Fvid'
 
 /*
  * WinDivert context information.
@@ -187,7 +188,6 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, windivert_req_context_get);
 /*
  * WinDivert packet structure.
  */
-#define WINDIVERT_PACKET_TAG                'Pvid'
 #define WINDIVERT_PACKET_SIZE               (sizeof(struct packet_s))
 struct packet_s
 {
@@ -203,7 +203,6 @@ struct packet_s
     char data[];                            // Packet data
 };
 typedef struct packet_s *packet_t;
-#define WINDIVERT_NET_BUFFER_LIST_TAG       'Lvid'
 
 /*
  * WinDivert address definition.
@@ -590,7 +589,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     pool_params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
     pool_params.Header.Size = sizeof(pool_params);
     pool_params.fAllocateNetBuffer = TRUE;
-    pool_params.PoolTag = WINDIVERT_NET_BUFFER_LIST_TAG;
+    pool_params.PoolTag = WINDIVERT_TAG;
     pool_params.DataSize = 0;
     pool_handle = NdisAllocateNetBufferListPool(NULL, &pool_params);
     if (pool_handle == NULL)
@@ -708,7 +707,7 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     pool_params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
     pool_params.Header.Size = sizeof(pool_params);
     pool_params.fAllocateNetBuffer = TRUE;
-    pool_params.PoolTag = WINDIVERT_NET_BUFFER_LIST_TAG;
+    pool_params.PoolTag = WINDIVERT_TAG;
     pool_params.DataSize = 0;
     WDF_IO_QUEUE_CONFIG_INIT(&queue_config, WdfIoQueueDispatchManual);
     status = WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES,
@@ -1076,7 +1075,7 @@ windivert_cleanup_exit:
     }
     if (context->filter != NULL)
     {   
-        ExFreePoolWithTag(context->filter, WINDIVERT_FILTER_TAG);
+        ExFreePoolWithTag(context->filter, WINDIVERT_TAG);
         context->filter = NULL;
     }
     KeWaitForSingleObject(context->read_thread, Executive, KernelMode, FALSE,
@@ -1253,8 +1252,8 @@ windivert_read_service_complete:
 static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     windivert_addr_t addr)
 {
-    PMDL mdl = NULL;
-    PVOID data;
+    PMDL mdl = NULL, mdl_copy = NULL;
+    PVOID data, data_copy = NULL;
     UINT data_len;
     struct iphdr *ip_header;
     BOOL isipv4;
@@ -1317,8 +1316,28 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
             goto windivert_write_exit;
     }
 
-    status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle, 0, 0, mdl,
-        0, data_len, &buffers);
+    data_copy = ExAllocatePoolWithTag(NonPagedPool, data_len,
+        WINDIVERT_TAG);
+    if (data_copy == NULL)
+    {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        DEBUG_ERROR("failed to allocate memory for injected packet data",
+            status);
+        goto windivert_write_exit;
+    }
+    RtlCopyMemory(data_copy, data, data_len);
+
+    mdl_copy = IoAllocateMdl(data_copy, data_len, FALSE, FALSE, NULL);
+    if (mdl_copy == NULL)
+    {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        DEBUG_ERROR("failed to allocate MDL for injected packet", status);
+        goto windivert_write_exit;
+    }
+
+    MmBuildMdlForNonPagedPool(mdl_copy);
+    status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle, 0, 0,
+        mdl_copy, 0, data_len, &buffers);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
@@ -1356,6 +1375,14 @@ windivert_write_exit:
         {
             FwpsFreeNetBufferList0(buffers);
         }
+        if (mdl_copy != NULL)
+        {
+            IoFreeMdl(mdl_copy);
+        }
+        if (data_copy != NULL)
+        {
+            ExFreePoolWithTag(data_copy, WINDIVERT_TAG);
+        }
     }
 
     return status;
@@ -1368,6 +1395,8 @@ static void NTAPI windivert_inject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level)
 {
     WDFREQUEST request = (WDFREQUEST)context;
+    PMDL mdl;
+    PVOID data;
     PNET_BUFFER buffer;
     size_t length = 0;
     NTSTATUS status;
@@ -1385,6 +1414,13 @@ static void NTAPI windivert_inject_complete(VOID *context,
     {
         DEBUG_ERROR("failed to inject packet", status);
     }
+    mdl = NET_BUFFER_FIRST_MDL(buffer);
+    data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
+    if (data != NULL)
+    {
+        ExFreePoolWithTag(data, WINDIVERT_TAG);
+    }
+    IoFreeMdl(mdl);
     FwpsFreeNetBufferList0(buffers);
     WdfRequestCompleteWithInformation(request, status, length);
 }
@@ -2063,7 +2099,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
 
     length = NET_BUFFER_DATA_LENGTH(buffer);
     packet = (packet_t)ExAllocatePoolWithTag(NonPagedPool,
-        WINDIVERT_PACKET_SIZE + length, WINDIVERT_PACKET_TAG);
+        WINDIVERT_PACKET_SIZE + length, WINDIVERT_TAG);
     if (packet == NULL)
     {
         return FALSE;
@@ -2135,7 +2171,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
  */
 static void windivert_free_packet(packet_t packet)
 {
-    ExFreePoolWithTag(packet, WINDIVERT_PACKET_TAG);
+    ExFreePoolWithTag(packet, WINDIVERT_TAG);
 }
 
 /*
@@ -2907,7 +2943,7 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
 
     // Do NOT use the stack (size = 12Kb on x86) for filter0.
     filter0 = (filter_t)ExAllocatePoolWithTag(NonPagedPool,
-        WINDIVERT_FILTER_MAXLEN*sizeof(struct filter_s), WINDIVERT_FILTER_TAG);
+        WINDIVERT_FILTER_MAXLEN*sizeof(struct filter_s), WINDIVERT_TAG);
     if (filter0 == NULL)
     {
         goto windivert_filter_compile_exit;
@@ -3131,7 +3167,7 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
     }
     
     result = (filter_t)ExAllocatePoolWithTag(NonPagedPool,
-        i*sizeof(struct filter_s), WINDIVERT_FILTER_TAG);
+        i*sizeof(struct filter_s), WINDIVERT_TAG);
     if (result != NULL)
     {
         RtlMoveMemory(result, filter0, i*sizeof(struct filter_s));
@@ -3141,7 +3177,7 @@ windivert_filter_compile_exit:
 
     if (filter0 != NULL)
     {
-        ExFreePoolWithTag(filter0, WINDIVERT_FILTER_TAG);
+        ExFreePoolWithTag(filter0, WINDIVERT_TAG);
     }
     return result;
 }
