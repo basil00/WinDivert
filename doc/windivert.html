@@ -21,10 +21,12 @@
 <li><a href="#divert_address">5.1 WINDIVERT_ADDRESS</a></li>
 <li><a href="#divert_open">5.2 WinDivertOpen</a></li>
 <li><a href="#divert_recv">5.3 WinDivertRecv</a></li>
-<li><a href="#divert_send">5.4 WinDivertSend</a></li>
-<li><a href="#divert_close">5.5 WinDivertClose</a></li>
-<li><a href="#divert_set_param">5.6 WinDivertSetParam</a></li>
-<li><a href="#divert_get_param">5.7 WinDivertGetParam</a></li>
+<li><a href="#divert_recv_ex">5.4 WinDivertRecvEx</a></li>
+<li><a href="#divert_send">5.5 WinDivertSend</a></li>
+<li><a href="#divert_send_ex">5.6 WinDivertSendEx</a></li>
+<li><a href="#divert_close">5.7 WinDivertClose</a></li>
+<li><a href="#divert_set_param">5.8 WinDivertSetParam</a></li>
+<li><a href="#divert_get_param">5.9 WinDivertGetParam</a></li>
 </ul>
 <li><a href="#helper_programming_api">6. Helper Programming API</a></li>
 <ul>
@@ -522,7 +524,53 @@ WinDivert handle created with the <tt>WINDIVERT_FLAG_DROP</tt> set.
 </p>
 </dd></dl>
 
-<a name="divert_send"><h3>5.4 WinDivertSend</h3></a>
+<a name="divert_recv_ex"><h3>5.4 WinDivertRecvEx</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertRecvEx</b>(
+    __in HANDLE handle,
+    __out PVOID pPacket,
+    __in UINT packetLen,
+    __in UINT64 flags,
+    __out_opt PWINDIVERT_ADDRESS pAddr,
+    __out_opt UINT *recvLen,
+    __inout_opt LPOVERLAPPED lpOverlapped
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>handle</tt>: A valid WinDivert handle created by
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
+<li> <tt>pPacket</tt>: A buffer for the captured packet.</li>
+<li> <tt>packetLen</tt>: The length of the buffer <tt>pPacket</tt>.</li>
+<li> <tt>flags</tt>: Reserved, set to zero.</li>
+<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> of the captured packet.</li>
+<li> <tt>recvLen</tt>: The total number of bytes written to <tt>pPacket</tt>.
+     Can be <tt>NULL</tt> if this information is not required.</li>
+<li> <tt>lpOverlapped</tt>: An optional pointer to a <tt>OVERLAPPED</tt>
+     structure.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if a packet was successfully received, or <tt>FALSE</tt> 
+otherwise.
+Use <tt>GetLastError()</tt> to get the reason.
+The error code <tt>ERROR_IO_PENDING</tt> indicates that the overlapped
+operation has been successfully initiated and that completion will be
+indicated at a later time.
+All other codes indicate an error.
+</p><p>
+<b>Remarks</b><br>
+This function is equivalent to
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a> except that it
+supports overlapped I/O via the <tt>lpOverlapped</tt> parameter.
+</p>
+</dd></dl>
+
+<a name="divert_send"><h3>5.5 WinDivertSend</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertSend</b>(
@@ -584,7 +632,52 @@ and may be changed in the future.
 </p>
 </dd></dl>
 
-<a name="divert_close"><h3>5.5 WinDivertClose</h3></a>
+<a name="divert_send_ex"><h3>5.6 WinDivertSendEx</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertSendEx</b>(
+    __in HANDLE handle,
+    __in PVOID pPacket,
+    __in UINT packetLen,
+    __in UINT64 flags,
+    __in PWINDIVERT_ADDRESS pAddr,
+    __out_opt UINT *sendLen,
+    __inout_opt LPOVERLAPPED lpOverlapped
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>handle</tt>: A valid WinDivert handle created by
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
+<li> <tt>pPacket</tt>: A buffer containing the packet to be injected.</li>
+<li> <tt>packetLen</tt>: The total length of the buffer <tt>pPacket</tt>.</li>
+<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> for the injected packet.</li>
+<li> <tt>sendLen</tt>: The total number of bytes injected.
+     Can be <tt>NULL</tt> if this information is not required.</li>
+<li> <tt>lpOverlapped</tt>: An optional pointer to a <tt>OVERLAPPED</tt>
+     structure.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if a packet was successfully injected, or <tt>FALSE</tt>
+otherwise.
+Use <tt>GetLastError()</tt> to get the reason.
+The error code <tt>ERROR_IO_PENDING</tt> indicates that the overlapped
+operation has been successfully initiated and that completion will be
+indicated at a later time.
+All other codes indicate an error.
+</p><p>
+<b>Remarks</b><br>
+This function is equivalent to
+<a href="#divert_send"><tt>WinDivertSend()</tt></a> except that it
+supports overlapped I/O via the <tt>lpOverlapped</tt> parameter.
+</p>
+</dd></dl>
+
+<a name="divert_close"><h3>5.7 WinDivertClose</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertClose</b>(
@@ -610,7 +703,7 @@ Closes a WinDivert handle created by
 </p>
 <dd></dl>
 
-<a name="divert_set_param"><h3>5.6 WinDivertSetParam</h3></a>
+<a name="divert_set_param"><h3>5.8 WinDivertSetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertSetParam</b>(
@@ -678,7 +771,7 @@ Currently the default value is 512, the minimum is 128, and the maximum is
 </p>
 <dd></dl>
 
-<a name="divert_get_param"><h3>5.7 WinDivertGetParam</h3></a>
+<a name="divert_get_param"><h3>5.9 WinDivertGetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertGetParam</b>(
