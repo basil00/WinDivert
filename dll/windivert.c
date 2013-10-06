@@ -503,6 +503,7 @@ static BOOLEAN WinDivertDriverInstall(VOID)
     WDF_COINSTALLER_INSTALL_OPTIONS client_options;
     LPWSTR windivert_dir = NULL, windivert_sys = NULL, windivert_inf = NULL,
         windivert_dll = NULL;
+    SERVICE_STATUS status;
 
     // Do nothing if the driver is already installed:
     if (installed)
@@ -535,13 +536,13 @@ static BOOLEAN WinDivertDriverInstall(VOID)
     if (!WinDivertDriverFiles(&windivert_dir, &windivert_sys, &windivert_inf,
             &windivert_dll))
     {
-        return FALSE;
+        goto WinDivertDriverInstallExit;
     }
 
     // Load the co-installer:
     if (WinDivertLoadCoInstaller(windivert_dll) == NULL)
     {
-        return FALSE;
+        goto WinDivertDriverInstallExit;
     }
 
     // Pre-install:
@@ -601,6 +602,12 @@ WinDivertDriverInstallExit:
     free(windivert_dll);
     if (service != NULL)
     {
+        // Delete the service if there was an error.
+        if (!installed)
+        {
+            ControlService(service, SERVICE_CONTROL_STOP, &status);
+            DeleteService(service);
+        }
         CloseServiceHandle(service);
     }
     if (manager != NULL)
