@@ -368,11 +368,6 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
-static BOOL windivert_reinject_packet(context_t context, UINT8 direction,
-    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, UINT32 priority,
-    PNET_BUFFER_LIST buffers, PNET_BUFFER buffer);
-static void NTAPI windivert_reinject_complete(VOID *context,
-    NET_BUFFER_LIST *buffers_cpy, BOOLEAN dispatch_level);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     PNET_BUFFER buffer, UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx);
 static void windivert_free_packet(packet_t packet);
@@ -1916,7 +1911,6 @@ static void windivert_classify_forward_network_v6_callout(
         0, FALSE, fixed_vals, meta_vals, data, filter, flow_context, result);
 }
 
-
 /*
  * WinDivert classify callout.
  */
@@ -1930,9 +1924,9 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     FWPS_PACKET_INJECTION_STATE packet_state;
     HANDLE packet_context;
     UINT32 priority;
-    PNET_BUFFER_LIST buffers, buffers_fst, buffers_itr;
+    PNET_BUFFER_LIST buffers;
     PNET_BUFFER buffer;
-    BOOL outbound;
+    BOOL outbound, queued;
     context_t context;
     packet_t packet;
 
@@ -1943,7 +1937,22 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     }
 
     context = (context_t)filter->context;
+    if (!windivert_context_verify(context, WINDIVERT_CONTEXT_STATE_OPEN))
+    {
+        result->actionType = FWP_ACTION_PERMIT;
+        return;
+    }
     buffers = (PNET_BUFFER_LIST)data;
+    buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
+    if (NET_BUFFER_LIST_NEXT_NBL(buffers) != NULL)
+    {
+        /*
+         * This is a fragment group.  This can be ignored since each
+         * fragment should already have been indicated.
+         */
+        result->actionType = FWP_ACTION_PERMIT;
+        return;
+    }
     if (isipv4)
     {
         packet_state = FwpsQueryPacketInjectionState0(inject_handle, buffers,
@@ -1953,11 +1962,6 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     {
         packet_state = FwpsQueryPacketInjectionState0(injectv6_handle,
             buffers, &packet_context);
-    }
-    if (!windivert_context_verify(context, WINDIVERT_CONTEXT_STATE_OPEN))
-    {
-        result->actionType = FWP_ACTION_PERMIT;
-        return;
     }
     if (packet_state == FWPS_PACKET_INJECTED_BY_SELF ||
         packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF)
@@ -1969,97 +1973,36 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
             return;
         }
     }
-    else
-    {
-        priority = 0;
-    }
 
     /*
-     * This code is complicated by the fact the a single NET_BUFFER_LIST
-     * may contain several NET_BUFFER structures.  Each NET_BUFFER needs to
-     * be filtered independently.  To achieve this we do the following:
-     * 1) First check if any NET_BUFFER passes the filter.
-     * 2) If no, then CONTINUE the entire NET_BUFFER_LIST.
-     * 3) Else, split the NET_BUFFER_LIST into individual NET_BUFFERs; and
-     *    either queue or re-inject based on the filter.
+     * Test if the packet matches the filter or not.  If so, queue the
+     * packet; otherwise permit the packet.
      */
-
-    // Find the first NET_BUFFER we need to queue:
-    buffers_fst = buffers;
+    queued = FALSE;
     outbound = (direction == WINDIVERT_DIRECTION_OUTBOUND);
-    do
-    {
-        buffer = NET_BUFFER_LIST_FIRST_NB(buffers_fst);
-        if (windivert_filter(buffer, if_idx, sub_if_idx, outbound,
+    if (windivert_filter(buffer, if_idx, sub_if_idx, outbound,
             context->filter))
-        {
-            break;
-        }
-        buffers_fst= NET_BUFFER_LIST_NEXT_NBL(buffers_fst);
-    }
-    while (buffers_fst != NULL);
-
-    // No NET_BUFFER needs to be queued, permit the entire NET_BUFFER_LIST:
-    if (buffers_fst == NULL)
     {
-        result->actionType = FWP_ACTION_PERMIT;
-        return;
-    }
-
-    if ((context->flags & WINDIVERT_FLAG_SNIFF) == 0)
-    {
-        // Re-inject all packets up to 'buffers_fst'
-        buffers_itr = buffers;
-        while (buffers_itr != buffers_fst)
-        {
-            buffer = NET_BUFFER_LIST_FIRST_NB(buffers_itr);
-            if (!windivert_reinject_packet(context, direction, isipv4, if_idx,
-                    sub_if_idx, priority, buffers, buffer))
-            {
-                goto windivert_classify_callout_exit;
-            }
-            buffers_itr = NET_BUFFER_LIST_NEXT_NBL(buffers_itr);
-        }
-    }
-    else
-    {
-        buffers_itr = buffers_fst;
-    }
-
-    // Queue buffers_itr = buffers_fst, which matched our filter.
-    buffer = NET_BUFFER_LIST_FIRST_NB(buffers_itr);
-    if (!windivert_queue_packet(context, buffers, buffer, direction, if_idx,
-            sub_if_idx))
-    {
-        goto windivert_classify_callout_exit;
-    }
-    buffers_itr = NET_BUFFER_LIST_NEXT_NBL(buffers_itr);
-
-    // Queue or re-inject remaining packets.
-    while (buffers_itr != NULL)
-    {
-        buffer = NET_BUFFER_LIST_FIRST_NB(buffers_itr);
-        if (windivert_filter(buffer, if_idx, sub_if_idx, outbound,
-            context->filter))
+        if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
         {
             if (!windivert_queue_packet(context, buffers, buffer, direction,
                     if_idx, sub_if_idx))
             {
                 goto windivert_classify_callout_exit;
             }
-        }
-        else if ((context->flags & WINDIVERT_FLAG_SNIFF) == 0)
-        {
-            if (!windivert_reinject_packet(context, direction, isipv4, if_idx,
-                    sub_if_idx, priority, buffers, buffer))
-            {
-                goto windivert_classify_callout_exit;
-            }
+            queued = TRUE;
         }
     }
+    else
+    {
+        result->actionType = FWP_ACTION_PERMIT;
+        return;
+    }
 
-    // Since new packets have been queued, service any read.
-    if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
+    /*
+     * If the packet was queued, then service any pending read.
+     */
+    if (queued)
     {
         KeSetEvent(&context->read_event, IO_NO_INCREMENT, FALSE);
     }
@@ -2091,11 +2034,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     PVOID src;
     packet_t packet;
     NTSTATUS status;
-
-    if ((context->flags & WINDIVERT_FLAG_DROP) != 0)
-    {
-        return TRUE;
-    }
 
     length = NET_BUFFER_DATA_LENGTH(buffer);
     packet = (packet_t)ExAllocatePoolWithTag(NonPagedPool,
@@ -2172,70 +2110,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
 static void windivert_free_packet(packet_t packet)
 {
     ExFreePoolWithTag(packet, WINDIVERT_TAG);
-}
-
-/*
- * Re-inject a NET_BUFFER.
- */
-static BOOL windivert_reinject_packet(context_t context, UINT8 direction,
-    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, UINT32 priority,
-    PNET_BUFFER_LIST buffers, PNET_BUFFER buffer)
-{
-    PNET_BUFFER_LIST buffers_cpy;
-    HANDLE handle;
-    NTSTATUS status;
-
-    status = FwpsAllocateNetBufferAndNetBufferList0(
-        pool_handle, 0, 0, NET_BUFFER_FIRST_MDL(buffer),
-        NET_BUFFER_DATA_OFFSET(buffer), NET_BUFFER_DATA_LENGTH(buffer),
-        &buffers_cpy);
-    if (!NT_SUCCESS(status))
-    {
-        return FALSE;
-    }
-    FwpsReferenceNetBufferList0(buffers, FALSE);
-    handle = (isipv4? inject_handle: injectv6_handle);
-    if (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD)
-    {
-        status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
-            (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
-            if_idx, buffers_cpy, windivert_reinject_complete, (HANDLE)buffers);
-    }   
-    else if (direction == WINDIVERT_DIRECTION_OUTBOUND)
-    {
-        status = FwpsInjectNetworkSendAsync0(handle, (HANDLE)priority, 0,
-            UNSPECIFIED_COMPARTMENT_ID, buffers_cpy,
-            windivert_reinject_complete, (HANDLE)buffers);
-    }
-    else
-    {
-        // NOTE: this case should never occur since inbound net buffers only
-        //       ever contain one packet.  We keep for completeness.
-        status = FwpsInjectNetworkReceiveAsync0(handle, (HANDLE)priority, 0,
-            UNSPECIFIED_COMPARTMENT_ID, if_idx, sub_if_idx, buffers_cpy,
-            windivert_reinject_complete, (HANDLE)buffers);
-    }
-    if (!NT_SUCCESS(status))
-    {
-        FwpsDereferenceNetBufferList0(buffers, FALSE);
-        FwpsFreeNetBufferList0(buffers_cpy);
-        return FALSE;
-    }
-    return TRUE;
-}
-
-/*
- * WinDivert (re)inject complete.
- */
-static void NTAPI windivert_reinject_complete(VOID *context,
-    NET_BUFFER_LIST *buffers_cpy, BOOLEAN dispatch_level)
-{
-    PNET_BUFFER_LIST buffers;
-    UNREFERENCED_PARAMETER(dispatch_level);
-
-    buffers = (PNET_BUFFER_LIST)context;
-    FwpsDereferenceNetBufferList0(buffers, FALSE);
-    FwpsFreeNetBufferList0(buffers_cpy);
 }
 
 /*
