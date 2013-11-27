@@ -56,10 +56,10 @@
 <p>
 WinDivert is a user-mode 
 capture/sniffing/modification/blocking/re-injection package for
-Windows Vista, Windows Server 2008, and Windows 7.
+Windows Vista, Windows Server 2008, Windows 7, and Windows 8.
 WinDivert can be used to implement user-mode packet filters, packet sniffers,
 firewalls, NAT, VPNs, tunneling applications, etc., without the need to
-write kernel-level code.
+write kernel-mode code.
 </p>
 <p>
 The main features of the WinDivert are:
@@ -77,8 +77,8 @@ The main features of the WinDivert are:
 </ul>
 </p><p>
 WinDivert provides similar functionality to
-<tt>divert</tt> sockets in FreeBSD/MacOS, <tt>NETLINK</tt> sockets in Linux,
-and some commercial packages such as <tt>WinPkFilter</tt> for Windows.
+<tt>divert</tt> sockets from FreeBSD/MacOS, <tt>NETLINK</tt> sockets from
+Linux, and some commercial packages such as <tt>WinPkFilter</tt> for Windows.
 WinDivert also supports passive packet sniffing similar to <tt>Winpcap</tt>.
 </p>
 
@@ -165,14 +165,13 @@ This will build MinGW compatible files and place them in the
 <p>
 WinDivert does not require any special installation.
 Simply place the <tt>WinDivert.dll</tt>, <tt>WinDivert.sys</tt>,
-<tt>WinDivert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files are in your
+<tt>WinDivert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files in the
 application's home directory.
 </p>
 <p>
-The WinDivert driver is installed on demand, i.e., when your application
-makes a call to <a href="#divert_open"><tt>WinDivertOpen()</tt></a> from
-<tt>WinDivert.dll</tt>.
-The driver is installed silently.
+The WinDivert driver is automatically installed on demand whenever your
+application calls <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
+The driver installation is also silent.
 The calling application must be running with Administrator privileges.
 </p>
 
@@ -200,7 +199,7 @@ To use the WinDivert package, a program/application must:
 <pre>
 #include "windivert.h"
 </pre></li>
-<li> Link or dynamically load the <tt>WinDivert.dll</tt> dynamic link
+<li> Link against or dynamically load the <tt>WinDivert.dll</tt> dynamic link
 library.</li>
 </ol>
 
@@ -281,17 +280,6 @@ Description
 </tr>
 <tr>
 <td>
-<tt>ERROR_INVALID_PARAMETER</tt>
-</td>
-<td>
-87
-</td>
-<td>
-This indicates an invalid packet filter string, layer, priority, or flags.
-</td>
-</tr>
-<tr>
-<td>
 <tt>ERROR_FILE_NOT_FOUND</tt>
 </td>
 <td>
@@ -312,6 +300,17 @@ found.
 </td>
 <td>
 The calling application does not have Administrator privileges.
+</td>
+</tr>
+<tr>
+<td>
+<tt>ERROR_INVALID_PARAMETER</tt>
+</td>
+<td>
+87
+</td>
+<td>
+This indicates an invalid packet filter string, layer, priority, or flags.
 </td>
 </tr>
 <tr>
@@ -458,9 +457,8 @@ will calculate it before passing the packet to the user application.
 This flag disables this behavior.
 </table>
 </center>
-Note that only one of <tt>WINDIVERT_FLAG_SNIFF</tt>,
-<tt>WINDIVERT_FLAG_DROP</tt>, or <tt>WINDIVERT_FLAG_PASSTHRU</tt>
-may be set at the same time.
+Note that only one of <tt>WINDIVERT_FLAG_SNIFF</tt> or
+<tt>WINDIVERT_FLAG_DROP</tt> may be set at the same time.
 </p>
 </dd></dl>
 
@@ -654,6 +652,7 @@ BOOL <b>WinDivertSendEx</b>(
      <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 <li> <tt>pPacket</tt>: A buffer containing the packet to be injected.</li>
 <li> <tt>packetLen</tt>: The total length of the buffer <tt>pPacket</tt>.</li>
+<li> <tt>flags</tt>: Reserved, set to zero.</li>
 <li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> for the injected packet.</li>
 <li> <tt>sendLen</tt>: The total number of bytes injected.
      Can be <tt>NULL</tt> if this information is not required.</li>
