@@ -91,7 +91,7 @@ int __cdecl main(int argc, char **argv)
 // Passthru thread.
 static DWORD passthru(LPVOID arg)
 {
-    char packet[MAXBUF];
+    unsigned char packet[MAXBUF];
     UINT packet_len;
     WINDIVERT_ADDRESS addr;
     HANDLE handle = (HANDLE)arg;

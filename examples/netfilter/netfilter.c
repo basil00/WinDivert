@@ -88,7 +88,7 @@ int __cdecl main(int argc, char **argv)
     HANDLE handle, console;
     UINT i;
     INT16 priority = 0;
-    char packet[MAXBUF];
+    unsigned char packet[MAXBUF];
     UINT packet_len;
     WINDIVERT_ADDRESS recv_addr, send_addr;
     PWINDIVERT_IPHDR ip_header;
