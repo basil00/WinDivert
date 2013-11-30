@@ -36,6 +36,7 @@ EVT_WDF_DEVICE_FILE_CREATE windivert_create;
 EVT_WDF_TIMER windivert_timer;
 EVT_WDF_FILE_CLEANUP windivert_cleanup;
 EVT_WDF_FILE_CLOSE windivert_close;
+KSTART_ROUTINE windivert_read_service_worker;
 
 /*
  * Debugging macros.
@@ -1251,6 +1252,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     PVOID data, data_copy = NULL;
     UINT data_len;
     struct iphdr *ip_header;
+    struct ipv6hdr *ipv6_header;
     BOOL isipv4;
     HANDLE handle;
     PNET_BUFFER_LIST buffers = NULL;
@@ -1289,30 +1291,15 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     }
     
     data_len = MmGetMdlByteCount(mdl);
-    if (data_len < sizeof(struct iphdr))
+    if (data_len > 0xFFFF || data_len < sizeof(struct iphdr))
     {
-        status = STATUS_BUFFER_TOO_SMALL;
-        DEBUG_ERROR("write buffer too small, cannot read ip header", status);
+windivert_write_bad_packet:
+        status = STATUS_INVALID_PARAMETER;
+        DEBUG_ERROR("failed to inject a bad packet", status);
         goto windivert_write_exit;
     }
 
-    ip_header = (struct iphdr *)data;
-    switch (ip_header->Version)
-    {
-        case 4:
-            isipv4 = TRUE;
-            break;
-        case 6:
-            isipv4 = FALSE;
-            break;
-        default:
-            status = STATUS_INVALID_PARAMETER;
-            DEBUG_ERROR("failed to inject packet; not IPv4 nor IPv6", status);
-            goto windivert_write_exit;
-    }
-
-    data_copy = ExAllocatePoolWithTag(NonPagedPool, data_len,
-        WINDIVERT_TAG);
+    data_copy = ExAllocatePoolWithTag(NonPagedPool, data_len, WINDIVERT_TAG);
     if (data_copy == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
@@ -1321,6 +1308,27 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
         goto windivert_write_exit;
     }
     RtlCopyMemory(data_copy, data, data_len);
+
+    ip_header = (struct iphdr *)data_copy;
+    switch (ip_header->Version)
+    {
+        case 4:
+            isipv4 = TRUE;
+            if (data_len != RtlUshortByteSwap(ip_header->Length))
+                goto windivert_write_bad_packet;
+            break;
+        case 6:
+            if (data_len < sizeof(struct ipv6hdr))
+                goto windivert_write_bad_packet;
+            ipv6_header = (struct ipv6hdr *)data_copy;
+            if (data_len != RtlUshortByteSwap(ipv6_header->Length) +
+                    sizeof(struct ipv6hdr))
+                goto windivert_write_bad_packet;
+            isipv4 = FALSE;
+            break;
+        default:
+            goto windivert_write_bad_packet;
+    }
 
     mdl_copy = IoAllocateMdl(data_copy, data_len, FALSE, FALSE, NULL);
     if (mdl_copy == NULL)
