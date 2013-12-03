@@ -1286,7 +1286,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     }
     
     data_len = MmGetMdlByteCount(mdl);
-    if (data_len > 0xFFFF || data_len < sizeof(struct iphdr))
+    if (data_len > UINT16_MAX || data_len < sizeof(struct iphdr))
     {
 windivert_write_bad_packet:
         status = STATUS_INVALID_PARAMETER;
@@ -1302,15 +1302,15 @@ windivert_write_bad_packet:
             status);
         goto windivert_write_exit;
     }
-    RtlCopyMemory(data_copy, data, data_len);
 
+    RtlCopyMemory(data_copy, data, sizeof(struct iphdr));
     ip_header = (struct iphdr *)data_copy;
     switch (ip_header->Version)
     {
         case 4:
-            isipv4 = TRUE;
             if (data_len != RtlUshortByteSwap(ip_header->Length))
                 goto windivert_write_bad_packet;
+            isipv4 = TRUE;
             break;
         case 6:
             if (data_len < sizeof(struct ipv6hdr))
@@ -1323,6 +1323,12 @@ windivert_write_bad_packet:
             break;
         default:
             goto windivert_write_bad_packet;
+    }
+    if (data_len > sizeof(struct iphdr))
+    {
+        RtlCopyMemory((char *)data_copy + sizeof(struct iphdr),
+            (char *)data + sizeof(struct iphdr),
+            data_len - sizeof(struct iphdr));
     }
 
     mdl_copy = IoAllocateMdl(data_copy, data_len, FALSE, FALSE, NULL);
