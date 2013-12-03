@@ -31,6 +31,8 @@ WinDivert 1.1.0
       * WinDivertSendEx(..)
     - The WinDivert driver now services reads (WinDivertRecv()) out-of-band.
     - The WinDivert driver now protects packet data from modification by
-      other callout drivers and the user program.  However, this comes at
-      the cost of extra copying.
-    - The WinDivert service will no longer be created on a driver load error.
+      other callout drivers and the user program.
+    - The WinDivert service is no longer created when the driver fails to
+      load.
+WinDivert 1.1.1
+    - Fixed a BSOD that sometimes occurs when the driver is unloaded.
