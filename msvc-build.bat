@@ -21,7 +21,7 @@
 
 :: Determine target CPU.
 
-cl 2>&1 | findstr "32" > NUL
+cl 2>&1 | findstr "x86" > NUL
 
 if %ERRORLEVEL% == 0 (
     set TARGET=i386
