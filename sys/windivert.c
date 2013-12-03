@@ -576,6 +576,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     {
         DEBUG_ERROR("failed to create WFP ipv6 packet injection handle",
             status);
+        FwpsInjectionHandleDestroy0(inject_handle);
         return status;
     }
 
@@ -592,6 +593,8 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
         DEBUG_ERROR("failed to allocate net buffer list pool", status);
+        FwpsInjectionHandleDestroy0(inject_handle);
+        FwpsInjectionHandleDestroy0(injectv6_handle);
         return status;
     }
 
@@ -606,7 +609,7 @@ extern VOID windivert_unload(IN WDFDRIVER Driver)
     DEBUG("UNLOAD: unloading the WinDivert driver");
     FwpsInjectionHandleDestroy0(inject_handle);
     FwpsInjectionHandleDestroy0(injectv6_handle);
-    NdisFreeNetBufferPool(pool_handle);
+    NdisFreeNetBufferListPool(pool_handle);
 }
 
 /*
@@ -643,7 +646,6 @@ static BOOLEAN windivert_context_verify(context_t context,
 extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     IN WDFFILEOBJECT object)
 {
-    NET_BUFFER_LIST_POOL_PARAMETERS pool_params;
     WDF_IO_QUEUE_CONFIG queue_config;
     WDF_TIMER_CONFIG timer_config;
     WDF_OBJECT_ATTRIBUTES timer_attributes;
@@ -698,13 +700,6 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
             goto windivert_create_exit;
         }
     }
-    RtlZeroMemory(&pool_params, sizeof(pool_params));
-    pool_params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
-    pool_params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
-    pool_params.Header.Size = sizeof(pool_params);
-    pool_params.fAllocateNetBuffer = TRUE;
-    pool_params.PoolTag = WINDIVERT_TAG;
-    pool_params.DataSize = 0;
     WDF_IO_QUEUE_CONFIG_INIT(&queue_config, WdfIoQueueDispatchManual);
     status = WdfIoQueueCreate(device, &queue_config, WDF_NO_OBJECT_ATTRIBUTES,
         &context->read_queue);
