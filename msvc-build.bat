@@ -14,7 +14,7 @@
 :: You should have received a copy of the GNU Lesser General Public License
 :: along with this program.  If not, see <http://www.gnu.org/licenses/>.
 ::
-:: Script for MSVC (Microsoft Visual Studio 2010) compilation.
+:: Script for MSVC (Microsoft Visual Studio 2012) compilation.
 :: NOTE: run wddk-build.bat before this script.
 
 @echo off
@@ -26,9 +26,11 @@ cl 2>&1 | findstr "x86" > NUL
 if %ERRORLEVEL% == 0 (
     set TARGET=i386
     set PLATFORM=Win32
+    set BITS=32
 ) ELSE (
     set TARGET=amd64
     set PLATFORM=x64
+    set BITS=64
 )
 
 set WDDK_INSTALL=install\WDDK\%TARGET%\
@@ -78,9 +80,7 @@ rd /s /q build\
 cd ..\..
 
 :: Copy files
-copy /Y %WDDK_INSTALL%\WinDivert.sys %MSVC_INSTALL%
-copy /Y %WDDK_INSTALL%\WinDivert.inf %MSVC_INSTALL%
-copy /Y %WDDK_INSTALL%\WdfCoInstaller*.dll %MSVC_INSTALL%
+copy /Y %WDDK_INSTALL%\WinDivert%BITS%.sys %MSVC_INSTALL%
 
 :: Clean-up
 del %MSVC_INSTALL%..\WinDivert.lib

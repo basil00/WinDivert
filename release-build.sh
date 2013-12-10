@@ -52,14 +52,12 @@ do
     cp doc/windivert.html $INSTALL/doc/WinDivert.html
     echo "\tmake $INSTALL/x86..."
     mkdir -p $INSTALL/x86
-    echo "\tcopy $INSTALL/x86/WinDivert.inf..."
-    cp sys/windivert.inf $INSTALL/x86/WinDivert.inf
-    echo "\tcopy $INSTALL/x86/WinDivert.sys..."
-    cp install/$TARGET/i386/WinDivert.sys $INSTALL/x86
-    if ! grep "DigiCert High Assurance EV Root" $INSTALL/x86/WinDivert.sys \
+    echo "\tcopy $INSTALL/x86/WinDivert32.sys..."
+    cp install/$TARGET/i386/WinDivert32.sys $INSTALL/x86
+    if ! grep "DigiCert High Assurance EV Root" $INSTALL/x86/WinDivert32.sys \
         2>&1 >/dev/null
     then
-        echo "\tWARNING: using unsigned WinDivert.sys..."
+        echo "\t\033[33mWARNING\033[0m: unsigned WinDivert32.sys..."
     fi
     if [ $TARGET != MINGW ]
     then
@@ -68,13 +66,6 @@ do
     fi
     echo "\tcopy $INSTALL/x86/WinDivert.dll..."
     cp install/$TARGET/i386/WinDivert.dll $INSTALL/x86
-    echo "\tcopy $INSTALL/x86/WdfCoInstaller01009.dll..."
-    cp install/$TARGET/i386/WdfCoInstaller01009.dll $INSTALL/x86
-    COINST_SIZE=`stat --printf="%s" $INSTALL/x86/WdfCoInstaller01009.dll`
-    if [ $COINST_SIZE -gt 1000000 ]
-    then
-        echo "\tWARNING: using fat WdfCoInstaller01009.dll..."
-    fi
     echo "\tcopy $INSTALL/x86/netdump.exe..."
     cp install/$TARGET/i386/netdump.exe $INSTALL/x86
     echo "\tcopy $INSTALL/x86/netfilter.exe..."
@@ -87,14 +78,12 @@ do
     then
         echo "\tmake $INSTALL/amd64..."
         mkdir -p $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/WinDivert.inf..."
-        cp sys/windivert.inf $INSTALL/amd64/WinDivert.inf
-        echo "\tcopy $INSTALL/amd64/WinDivert.sys..."
-        cp install/$TARGET/amd64/WinDivert.sys $INSTALL/amd64
+        echo "\tcopy $INSTALL/amd64/WinDivert64.sys..."
+        cp install/$TARGET/amd64/WinDivert64.sys $INSTALL/amd64
         if ! grep "DigiCert High Assurance EV Root" \
-            $INSTALL/amd64/WinDivert.sys 2>&1 >/dev/null
+            $INSTALL/amd64/WinDivert64.sys 2>&1 >/dev/null
         then
-            echo "\tWARNING: using unsigned WinDivert.sys..."
+            echo -e "\t\033[33mWARNING\033[0m: unsigned WinDivert64.sys..."
         fi
         if [ $TARGET != MINGW ]
         then
@@ -103,13 +92,6 @@ do
         fi
         echo "\tcopy $INSTALL/amd64/WinDivert.dll..."
         cp install/$TARGET/amd64/WinDivert.dll $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/WdfCoInstaller01009.dll..."
-        cp install/$TARGET/amd64/WdfCoInstaller01009.dll $INSTALL/amd64
-        COINST_SIZE=`stat --printf="%s" $INSTALL/amd64/WdfCoInstaller01009.dll`
-        if [ $COINST_SIZE -gt 1000000 ]
-        then
-            echo "\tWARNING: using fat WdfCoInstaller01009.dll..."
-        fi
         echo "\tcopy $INSTALL/amd64/netdump.exe..."
         cp install/$TARGET/amd64/netdump.exe $INSTALL/amd64
         echo "\tcopy $INSTALL/amd64/netfilter.exe..."

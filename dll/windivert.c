@@ -28,59 +28,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef __MINGW32__
-#define wcscpy_s(s1, l, s2)     windivert_wcscpy_s((s1), (l), (s2))
-static int windivert_wcscpy_s(wchar_t *dst, size_t len, wchar_t *src)
-{
-    wcscpy(dst, src);
-    return 0;
-}
+#ifndef __MINGW32__
+#include <strsafe.h>
+#else
+extern __stdcall HRESULT StringCchLengthW(LPCWSTR psz, size_t cchMax,
+    size_t *pcchLength);
+#define StringCchLength(a, b, c)        StringCchLengthW((a), (b), (c))
+extern __stdcall HRESULT StringCchCopyW(LPWSTR pszDest, size_t cchDest, 
+    LPCWSTR pszSrc);
+#define StringCchCopy(a, b, c)          StringCchCopyW((a), (b), (c))
 #endif      /* __MINGW32__ */
 
-/*
- * From wdfinstaller.h
- */
-typedef struct _WDF_COINSTALLER_INSTALL_OPTIONS
-{
-    ULONG Size;
-    BOOL  ShowRebootPrompt;
-} WDF_COINSTALLER_INSTALL_OPTIONS, *PWDF_COINSTALLER_INSTALL_OPTIONS;
-
-VOID FORCEINLINE WDF_COINSTALLER_INSTALL_OPTIONS_INIT(
-        PWDF_COINSTALLER_INSTALL_OPTIONS ClientOptions)
-{
-    RtlZeroMemory(ClientOptions, sizeof(WDF_COINSTALLER_INSTALL_OPTIONS));
-    ClientOptions->Size = sizeof(WDF_COINSTALLER_INSTALL_OPTIONS);
-}
-typedef ULONG (WINAPI *PFN_WDFPREDEVICEINSTALLEX)(
-        LPCWSTR inf_path,
-        LPCWSTR inf_sec_name,
-        PWDF_COINSTALLER_INSTALL_OPTIONS options
-    );
-typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEINSTALL)(
-        LPCWSTR inf_path,
-        LPCWSTR inf_sec_name
-    );
-typedef ULONG (WINAPI *PFN_WDFPREDEVICEREMOVE)(
-        LPCWSTR inf_path,
-        LPCWSTR inf_sec_name
-    );
-typedef ULONG (WINAPI *PFN_WDFPOSTDEVICEREMOVE)(
-        LPCWSTR inf_path,
-        LPCWSTR inf_sec_name
-    );
-
-// #define WINDIVERT_DEBUG
 
 #define WINDIVERTEXPORT
 #include "windivert.h"
 #include "windivert_device.h"
 
-#define WINDIVERT_DRIVER_NAME              L"WinDivert"
-#define WINDIVERT_DRIVER_SYS               L"\\" WINDIVERT_DRIVER_NAME L".sys"
-#define WINDIVERT_DRIVER_INF               L"\\" WINDIVERT_DRIVER_NAME L".inf"
-#define WINDIVERT_DRIVER_SECTION           L"windivert.NT.Wdf"
-#define WINDIVERT_DRIVER_MATCH_DLL         L"\\WdfCoInstaller*.dll"
+#define WINDIVERT_DRIVER_NAME           L"WinDivert"
+#define WINDIVERT_DRIVER32_SYS          L"\\" WINDIVERT_DRIVER_NAME L"32.sys"
+#define WINDIVERT_DRIVER64_SYS          L"\\" WINDIVERT_DRIVER_NAME L"64.sys"
 
 /*
  * ntoh and hton implementation to remove winsock dependency.
@@ -224,18 +190,11 @@ typedef struct
 #define IPPROTO_ICMPV6  58
 
 /*
- * Driver installed?
- */
-static BOOLEAN installed = FALSE;
-
-/*
  * Prototypes.
  */
-static HMODULE WinDivertLoadCoInstaller(LPWSTR windivert_dll);
-static BOOLEAN WinDivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
-    LPWSTR *inf_str_ptr, LPWSTR *dll_str_ptr);
-static BOOLEAN WinDivertDriverInstall(VOID);
-static BOOLEAN WinDivertDriverUnInstall(VOID);
+static BOOLEAN WinDivertUse32Bit(void);
+static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str);
+static SC_HANDLE WinDivertDriverInstall(VOID);
 static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
     UINT64 arg, PVOID buf, UINT len, UINT *iolen);
 static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
@@ -260,14 +219,6 @@ static UINT16 WinDivertHelperCalcChecksum(PVOID pseudo_header,
 #ifdef WINDIVERT_DEBUG
 static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len);
 #endif
-
-/*
- * Co-installer functions.
- */
-PFN_WDFPREDEVICEINSTALLEX pfnWdfPreDeviceInstallEx = NULL;
-PFN_WDFPOSTDEVICEINSTALL pfnWdfPostDeviceInstall = NULL;
-PFN_WDFPREDEVICEREMOVE pfnWdfPreDeviceRemove = NULL;
-PFN_WDFPOSTDEVICEREMOVE pfnWdfPostDeviceRemove = NULL;
 
 /*
  * Thread local.
@@ -305,7 +256,6 @@ extern BOOL APIENTRY WinDivertDllEntry(HANDLE module, DWORD reason,
                 CloseHandle(event);
             }
             TlsFree(windivert_tls_idx);
-            WinDivertDriverUnInstall();
             break;
 
         case DLL_THREAD_DETACH:
@@ -320,196 +270,82 @@ extern BOOL APIENTRY WinDivertDllEntry(HANDLE module, DWORD reason,
 }
 
 /*
- * Load the co-installer functions.
+ * Test if we should use the 32-bit or 64-bit driver.
  */
-static HMODULE WinDivertLoadCoInstaller(LPWSTR windivert_dll)
+static BOOLEAN WinDivertUse32Bit(void)
 {
-    static HMODULE library = NULL;
-    
-    if (library != NULL)
-    {
-        return library;
-    }
-    
-    library = LoadLibrary(windivert_dll);
-    if (library == NULL)
-    {
-        return NULL;
-    }
+    BOOL is_wow64;
 
-    pfnWdfPreDeviceInstallEx = (PFN_WDFPREDEVICEINSTALLEX)GetProcAddress(
-        library, "WdfPreDeviceInstallEx");
-    if (pfnWdfPreDeviceInstallEx == NULL)
+    if (sizeof(void *) == sizeof(UINT64))
     {
-        goto WinDivertLoadInstallerError;
+        return FALSE;
     }
-    pfnWdfPostDeviceInstall = (PFN_WDFPOSTDEVICEINSTALL)GetProcAddress(
-        library, "WdfPostDeviceInstall");
-    if (pfnWdfPostDeviceInstall == NULL)
+    if (!IsWow64Process(GetCurrentProcess(), &is_wow64))
     {
-        goto WinDivertLoadInstallerError;
+        // Just guess:
+        return FALSE;
     }
-    pfnWdfPreDeviceRemove = (PFN_WDFPREDEVICEREMOVE)GetProcAddress(
-        library, "WdfPreDeviceRemove");
-    if (pfnWdfPreDeviceRemove == NULL)
-    {
-        goto WinDivertLoadInstallerError;
-    }
-    pfnWdfPostDeviceRemove = (PFN_WDFPOSTDEVICEREMOVE)GetProcAddress(
-        library, "WdfPostDeviceRemove");
-    if (pfnWdfPostDeviceRemove == NULL)
-    {
-        goto WinDivertLoadInstallerError;
-    }
-
-    return library;
-
-WinDivertLoadInstallerError:
-
-    FreeLibrary(library);
-    pfnWdfPreDeviceInstallEx = NULL;
-    pfnWdfPostDeviceInstall = NULL;
-    pfnWdfPreDeviceRemove = NULL;
-    pfnWdfPostDeviceRemove = NULL;
-    return NULL;
+    return (is_wow64? FALSE: TRUE);
 }
 
 /*
  * Locate the WinDivert driver files.
  */
-static BOOLEAN WinDivertDriverFiles(LPWSTR *dir_str_ptr, LPWSTR *sys_str_ptr,
-    LPWSTR *inf_str_ptr, LPWSTR *dll_str_ptr)
+static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
 {
-    DWORD err;
-    HANDLE find;
-    WIN32_FIND_DATA find_data;
-    LPWSTR dir_str = NULL, sys_str = NULL, inf_str = NULL, dll_str = NULL;
-    size_t dir_len, sys_len, inf_len, dll_len;
+    size_t dir_len, sys_len;
+    BOOLEAN is_32bit;
 
-    SetLastError(0);
+    is_32bit = WinDivertUse32Bit();
 
-    // Construct the filenames from the current directory name
-    dir_len = GetCurrentDirectory(0, NULL);
+    if (is_32bit)
+    {
+        if (FAILED(StringCchLength(WINDIVERT_DRIVER32_SYS, MAX_PATH,
+                &sys_len)))
+        {
+            SetLastError(ERROR_BAD_PATHNAME);
+            return FALSE;
+        }
+    }
+    else
+    {
+        if (FAILED(StringCchLength(WINDIVERT_DRIVER64_SYS, MAX_PATH,
+                &sys_len)))
+        {
+            SetLastError(ERROR_BAD_PATHNAME);
+            return FALSE;
+        }
+    }
+ 
+    dir_len = (size_t)GetCurrentDirectory(MAX_PATH, sys_str);
     if (dir_len == 0)
     {
-        goto WinDivertDriverFilesError;
+        return FALSE;
     }
-    dir_len--;
-    sys_len = dir_len + wcslen(WINDIVERT_DRIVER_SYS);
-    inf_len = dir_len + wcslen(WINDIVERT_DRIVER_INF);
-    dll_len = dir_len + wcslen(WINDIVERT_DRIVER_MATCH_DLL);
-    dir_str = (WCHAR *)malloc((dir_len+1)*sizeof(WCHAR));
-    if (dir_str == NULL)
+    if (dir_len + sys_len + 1 >= MAX_PATH)
     {
-        goto WinDivertDriverFilesError;
+        SetLastError(ERROR_BAD_PATHNAME);
+        return FALSE;
     }
-    if (GetCurrentDirectory(dir_len+1, dir_str) != dir_len)
+    if (FAILED(StringCchCopy(sys_str + dir_len, MAX_PATH-dir_len-1,
+            (is_32bit? WINDIVERT_DRIVER32_SYS: WINDIVERT_DRIVER64_SYS))))
     {
-        SetLastError(ERROR_FILE_NOT_FOUND);
-        goto WinDivertDriverFilesError;
-    }
-    sys_str = (WCHAR *)malloc((sys_len+1)*sizeof(WCHAR));
-    if (sys_str == NULL)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    inf_str = (WCHAR *)malloc((inf_len+1)*sizeof(WCHAR));
-    if (inf_str == NULL)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    dll_str = (WCHAR *)malloc((dll_len+1)*sizeof(WCHAR));
-    if (dll_str == NULL)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    if (wcscpy_s(sys_str, sys_len+1, dir_str) != 0 ||
-        wcscpy_s(inf_str, inf_len+1, dir_str) != 0 ||
-        wcscpy_s(dll_str, dll_len+1, dir_str) != 0 ||
-        wcscpy_s(sys_str + dir_len, sys_len+1-dir_len,
-            WINDIVERT_DRIVER_SYS) != 0 ||
-        wcscpy_s(inf_str + dir_len, inf_len+1-dir_len,
-            WINDIVERT_DRIVER_INF) != 0 ||
-        wcscpy_s(dll_str + dir_len, dll_len+1-dir_len,
-            WINDIVERT_DRIVER_MATCH_DLL))
-    {
-        goto WinDivertDriverFilesError;
+        SetLastError(ERROR_BAD_PATHNAME);
+        return FALSE;
     }
 
-    // Check the the files exist; and find the co-installer filename.
-    find = FindFirstFile(sys_str, &find_data);
-    if (find == INVALID_HANDLE_VALUE)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    FindClose(find);
-    find = FindFirstFile(inf_str, &find_data);
-    if (find == INVALID_HANDLE_VALUE)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    FindClose(find);
-    find = FindFirstFile(dll_str, &find_data);
-    free(dll_str);
-    dll_str = NULL;
-    if (find == INVALID_HANDLE_VALUE)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    FindClose(find);
-    dll_len = dir_len + 1 + wcslen(find_data.cFileName) + 1;
-    dll_str = (WCHAR *)malloc((dll_len+1)*sizeof(WCHAR));
-    if (dll_str == NULL)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    if (wcscpy_s(dll_str, dll_len+1, dir_str) != 0)
-    {
-        goto WinDivertDriverFilesError;
-    }
-    dll_str[dir_len] = L'\\';
-    if (wcscpy_s(dll_str + dir_len + 1, dll_len+1-dir_len-1,
-            find_data.cFileName) != 0)
-    {
-        goto WinDivertDriverFilesError;
-    }
-
-    *dir_str_ptr = dir_str;
-    *sys_str_ptr = sys_str;
-    *inf_str_ptr = inf_str;
-    *dll_str_ptr = dll_str;
     return TRUE;
-
-WinDivertDriverFilesError:
-    err = GetLastError();
-    free(dir_str);
-    free(sys_str);
-    free(inf_str);
-    free(dll_str);
-    if (err != 0)
-        SetLastError(err);
-    else
-        SetLastError(ERROR_FILE_NOT_FOUND);
-    return FALSE;
 }
 
 /*
  * Install the WinDivert driver.
  */
-static BOOLEAN WinDivertDriverInstall(VOID)
+static SC_HANDLE WinDivertDriverInstall(VOID)
 {
-    DWORD err;
+    DWORD err, retries = 2;
     SC_HANDLE manager = NULL, service = NULL;
-    WDF_COINSTALLER_INSTALL_OPTIONS client_options;
-    LPWSTR windivert_dir = NULL, windivert_sys = NULL, windivert_inf = NULL,
-        windivert_dll = NULL;
+    wchar_t windivert_sys[MAX_PATH+1];
     SERVICE_STATUS status;
-
-    // Do nothing if the driver is already installed:
-    if (installed)
-    {
-        return TRUE;
-    }
 
     // Open the service manager:
     manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
@@ -519,39 +355,16 @@ static BOOLEAN WinDivertDriverInstall(VOID)
     }
 
     // Check if the WinDivert service already exists; if so, start it.
+WinDivertDriverInstallReTry:
     service = OpenService(manager, WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
     if (service != NULL)
     {
-        if (!StartService(service, 0, NULL))
-        {
-            err = GetLastError();
-            installed = (err == ERROR_SERVICE_ALREADY_RUNNING);
-            goto WinDivertDriverInstallExit;
-        }
-        installed = TRUE;
         goto WinDivertDriverInstallExit;
     }
 
-    // Get driver files:
-    if (!WinDivertDriverFiles(&windivert_dir, &windivert_sys, &windivert_inf,
-            &windivert_dll))
+    // Get driver file:
+    if (!WinDivertGetDriverFileName(windivert_sys))
     {
-        goto WinDivertDriverInstallExit;
-    }
-
-    // Load the co-installer:
-    if (WinDivertLoadCoInstaller(windivert_dll) == NULL)
-    {
-        goto WinDivertDriverInstallExit;
-    }
-
-    // Pre-install:
-    WDF_COINSTALLER_INSTALL_OPTIONS_INIT(&client_options);
-    err = pfnWdfPreDeviceInstallEx(windivert_inf, WINDIVERT_DRIVER_SECTION,
-        &client_options);
-    if (err != ERROR_SUCCESS)
-    {
-        SetLastError(err);
         goto WinDivertDriverInstallExit;
     }
 
@@ -564,140 +377,47 @@ static BOOLEAN WinDivertDriverInstall(VOID)
     {
         if (GetLastError() == ERROR_SERVICE_EXISTS) 
         {
-            installed = TRUE;
+            if (retries != 0)
+            {
+                retries--;
+                goto WinDivertDriverInstallReTry;
+            }
         }
         goto WinDivertDriverInstallExit;
     }
-
-    // Post-install:
-    err = pfnWdfPostDeviceInstall(windivert_inf, NULL);
-    if (err == ERROR_INVALID_PARAMETER)
-    {
-        // We ignore ERROR_INVALID_PARAMETER.  WdfPostDeviceInstall sometimes
-        // returns this error for no obvious reason, and when ignored the
-        // driver seems to still work perfectly.
-        err = ERROR_SUCCESS;
-    }
-    if (err != ERROR_SUCCESS)
-    {
-        SetLastError(err);
-        goto WinDivertDriverInstallExit;
-    }
-
-    // Start the service:
-    if (!StartService(service, 0, NULL))
-    {
-        err = GetLastError();
-        installed = (err == ERROR_SERVICE_ALREADY_RUNNING);
-        goto WinDivertDriverInstallExit;
-    }
-    
-    installed = TRUE;
 
 WinDivertDriverInstallExit:
-    err = GetLastError();
-    free(windivert_dir);
-    free(windivert_sys);
-    free(windivert_inf);
-    free(windivert_dll);
+
     if (service != NULL)
     {
-        // Delete the service if there was an error.
-        if (!installed)
+        // Start the service:
+        if (!StartService(service, 0, NULL))
         {
-            ControlService(service, SERVICE_CONTROL_STOP, &status);
-            DeleteService(service);
+            err = GetLastError();
+            if (err == ERROR_SERVICE_ALREADY_RUNNING)
+            {
+                SetLastError(0);
+            }
+            else
+            {
+                // Failed to start service; clean-up:
+                ControlService(service, SERVICE_CONTROL_STOP, &status);
+                DeleteService(service);
+                CloseServiceHandle(service);
+                service = NULL;
+                SetLastError(err);
+            }
         }
-        CloseServiceHandle(service);
     }
+
+    err = GetLastError();
     if (manager != NULL)
     {
         CloseServiceHandle(manager);
     }
     SetLastError(err);
-    return installed;
-}
-
-/*
- * Uninstall the WinDivert driver.
- */
-static BOOLEAN WinDivertDriverUnInstall(VOID)
-{
-    DWORD err;
-    SC_HANDLE manager = NULL, service = NULL;
-    LPWSTR windivert_dir = NULL, windivert_sys = NULL, windivert_inf = NULL,
-        windivert_dll = NULL;
-
-    // Do nothing if the driver is not installed:
-    if (!installed)
-    {
-        return FALSE;
-    }
-
-    // Get driver files:
-    if (!WinDivertDriverFiles(&windivert_dir, &windivert_sys, &windivert_inf,
-            &windivert_dll))
-    {
-        return FALSE;
-    }
-
-    // Load the co-installer:
-    if (WinDivertLoadCoInstaller(windivert_dll) == NULL)
-    {
-        return FALSE;
-    }
-
-    // Pre-uninstall:
-    err = pfnWdfPreDeviceRemove(windivert_inf, WINDIVERT_DRIVER_SECTION);
-    if (err != ERROR_SUCCESS)
-    {
-        goto WinDivertDriverUnInstallExit;
-    }
-
-    // Open the service manager:
-    manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-    if (manager == NULL)
-    {
-        goto WinDivertDriverUnInstallExit;
-    }
-
-    // Open the service:
-    service = OpenService(manager, WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
-    if (service == NULL)
-    {
-        goto WinDivertDriverUnInstallExit;
-    }
-
-    // Delete the service:
-    if (!DeleteService(service))
-    {
-        goto WinDivertDriverUnInstallExit;
-    }
-
-    // Post-uninstall:
-    err = pfnWdfPostDeviceRemove(windivert_inf, WINDIVERT_DRIVER_SECTION);
-    if (err != ERROR_SUCCESS)
-    {
-        SetLastError(err);
-        goto WinDivertDriverUnInstallExit;
-    }
-
-    installed = FALSE;
-
-WinDivertDriverUnInstallExit:
-    free(windivert_dir);
-    free(windivert_sys);
-    free(windivert_inf);
-    free(windivert_dll);
-    if (service != NULL)
-    {
-        CloseServiceHandle(service);
-    }
-    if (manager != NULL)
-    {
-        CloseServiceHandle(manager);
-    }
-    return !installed;
+    
+    return service;
 }
 
 /*
@@ -773,6 +493,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     UINT16 filter_len;
     DWORD err;
     HANDLE handle;
+    SC_HANDLE service;
     UINT32 priority32;
 
     // Parameter checking.
@@ -807,7 +528,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 
         // Open failed because the device isn't installed; install it now.
         SetLastError(0);
-        if (!WinDivertDriverInstall())
+        service = WinDivertDriverInstall();
+        if (service == NULL)
         {
             if (GetLastError() == 0)
             {
@@ -819,14 +541,15 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
             GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
             INVALID_HANDLE_VALUE);
+
+        // Schedule the service to be deleted (once all handles are closed).
+        DeleteService(service);
+        CloseServiceHandle(service);
+
         if (handle == INVALID_HANDLE_VALUE)
         {
             return INVALID_HANDLE_VALUE;
         }
-    }
-    else
-    {
-        installed = TRUE;
     }
 
     // Set the layer:

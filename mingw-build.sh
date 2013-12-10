@@ -28,8 +28,10 @@ do
     if [ $ENV = "i686-w64-mingw32" ]
     then
         CPU=i386
+        BITS=32
     else
         CPU=amd64
+        BITS=64
     fi
     if [ ! -d install/WDDK/$CPU ]
     then
@@ -39,14 +41,16 @@ do
     fi
     echo "BUILD WDDK-$CPU"
     CC="$ENV-gcc"
+    COPTS="-Wall -Wno-pointer-to-int-cast -O2 -Iinclude/"
     STRIP="$ENV-strip"
     if [ -x "`which $CC`" ]
     then
         echo "\tmake install/MINGW/$CPU..."
         mkdir -p "install/MINGW/$CPU"
         echo "\tbuild install/MINGW/$CPU/WinDivert.dll..."
-        $CC -Wall -O2 -Iinclude/ -c dll/windivert.c -o dll/windivert.o
-        $CC -Wall -shared -o "install/MINGW/$CPU/WinDivert.dll" dll/windivert.o
+        $CC $COPTS -c dll/windivert.c -o dll/windivert.o
+        $CC $COPTS -shared -o "install/MINGW/$CPU/WinDivert.dll" \
+            dll/windivert.o
         $STRIP --strip-debug "install/MINGW/$CPU/WinDivert.dll"
         echo "\tbuild install/MINGW/$CPU/netdump.exe..."
         $CC -s -O2 -Iinclude/ examples/netdump/netdump.c \
@@ -64,12 +68,8 @@ do
         $CC -s -O2 -Iinclude/ examples/webfilter/webfilter.c \
             -o "install/MINGW/$CPU/webfilter.exe" -lWinDivert -lws2_32 \
              -L"install/MINGW/$CPU/"
-        echo "\tcopy install/MINGW/$CPU/WinDivert.inf..."
-        cp install/WDDK/$CPU/WinDivert.inf install/MINGW/$CPU
-        echo "\tcopy install/MINGW/$CPU/WinDivert.sys..."
-        cp install/WDDK/$CPU/WinDivert.sys install/MINGW/$CPU
-        echo "\tcopy install/MINGW/$CPU/WdfCoInstaller01009.dll..."
-        cp install/WDDK/$CPU/WdfCoInstaller01009.dll install/MINGW/$CPU
+        echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
+        cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU
     else
         echo "WARNING: $CC not found"
     fi
