@@ -29,9 +29,11 @@ do
     then
         CPU=i386
         BITS=32
+        MANGLE=_
     else
         CPU=amd64
         BITS=64
+        MANGLE=
     fi
     if [ ! -d install/WDDK/$CPU ]
     then
@@ -41,7 +43,9 @@ do
     fi
     echo "BUILD WDDK-$CPU"
     CC="$ENV-gcc"
-    COPTS="-Wall -Wno-pointer-to-int-cast -O2 -Iinclude/"
+    COPTS="-shared -Wall -Wno-pointer-to-int-cast -O2 -Iinclude/ 
+        -Wl,--enable-stdcall-fixup -Wl,--entry=${MANGLE}WinDivertDllEntry"
+    CLIBS="-lgcc -lmsvcrt -lkernel32 -ladvapi32"
     STRIP="$ENV-strip"
     if [ -x "`which $CC`" ]
     then
@@ -49,9 +53,9 @@ do
         mkdir -p "install/MINGW/$CPU"
         echo "\tbuild install/MINGW/$CPU/WinDivert.dll..."
         $CC $COPTS -c dll/windivert.c -o dll/windivert.o
-        $CC $COPTS -shared -o "install/MINGW/$CPU/WinDivert.dll" \
-            dll/windivert.o
-        $STRIP --strip-debug "install/MINGW/$CPU/WinDivert.dll"
+        $CC $COPTS -o "install/MINGW/$CPU/WinDivert.dll" \
+            dll/windivert.o dll/windivert.def -nostdlib $CLIBS
+        $STRIP "install/MINGW/$CPU/WinDivert.dll"
         echo "\tbuild install/MINGW/$CPU/netdump.exe..."
         $CC -s -O2 -Iinclude/ examples/netdump/netdump.c \
             -o "install/MINGW/$CPU/netdump.exe" -lWinDivert -lws2_32 \

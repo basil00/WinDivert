@@ -26,19 +26,6 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-
-#ifndef __MINGW32__
-#include <strsafe.h>
-#else
-extern __stdcall HRESULT StringCchLengthW(LPCWSTR psz, size_t cchMax,
-    size_t *pcchLength);
-#define StringCchLength(a, b, c)        StringCchLengthW((a), (b), (c))
-extern __stdcall HRESULT StringCchCopyW(LPWSTR pszDest, size_t cchDest, 
-    LPCWSTR pszSrc);
-#define StringCchCopy(a, b, c)          StringCchCopyW((a), (b), (c))
-#endif      /* __MINGW32__ */
-
 
 #define WINDIVERTEXPORT
 #include "windivert.h"
@@ -49,7 +36,7 @@ extern __stdcall HRESULT StringCchCopyW(LPWSTR pszDest, size_t cchDest,
 #define WINDIVERT_DRIVER64_SYS          L"\\" WINDIVERT_DRIVER_NAME L"64.sys"
 
 /*
- * ntoh and hton implementation to remove winsock dependency.
+ * Definitions to remove (some) external dependencies:
  */
 #define BYTESWAP16(x)                   \
     ((((x) >> 8) & 0x00FF) | (((x) << 8) & 0xFF00))
@@ -60,6 +47,13 @@ extern __stdcall HRESULT StringCchCopyW(LPWSTR pszDest, size_t cchDest,
 #define htons(x)                        BYTESWAP16(x)
 #define ntohl(x)                        BYTESWAP32(x)
 #define htonl(x)                        BYTESWAP32(x)
+
+static BOOLEAN WinDivertStrLen(const wchar_t *s, size_t maxlen,
+    size_t *lenptr);
+static BOOLEAN WinDivertStrCpy(wchar_t *dst, size_t dstlen,
+    const wchar_t *src);
+static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr);
+static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr);
 
 /*
  * Filter parsing.
@@ -201,8 +195,9 @@ static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
     UINT64 arg, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped);
 static BOOL WinDivertCompileFilter(const char *filter_str,
     WINDIVERT_LAYER layer, windivert_ioctl_filter_t filter, UINT16 *fp);
-static int __cdecl WinDivertFilterTokenNameCompare(const void *a,
-    const void *b);
+static PFILTER_TOKEN_NAME WinDivertTokenLookup(
+    PFILTER_TOKEN_NAME token_names, size_t token_names_len,
+    const char *name);
 static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
     FILTER_TOKEN *tokens, UINT tokensmax);
 static BOOL WinDivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
@@ -300,8 +295,7 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
 
     if (is_32bit)
     {
-        if (FAILED(StringCchLength(WINDIVERT_DRIVER32_SYS, MAX_PATH,
-                &sys_len)))
+        if (!WinDivertStrLen(WINDIVERT_DRIVER32_SYS, MAX_PATH, &sys_len))
         {
             SetLastError(ERROR_BAD_PATHNAME);
             return FALSE;
@@ -309,8 +303,7 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
     }
     else
     {
-        if (FAILED(StringCchLength(WINDIVERT_DRIVER64_SYS, MAX_PATH,
-                &sys_len)))
+        if (!WinDivertStrLen(WINDIVERT_DRIVER64_SYS, MAX_PATH, &sys_len))
         {
             SetLastError(ERROR_BAD_PATHNAME);
             return FALSE;
@@ -327,8 +320,8 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
         SetLastError(ERROR_BAD_PATHNAME);
         return FALSE;
     }
-    if (FAILED(StringCchCopy(sys_str + dir_len, MAX_PATH-dir_len-1,
-            (is_32bit? WINDIVERT_DRIVER32_SYS: WINDIVERT_DRIVER64_SYS))))
+    if (!WinDivertStrCpy(sys_str + dir_len, MAX_PATH-dir_len-1,
+            (is_32bit? WINDIVERT_DRIVER32_SYS: WINDIVERT_DRIVER64_SYS)))
     {
         SetLastError(ERROR_BAD_PATHNAME);
         return FALSE;
@@ -754,14 +747,32 @@ static BOOL WinDivertCompileFilter(const char *filter_str,
 }
 
 /*
- * Compare two FILTER_TOKEN_NAMEs.
+ * Lookup a token.
  */
-static int __cdecl WinDivertFilterTokenNameCompare(const void *a,
-    const void *b)
+static PFILTER_TOKEN_NAME WinDivertTokenLookup(
+    PFILTER_TOKEN_NAME token_names, size_t token_names_len,
+    const char *name)
 {
-    PFILTER_TOKEN_NAME na = (PFILTER_TOKEN_NAME)a;
-    PFILTER_TOKEN_NAME nb = (PFILTER_TOKEN_NAME)b;
-    return strcmp(na->name, nb->name);
+    int lo = 0, hi = (int)token_names_len-1, mid;
+    int cmp;
+    while (hi >= lo)
+    {
+        mid = (lo + hi) / 2;
+        cmp = strcmp(token_names[mid].name, name);
+        if (cmp > 0)
+        {
+            lo = mid+1;
+        }
+        else if (cmp < 0)
+        {
+            hi = mid-1;
+        }
+        else
+        {
+            return &token_names[mid];
+        }
+    }
+    return NULL;
 }
 
 /*
@@ -835,7 +846,7 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"udp.PayloadLength",   FILTER_TOKEN_UDP_PAYLOAD_LENGTH},
         {"udp.SrcPort",         FILTER_TOKEN_UDP_SRC_PORT},
     };
-    FILTER_TOKEN_NAME key, *result;
+    FILTER_TOKEN_NAME *result;
     char c;
     char token[FILTER_TOKEN_MAXLEN];
     UINT i = 0, j;
@@ -938,10 +949,8 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             token[j] = '\0';
 
             // Check for symbol:
-            key.name = token;
-            result = (PFILTER_TOKEN_NAME)bsearch((const void *)&key,
-                token_names, sizeof(token_names) / sizeof(FILTER_TOKEN_NAME),
-                sizeof(FILTER_TOKEN_NAME), WinDivertFilterTokenNameCompare);
+            result = WinDivertTokenLookup((PFILTER_TOKEN_NAME)token_names,
+                sizeof(token_names) / sizeof(FILTER_TOKEN_NAME), token);
             if (result != NULL)
             {
                 switch (layer)
@@ -961,9 +970,7 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             }
 
             // Check for base 10 number:
-            errno = 0;
-            num = strtoul(token, &end, 10);
-            if (errno == 0 && *end == '\0')
+            if (WinDivertAToI(token, &end, &num) && *end == '\0')
             {
                 tokens[tp].kind   = FILTER_TOKEN_NUMBER;
                 tokens[tp].val[0] = num;
@@ -972,9 +979,7 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             }
 
             // Check for base 16 number:
-            errno = 0;
-            num = strtoul(token, &end, 16);
-            if (errno == 0 && *end == '\0')
+            if (WinDivertAToX(token, &end, &num) && *end == '\0')
             {
                 tokens[tp].kind   = FILTER_TOKEN_NUMBER;
                 tokens[tp].val[0] = num;
@@ -1736,13 +1741,11 @@ static UINT16 WinDivertHelperCalcChecksum(PVOID pseudo_header,
 extern BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
 {
     UINT32 addr = 0;
-    UINT part, i;
+    UINT32 part, i;
 
-    errno = 0;
     for (i = 0; i < 4; i++)
     {
-        part = strtoul(str, (char **)&str, 10);
-        if (errno != 0 || part > UINT8_MAX)
+        if (!WinDivertAToI(str, (char **)&str, &part) || part > UINT8_MAX)
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
@@ -1821,7 +1824,7 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
-        part = strtoul(part_str, NULL, 16);
+        WinDivertAToX(part_str, NULL, &part);
         if (!end)
         {
             addr[i] = (UINT16)ntohs(part);
@@ -1864,9 +1867,106 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
     }
     if (addr_ptr != NULL)
     {
-        memcpy(addr_ptr, addr, sizeof(addr));
+        for (i = 0; i < sizeof(addr) / sizeof(UINT32); i++)
+        {
+            addr_ptr[i] = addr[i];
+        }
     }
 
+    return TRUE;
+}
+
+/*****************************************************************************/
+/* REPLACEMENTS                                                              */
+/*****************************************************************************/
+
+static BOOLEAN WinDivertStrLen(const wchar_t *s, size_t maxlen,
+    size_t *lenptr)
+{
+    size_t i;
+    for (i = 0; s[i]; i++)
+    {
+        if (i > maxlen)
+        {
+            return FALSE;
+        }
+    }
+    *lenptr = i;
+    return TRUE;
+}
+
+static BOOLEAN WinDivertStrCpy(wchar_t *dst, size_t dstlen, const wchar_t *src)
+{
+    size_t i;
+    for (i = 0; src[i]; i++)
+    {
+        if (i > dstlen)
+        {
+            return FALSE;
+        }
+        dst[i] = src[i];
+    }
+    if (i > dstlen)
+    {
+        return FALSE;
+    }
+    dst[i] = src[i];
+    return TRUE;
+}
+
+static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr)
+{
+    size_t i = 0;
+    UINT32 num = 0, num0;
+    if (str[i] == '\0')
+    {
+        return FALSE;
+    }
+    for (; str[i] && isdigit(str[i]); i++)
+    {
+        num0 = num;
+        num *= 10;
+        num += (UINT32)(str[i] - '0');
+        if (num0 > num)
+        {
+            return FALSE;
+        }
+    }
+    if (endptr != NULL)
+    {
+        *endptr = (char *)str + i;
+    }
+    *intptr = num;
+    return TRUE;
+}
+
+static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
+{
+    size_t i = 0;
+    UINT32 num = 0, num0;
+    if (str[i] == '\0')
+    {
+        return FALSE;
+    }
+    if (str[i] == '0' && str[i+1] == 'x')
+    {
+        i += 2;
+    }
+    for (; str[i] && isxdigit(str[i]); i++)
+    {
+        num0 = num;
+        num *= 16;
+        num += (UINT32)(str[i] - '0');
+        if (num0 > num)
+        {
+            return FALSE;
+        }
+    }
+    if (endptr != NULL)
+    {
+        *endptr = (char *)str + i;
+    }
+    *intptr = num;
     return TRUE;
 }
 
