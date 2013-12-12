@@ -104,10 +104,8 @@ This will build the following files and place them in the
 <tt>install\WDDK</tt> subdirectory:
 <ul>
 <li> <tt>WinDivert.dll</tt>: User-mode library.</li>
-<li> <tt>WinDivert.sys</tt>: Kernel-mode WDF/WFP call-out driver.</li>
-<li> <tt>WinDivert.inf</tt>: INF file for <tt>WinDivert.sys</tt>.</li>
-<li> <tt>WdfCoInstaller*.dll</tt>: Microsoft WDF co-installer for
-    <tt>WinDivert.sys</tt>.</li>
+<li> <tt>WinDivert32.sys</tt> or <tt>WinDivert64.sys</tt>:
+    Kernel-mode WDF/WFP call-out driver.</li>
 <li> <tt>*.exe</tt>: Sample applications from the <tt>divert\examples</tt>
     directory.</li>
 </ul></li>
@@ -119,10 +117,9 @@ See below for Visual Studio 2012 and MinGW support.
 
 <a name="driver_signing"><h3>2.1 Driver Signing</h3></a>
 <p>
-Before the WinDivert package can be used, the <tt>WinDivert.sys</tt> driver
-must contain a valid digital signature.
-This is Microsoft policy for all kernel drivers in recent versions of
-Windows.
+Before the WinDivert package can be used, the
+<tt>WinDivert32.sys</tt>/<tt>WinDivert64.sys</tt> driver
+must be digitally signed.
 See <a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487317.aspx">Driver Signing Requirements for Windows</a>
 for more information.
 </p>
@@ -164,30 +161,134 @@ This will build MinGW compatible files and place them in the
 <a name="installing"><h2>3. Installing</h2></a>
 <p>
 WinDivert does not require any special installation.
-Simply place the <tt>WinDivert.dll</tt>, <tt>WinDivert.sys</tt>,
-<tt>WinDivert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files in the
-application's home directory.
+Depending on your target configuration, simply place the following files in
+your application's home directory:
+</p>
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Application Type
+</th>
+<th>
+Target Windows Type
+</th>
+<th>
+Files Required
+</th>
+</tr>
+<tr>
+<td>
+32-bit
+</td>
+<td>
+32-bit Windows only
+</td>
+<td>
+<tt>WinDivert.dll</tt> (32-bit version) and <tt>WinDivert32.sys</tt>
+</td>
+</tr>
+<tr>
+<td>
+64-bit
+</td>
+<td>
+64-bit Windows only
+</td>
+<td>
+<tt>WinDivert.dll</tt> (64-bit version) and <tt>WinDivert64.sys</tt>
+</td>
+</tr>
+<tr>
+<td>
+32-bit
+</td>
+<td>
+Both 32-bit and 64-bit Windows
+</td>
+<td>
+<tt>WinDivert.dll</tt> (32-bit version), <tt>WinDivert32.sys</tt>,
+    and <tt>WinDivert64.sys</tt>
+</td>
+</tr>
+</table>
+</center>
+<p>
+The WinDivert driver is automatically (and silently) installed on demand
+whenever your application calls
+<a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
+The calling application must have Administrator privileges.
 </p>
 <p>
-The WinDivert driver is automatically installed on demand whenever your
-application calls <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
-The driver installation is also silent.
-The calling application must be running with Administrator privileges.
+The <tt>WinDivert.dll</tt> also depends on a C run-time library.
+This is not distributed with the WinDivert binaries, and must be 
+installed/distributed separately if required.
 </p>
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Build/Compiler
+</th>
+<th>
+C-Runtime Dependency
+</th>
+<th>
+Installed on Windows by Default?
+</th>
+</tr>
+<tr>
+<td>
+WDDK (Windows Driver Kit 7.1)
+</td>
+<td>
+<tt>MSVCRT.dll</tt>
+</td>
+<td>
+Yes
+</td>
+</tr>
+<tr>
+<td>
+MSVC (Visual Studio 2012)
+</td>
+<td>
+<tt>MSVCRT110.dll</tt>
+</td>
+<td>
+No.
+Must be installed separately or included with your application.
+</td>
+</tr>
+<tr>
+<td>
+MINGW
+</td>
+<td>
+<tt>MSVCRT.dll</tt>
+</td>
+<td>
+Yes
+</td>
+</tr>
+</table>
+</center>
 
 <hr>
 <a name="uninstalling"><h2>4. Uninstalling</h2></a>
 <p>
-To uninstall, simply delete the <tt>WinDivert.dll</tt>, <tt>WinDivert.sys</tt>,
-<tt>WinDivert.inf</tt>, and <tt>WdfCoInstaller*.dll</tt> files.
-The WinDivert driver is silently uninstalled when the calling application
-terminates or unloads the <tt>WinDivert.dll</tt> library.
-The WinDivert driver can also be removed manually by issuing the following
+To uninstall, simply delete the <tt>WinDivert.dll</tt>,
+<tt>WinDivert32.sys</tt>, and <tt>WinDivert64.sys</tt> files.
+If already running, the WinDivert driver will be automatically
+uninstalled during the next machine reboot.
+The WinDivert driver can also be manually removed by issuing the following
 commands at the command prompt
 <pre>
 sc stop WinDivert1.1
 sc delete WinDivert1.1
 </pre>
+Note that this is not recommended as it will interfere with other
+applications that depend on WinDivert.
 </p>
 
 <hr>
@@ -286,9 +387,9 @@ Description
 2
 </td>
 <td>
-One or more of the <tt>WinDivert.sys</tt>,
-<tt>WinDivert.inf</tt>, or <tt>WdfCoInstaller*.dll</tt> files were not
-found.
+The driver files
+<tt>WinDivert32.sys</tt> or <tt>WinDivert64.sys</tt>
+were not found.
 </td>
 </tr>
 <tr>
@@ -321,7 +422,8 @@ This indicates an invalid packet filter string, layer, priority, or flags.
 577
 </td>
 <td>
-The <tt>WinDivert.sys</tt> driver does not have a valid digital signature
+The <tt>WinDivert32.sys</tt> or <tt>WinDivert64.sys</tt> driver does not
+have a valid digital signature
 (see the <a href="#driver_signing">driver signing requirements</a> above).
 </td>
 </tr>
@@ -335,9 +437,7 @@ The <tt>WinDivert.sys</tt> driver does not have a valid digital signature
 <td>
 This error occurs for various reasons, including:
 <ol>
-<li> attempting to load the 32-bit <tt>WinDivert.sys</tt> driver on a 64-bit
-system (or vice versa);</li>
-<li> the <tt>WinDivert.sys</tt> driver is blocked by security software; or
+<li> the WinDivert driver is blocked by security software; or</li>
 <li> you are using a virtualization environment that does not support
 drivers.</li>
 </ol>
@@ -1396,14 +1496,16 @@ They are
 <li><i>Injecting inbound ICMP/ICMPv6 messages</i>:
     For some ICMP/ICMPv6 messages, inbound injection does not work.
     An error will be returned and the packet will be lost.
-    It is suspected that this is an issue with the WFP framework on which
-    WinDivert is built.
     The work-around is to inject inbound ICMP messages as <tt>outbound</tt>.
     </li>
 <li><i>No IPv6 extension header support</i>:
     Currently there is no filter support for IPv6 packets with extension
     headers.
     The work around is to capture all IPv6 traffic.</li>
+<li><i>The forward layer does not interact well with the Windows NAT</i>:
+    It is not possible to block packets pre-NAT with WinDivert.
+    As a general principle, you should not try and mix WinDivert at the
+    forward layer with the Windows NAT implementation.
 </ul>
 </p>
 
