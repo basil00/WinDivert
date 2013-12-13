@@ -759,11 +759,11 @@ static PFILTER_TOKEN_NAME WinDivertTokenLookup(
     {
         mid = (lo + hi) / 2;
         cmp = strcmp(token_names[mid].name, name);
-        if (cmp > 0)
+        if (cmp < 0)
         {
             lo = mid+1;
         }
-        else if (cmp < 0)
+        else if (cmp > 0)
         {
             hi = mid-1;
         }
