@@ -194,16 +194,15 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, windivert_req_context_get);
 #define WINDIVERT_PACKET_SIZE               (sizeof(struct packet_s))
 struct packet_s
 {
-    LIST_ENTRY entry;                       // Entry for queue
-    UINT8 direction;                        // Packet direction
-    UINT32 if_idx;                          // Interface index
-    UINT32 sub_if_idx;                      // Sub-interface index
-    BOOL ip_checksum;                       // IP checksum is valid
-    BOOL tcp_checksum;                      // TCP checksum is valid
-    BOOL udp_checksum;                      // UDP checksum is valid
-    BOOL timer_ticktock;                    // Time-out ticktock
-    ULONG data_len;                         // Length of data
-    char data[];                            // Packet data
+    LIST_ENTRY entry;                       // Entry for queue.
+    PNET_BUFFER_LIST net_buffer_list;       // Clone of the net buffer list.
+    UINT8 direction;                        // Packet direction.
+    UINT32 if_idx;                          // Interface index.
+    UINT32 sub_if_idx;                      // Sub-interface index.
+    BOOL ip_checksum;                       // IP checksum is valid.
+    BOOL tcp_checksum;                      // TCP checksum is valid.
+    BOOL udp_checksum;                      // UDP checksum is valid.
+    BOOL timer_ticktock;                    // Time-out ticktock.
 };
 typedef struct packet_s *packet_t;
 
@@ -372,7 +371,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
-    PNET_BUFFER buffer, UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx);
+    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx);
 static void windivert_free_packet(packet_t packet);
 static UINT16 windivert_checksum(const void *pseudo_header,
     size_t pseudo_header_len, const void *data, size_t size);
@@ -1145,6 +1144,7 @@ VOID windivert_read_service_work_item(IN WDFWORKITEM item)
  */
 static void windivert_read_service(context_t context)
 {
+    PNET_BUFFER buffer;
     KLOCK_QUEUE_HANDLE lock_handle;
     WDFREQUEST request;
     PLIST_ENTRY entry;
@@ -1191,10 +1191,19 @@ static void windivert_read_service(context_t context)
             goto windivert_read_service_complete;
         }
         dst_len = MmGetMdlByteCount(dst_mdl);
-        src_len = packet->data_len;
+        buffer = NET_BUFFER_LIST_FIRST_NB(packet->net_buffer_list);
+        src_len = NET_BUFFER_DATA_LENGTH(buffer);
         dst_len = (src_len < dst_len? src_len: dst_len);
-        RtlCopyMemory(dst, packet->data, dst_len);
-
+        src = NdisGetDataBuffer(buffer, dst_len, NULL, 1, 0);
+        if (src == NULL)
+        {
+            NdisGetDataBuffer(buffer, dst_len, dst, 1, 0);
+        }
+        else
+        {
+            RtlCopyMemory(dst, src, dst_len);
+        }
+        
         // Write the address information.
         req_context = windivert_req_context_get(request);
         addr = req_context->addr;
@@ -1988,8 +1997,8 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     {
         if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
         {
-            if (!windivert_queue_packet(context, buffers, buffer, direction,
-                    if_idx, sub_if_idx))
+            if (!windivert_queue_packet(context, buffers, direction, if_idx,
+                    sub_if_idx))
             {
                 goto windivert_classify_callout_exit;
             }
@@ -2042,36 +2051,29 @@ windivert_classify_callout_exit:
  * Queue a NET_BUFFER.
  */
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
-    PNET_BUFFER buffer, UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx)
+    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksum_info;
     PLIST_ENTRY entry;
-    ULONG length;
-    PVOID src;
     packet_t packet;
     NTSTATUS status;
 
-    length = NET_BUFFER_DATA_LENGTH(buffer);
     packet = (packet_t)ExAllocatePoolWithTag(NonPagedPool,
-        WINDIVERT_PACKET_SIZE + length, WINDIVERT_TAG);
+        WINDIVERT_PACKET_SIZE, WINDIVERT_TAG);
     if (packet == NULL)
     {
         return FALSE;
     }
 
-    // Copy the packet data
-    src = NdisGetDataBuffer(buffer, length, NULL, 1, 0);
-    if (src == NULL)
+    status = FwpsAllocateCloneNetBufferList0(buffers, pool_handle, NULL,
+        0, &packet->net_buffer_list);
+    if (!NT_SUCCESS(status))
     {
-        NdisGetDataBuffer(buffer, length, packet->data, 1, 0);
+        ExFreePoolWithTag(packet, WINDIVERT_TAG);
+        return FALSE;
     }
-    else
-    {
-        RtlCopyMemory(packet->data, src, length);
-    }
-    packet->data_len = length;
- 
+
     checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
         TcpIpChecksumNetBufferListInfo);
     packet->direction = direction;
@@ -2126,6 +2128,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
  */
 static void windivert_free_packet(packet_t packet)
 {
+    FwpsFreeCloneNetBufferList0(packet->net_buffer_list, 0);
     ExFreePoolWithTag(packet, WINDIVERT_TAG);
 }
 
