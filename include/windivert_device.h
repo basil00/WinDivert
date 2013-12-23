@@ -146,6 +146,7 @@
     ((UINT32)((INT32)(priority16) + 0x7FFF + 1))
 #define WINDIVERT_PRIORITY_DEFAULT                  WINDIVERT_PRIORITY(0)
 #define WINDIVERT_PRIORITY_MAX                      WINDIVERT_PRIORITY(1000)
+#define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY(-1000)
 
 /*
  * WinDivert parameters.

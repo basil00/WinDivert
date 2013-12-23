@@ -254,7 +254,7 @@ int __cdecl main(int argc, char **argv)
             putchar(' ');
 
 
-            if (ip_header != NULL)
+            if (ip_header != NULL && !tcp_header->Rst && !tcp_header->Fin)
             {
                 reset->ip.SrcAddr = ip_header->DstAddr;
                 reset->ip.DstAddr = ip_header->SrcAddr;
@@ -280,7 +280,7 @@ int __cdecl main(int argc, char **argv)
                 }
             }
 
-            if (ipv6_header != NULL)
+            if (ipv6_header != NULL && !tcp_header->Rst && !tcp_header->Fin)
             {
                 memcpy(resetv6->ipv6.SrcAddr, ipv6_header->DstAddr,
                     sizeof(resetv6->ipv6.SrcAddr));
@@ -315,9 +315,6 @@ int __cdecl main(int argc, char **argv)
         
             if (ip_header != NULL)
             {
-                // NOTE: For some ICMP error messages, WFP does not seem to
-                //       support INBOUND injection.  As a work-around, we
-                //       always inject OUTBOUND.
                 UINT icmp_length = ip_header->HdrLength*sizeof(UINT32) + 8;
                 memcpy(dnr->data, ip_header, icmp_length);
                 icmp_length += sizeof(ICMPPACKET);
@@ -328,7 +325,7 @@ int __cdecl main(int argc, char **argv)
                 WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length, 0);
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = WINDIVERT_DIRECTION_OUTBOUND;
+                send_addr.Direction = !recv_addr.Direction;
                 if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
                     NULL))
                 {

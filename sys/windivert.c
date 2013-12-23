@@ -22,6 +22,8 @@
 #include <wdf.h>
 #include <stdarg.h>
 #include <ntstrsafe.h>
+#define INITGUID
+#include <guiddef.h>
 
 #include "windivert_device.h"
 
@@ -140,16 +142,14 @@ struct context_s
     UINT64 flags;                               // Context's flags.
     UINT32 priority_0;                          // Context's priority (initial).
     UINT32 priority;                            // Context's priority.
-    GUID sublayer_guid[WINDIVERT_CONTEXT_MAXLAYERS];
-                                                // Sublayer GUIDs.
     GUID callout_guid[WINDIVERT_CONTEXT_MAXLAYERS];
                                                 // Callout GUIDs.
     GUID filter_guid[WINDIVERT_CONTEXT_MAXLAYERS];
                                                 // Filter GUIDs.
-    BOOL registered[WINDIVERT_CONTEXT_MAXLAYERS];
-                                                // What is registered?
-    HANDLE engine_handle;                       // WFP engine handle.
+    BOOL installed[WINDIVERT_CONTEXT_MAXLAYERS];
+                                                // What is installed?
     LONG filter_on;                             // Is filter on?
+    HANDLE engine_handle;                       // WFP engine handle.
     filter_t filter;                            // Packet filter.
 };
 typedef struct context_s context_s;
@@ -172,7 +172,8 @@ struct layer_s
     wchar_t *callout_desc;                  // Call-out description.
     wchar_t *filter_name;                   // Filter name.
     wchar_t *filter_desc;                   // Filter description.
-    GUID guid;                              // WFP layer GUID.
+    GUID layer_guid;                        // WFP layer GUID.
+    GUID sublayer_guid;                     // Sub-layer GUID.
     windivert_callout_t callout;            // Call-out.
 };
 typedef struct layer_s *layer_t;
@@ -196,6 +197,8 @@ struct packet_s
 {
     LIST_ENTRY entry;                       // Entry for queue.
     PNET_BUFFER_LIST net_buffer_list;       // Clone of the net buffer list.
+    PVOID data;                             // Copy of the packet data.
+    size_t data_len;                        // Length of `data'.
     UINT8 direction;                        // Packet direction.
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
@@ -301,13 +304,32 @@ struct udphdr
  */
 #define UINT8_MAX       0xFF
 #define UINT16_MAX      0xFFFF
+#define UINT32_MAX      0xFFFFFFFF
+#define INT16_MAX       0x7FFF
 
 /*
- * Global handles.
+ * Global state.
  */
-HANDLE inject_handle;
-HANDLE injectv6_handle;
-NDIS_HANDLE pool_handle;
+HANDLE inject_handle = NULL;
+HANDLE injectv6_handle = NULL;
+NDIS_HANDLE pool_handle = NULL;
+HANDLE engine_handle = NULL;
+LONG priority_counter = 0;
+
+/*
+ * Priorities.
+ */
+#define WINDIVERT_CONTEXT_PRIORITY(priority0)                               \
+    windivert_context_priority(priority0)
+static UINT32 windivert_context_priority(UINT32 priority0)
+{
+    UINT16 priority1 = (UINT16)InterlockedIncrement(&priority_counter);
+    priority0 -= WINDIVERT_PRIORITY_MIN;
+    return ((priority0 << 16) | ((UINT32)priority1 & 0x0000FFFF));
+}
+
+#define WINDIVERT_FILTER_WEIGHT(priority)                                   \
+    ((UINT64)(UINT32_MAX - (priority)))
 
 /*
  * Prototypes.
@@ -321,10 +343,12 @@ static BOOLEAN windivert_context_verify(context_t context,
     context_state_t state);
 extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     IN WDFFILEOBJECT object);
-static NTSTATUS windivert_register_callouts(context_t context, BOOL is_inbound,
+static NTSTATUS windivert_install_sublayer(layer_t layer);
+static NTSTATUS windivert_install_callouts(context_t context, BOOL is_inbound,
     BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6);
-static NTSTATUS windivert_register_callout(context_t context, UINT idx,
+static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     layer_t layer);
+static void windivert_uninstall_callouts(context_t context);
 extern VOID windivert_timer(IN WDFTIMER timer);
 extern VOID windivert_cleanup(IN WDFFILEOBJECT object);
 extern VOID windivert_close(IN WDFFILEOBJECT object);
@@ -387,7 +411,29 @@ static BOOL windivert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
     UINT8 field, UINT32 arg);
 
 /*
- * Defined layers.
+ * WinDivert sublayer GUIDs
+ */
+DEFINE_GUID(WINDIVERT_SUBLAYER_INBOUND_IPV4_GUID,
+    0xAC32F237, 0x1408, 0x435A,
+    0x90, 0xF1, 0xF1, 0xAA, 0x58, 0x4C, 0xCA, 0x7F);
+DEFINE_GUID(WINDIVERT_SUBLAYER_OUTBOUND_IPV4_GUID,
+    0xF229AF90, 0xC7CC, 0x4351,
+    0x8A, 0x5E, 0x51, 0xB1, 0xE1, 0xB5, 0x97, 0x0A);
+DEFINE_GUID(WINDIVERT_SUBLAYER_INBOUND_IPV6_GUID,
+    0x0C25C18F, 0x4F3E, 0x4F3E,
+    0xBA, 0xB4, 0x26, 0xBD, 0x1E, 0x6E, 0x41, 0x31);
+DEFINE_GUID(WINDIVERT_SUBLAYER_OUTBOUND_IPV6_GUID,
+    0x26966F53, 0x4BCD, 0x4DE2,
+    0xAA, 0x0E, 0xA6, 0x70, 0x59, 0x20, 0x37, 0xC0);
+DEFINE_GUID(WINDIVERT_SUBLAYER_FORWARD_IPV4_GUID,
+    0x2F472BD8, 0x346F, 0x4D9C,
+    0x8A, 0xEE, 0x68, 0xCA, 0xFD, 0x00, 0x71, 0x11);
+DEFINE_GUID(WINDIVERT_SUBLAYER_FORWARD_IPV6_GUID,
+    0xA196BAC6, 0x6546, 0x4FD5,
+    0x96, 0xD3, 0x18, 0xD5, 0x7D, 0x5C, 0x3D, 0x78);
+
+/*
+ * WinDivert supported layers.
  */
 static struct layer_s layer_inbound_network_ipv4_0 =
 {
@@ -397,6 +443,7 @@ static struct layer_s layer_inbound_network_ipv4_0 =
     L"" WINDIVERT_DEVICE_NAME L" callout network (inbound IPv4)",
     L"" WINDIVERT_DEVICE_NAME L"_FilterInboundNetworkIPv4",
     L"" WINDIVERT_DEVICE_NAME L" filter network (inbound IPv4)",
+    {0},
     {0},
     windivert_classify_inbound_network_v4_callout,
 };
@@ -411,6 +458,7 @@ static struct layer_s layer_outbound_network_ipv4_0 =
     L"" WINDIVERT_DEVICE_NAME L"_FilterOutboundNetworkIPv4",
     L"" WINDIVERT_DEVICE_NAME L" filter network (outbound IPv4)",
     {0},
+    {0},
     windivert_classify_outbound_network_v4_callout,
 };
 static layer_t layer_outbound_network_ipv4 = &layer_outbound_network_ipv4_0;
@@ -423,6 +471,7 @@ static struct layer_s layer_inbound_network_ipv6_0 =
     L"" WINDIVERT_DEVICE_NAME L" callout network (inbound IPv6)",
     L"" WINDIVERT_DEVICE_NAME L"_FilterInboundNetworkIPv6",
     L"" WINDIVERT_DEVICE_NAME L" filter network (inbound IPv6)",
+    {0},
     {0},
     windivert_classify_inbound_network_v6_callout,
 };
@@ -437,6 +486,7 @@ static struct layer_s layer_outbound_network_ipv6_0 =
     L"" WINDIVERT_DEVICE_NAME L"_FilterOutboundNetworkIPv6",
     L"" WINDIVERT_DEVICE_NAME L" filter network (outbound IPv6)",
     {0},
+    {0},
     windivert_classify_outbound_network_v6_callout,
 };
 static layer_t layer_outbound_network_ipv6 = &layer_outbound_network_ipv6_0;
@@ -450,6 +500,7 @@ static struct layer_s layer_forward_network_ipv4_0 =
     L"" WINDIVERT_DEVICE_NAME L"_FilterForwardNetworkIPv4",
     L"" WINDIVERT_DEVICE_NAME L" filter network (forward IPv4)",
     {0},
+    {0},
     windivert_classify_forward_network_v4_callout,
 };
 static layer_t layer_forward_network_ipv4 = &layer_forward_network_ipv4_0;
@@ -462,6 +513,7 @@ static struct layer_s layer_forward_network_ipv6_0 =
     L"" WINDIVERT_DEVICE_NAME L" callout network (forward IPv6)",
     L"" WINDIVERT_DEVICE_NAME L"_FilterForwardNetworkIPv6",
     L"" WINDIVERT_DEVICE_NAME L" filter network (forward IPv6)",
+    {0},
     {0},
     windivert_classify_forward_network_v6_callout,
 };
@@ -491,12 +543,24 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     DEBUG("LOAD: loading WinDivert driver");
 
     // Initialize the layers.
-    layer_inbound_network_ipv4->guid    = FWPM_LAYER_INBOUND_IPPACKET_V4;
-    layer_outbound_network_ipv4->guid   = FWPM_LAYER_OUTBOUND_IPPACKET_V4;
-    layer_inbound_network_ipv6->guid    = FWPM_LAYER_INBOUND_IPPACKET_V6;
-    layer_outbound_network_ipv6->guid   = FWPM_LAYER_OUTBOUND_IPPACKET_V6;
-    layer_forward_network_ipv4->guid    = FWPM_LAYER_IPFORWARD_V4;
-    layer_forward_network_ipv6->guid    = FWPM_LAYER_IPFORWARD_V6;
+    layer_inbound_network_ipv4->layer_guid = FWPM_LAYER_INBOUND_IPPACKET_V4;
+    layer_outbound_network_ipv4->layer_guid = FWPM_LAYER_OUTBOUND_IPPACKET_V4;
+    layer_inbound_network_ipv6->layer_guid = FWPM_LAYER_INBOUND_IPPACKET_V6;
+    layer_outbound_network_ipv6->layer_guid = FWPM_LAYER_OUTBOUND_IPPACKET_V6;
+    layer_forward_network_ipv4->layer_guid = FWPM_LAYER_IPFORWARD_V4;
+    layer_forward_network_ipv6->layer_guid = FWPM_LAYER_IPFORWARD_V6;
+    layer_inbound_network_ipv4->sublayer_guid =
+        WINDIVERT_SUBLAYER_INBOUND_IPV4_GUID;
+    layer_outbound_network_ipv4->sublayer_guid = 
+        WINDIVERT_SUBLAYER_OUTBOUND_IPV4_GUID;
+    layer_inbound_network_ipv6->sublayer_guid = 
+        WINDIVERT_SUBLAYER_INBOUND_IPV6_GUID;
+    layer_outbound_network_ipv6->sublayer_guid =
+        WINDIVERT_SUBLAYER_OUTBOUND_IPV6_GUID;
+    layer_forward_network_ipv4->sublayer_guid =
+        WINDIVERT_SUBLAYER_FORWARD_IPV4_GUID;
+    layer_forward_network_ipv6->sublayer_guid =
+        WINDIVERT_SUBLAYER_FORWARD_IPV6_GUID;
 
     // Configure ourself as a non-PnP driver:
     WDF_DRIVER_CONFIG_INIT(&config, WDF_NO_EVENT_CALLBACK);
@@ -507,7 +571,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create WDF driver", status);
-        return status;
+        goto driver_entry_exit;
     }
     device_init = WdfControlDeviceInitAllocate(driver,
         &SDDL_DEVOBJ_SYS_ALL_ADM_ALL);
@@ -516,7 +580,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         status = STATUS_INSUFFICIENT_RESOURCES;
         DEBUG_ERROR("failed to allocate WDF control device init structure",
             status);
-        return status;
+        goto driver_entry_exit;
     }
     WdfDeviceInitSetDeviceType(device_init, FILE_DEVICE_NETWORK);
     WdfDeviceInitSetIoType(device_init, WdfDeviceIoDirect);
@@ -525,7 +589,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     {
         DEBUG_ERROR("failed to create WDF device name", status);
         WdfDeviceInitFree(device_init);
-        return status;
+        goto driver_entry_exit;
     }
     WDF_FILEOBJECT_CONFIG_INIT(&file_config, windivert_create, windivert_close,
         windivert_cleanup);
@@ -539,7 +603,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     {
         DEBUG_ERROR("failed to create WDF control device", status);
         WdfDeviceInitFree(device_init);
-        return status;
+        goto driver_entry_exit;
     }
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue_config,
         WdfIoQueueDispatchParallel);
@@ -553,13 +617,13 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create default WDF queue", status);
-        return status;
+        goto driver_entry_exit;
     }
     status = WdfDeviceCreateSymbolicLink(device, &dos_device_name);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create device symbolic link", status);
-        return status;
+        goto driver_entry_exit;
     }
     WdfControlFinishInitializing(device);
 
@@ -570,7 +634,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to create WFP packet injection handle", status);
-        return status;
+        goto driver_entry_exit;
     }
     status = FwpsInjectionHandleCreate0(AF_INET6, 
         FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
@@ -579,8 +643,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     {
         DEBUG_ERROR("failed to create WFP ipv6 packet injection handle",
             status);
-        FwpsInjectionHandleDestroy0(inject_handle);
-        return status;
+        goto driver_entry_exit;
     }
 
     // Create the packet pool handle.
@@ -596,12 +659,75 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
         DEBUG_ERROR("failed to allocate net buffer list pool", status);
-        FwpsInjectionHandleDestroy0(inject_handle);
-        FwpsInjectionHandleDestroy0(injectv6_handle);
-        return status;
+        goto driver_entry_exit;
     }
 
-    return STATUS_SUCCESS;
+    // Open a handle to the filter engine:
+    status = FwpmEngineOpen0(NULL, RPC_C_AUTHN_DEFAULT, NULL, NULL,
+        &engine_handle);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to create WFP engine handle", status);
+        goto driver_entry_exit;
+    }
+
+    // Register WFP sub-layers:
+    status = windivert_install_sublayer(layer_inbound_network_ipv4);
+    if (!NT_SUCCESS(status))
+    {
+driver_entry_sublayer_error:
+        DEBUG_ERROR("failed to install WFP sub-layer", status);
+        goto driver_entry_exit;
+    }
+    status = windivert_install_sublayer(layer_outbound_network_ipv4);
+    if (!NT_SUCCESS(status))
+    {
+        goto driver_entry_sublayer_error;
+    }
+    status = windivert_install_sublayer(layer_inbound_network_ipv6);
+    if (!NT_SUCCESS(status))
+    {
+        goto driver_entry_sublayer_error;
+    }
+    status = windivert_install_sublayer(layer_outbound_network_ipv6);
+    if (!NT_SUCCESS(status))
+    {
+        goto driver_entry_sublayer_error;
+    }
+    status = windivert_install_sublayer(layer_forward_network_ipv4);
+    if (!NT_SUCCESS(status))
+    {
+        goto driver_entry_sublayer_error;
+    }
+    status = windivert_install_sublayer(layer_forward_network_ipv6);
+    if (!NT_SUCCESS(status))
+    {
+        goto driver_entry_sublayer_error;
+    }
+
+driver_entry_exit:
+
+    if (!NT_SUCCESS(status))
+    {
+        if (inject_handle != NULL)
+        {
+            FwpsInjectionHandleDestroy0(inject_handle);
+        }
+        if (injectv6_handle != NULL)
+        {
+            FwpsInjectionHandleDestroy0(injectv6_handle);
+        }
+        if (pool_handle != NULL)
+        {
+            NdisFreeNetBufferListPool(pool_handle);
+        }
+        if (engine_handle != NULL)
+        {
+            FwpmEngineClose0(engine_handle);
+        }
+    }
+
+    return status;
 }
 
 /*
@@ -610,9 +736,46 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
 extern VOID windivert_unload(IN WDFDRIVER Driver)
 {
     DEBUG("UNLOAD: unloading the WinDivert driver");
+
+    FwpmSubLayerDeleteByKey0(engine_handle,
+        &layer_inbound_network_ipv4->sublayer_guid);
+    FwpmSubLayerDeleteByKey0(engine_handle,
+        &layer_outbound_network_ipv4->sublayer_guid);
+    FwpmSubLayerDeleteByKey0(engine_handle,
+        &layer_inbound_network_ipv6->sublayer_guid);
+    FwpmSubLayerDeleteByKey0(engine_handle,
+        &layer_outbound_network_ipv6->sublayer_guid);
+    FwpmSubLayerDeleteByKey0(engine_handle,
+        &layer_forward_network_ipv4->sublayer_guid);
+    FwpmSubLayerDeleteByKey0(engine_handle,
+        &layer_forward_network_ipv6->sublayer_guid);
     FwpsInjectionHandleDestroy0(inject_handle);
     FwpsInjectionHandleDestroy0(injectv6_handle);
     NdisFreeNetBufferListPool(pool_handle);
+    FwpmEngineClose0(engine_handle);
+}
+
+/*
+ * Register a sub-layer.
+ */
+static NTSTATUS windivert_install_sublayer(layer_t layer)
+{
+    FWPM_SUBLAYER0 sublayer;
+    NTSTATUS status;
+
+    RtlZeroMemory(&sublayer, sizeof(sublayer));
+    sublayer.subLayerKey = layer->sublayer_guid;
+    sublayer.displayData.name        = layer->sublayer_name;
+    sublayer.displayData.description = layer->sublayer_desc;
+    sublayer.weight = INT16_MAX;
+
+    status = FwpmSubLayerAdd0(engine_handle, &sublayer, NULL);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to add WFP sub-layer", status);
+    }
+    
+    return status;
 }
 
 /*
@@ -654,7 +817,6 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     WDF_WORKITEM_CONFIG item_config;
     WDF_OBJECT_ATTRIBUTES obj_attrs;
     FWPM_SESSION0 session;
-    HANDLE thread;
     NTSTATUS status = STATUS_SUCCESS;
     UINT8 i;
     context_t context = windivert_context_get(object);
@@ -673,8 +835,9 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->layer       = WINDIVERT_LAYER_DEFAULT;
     context->flags_0     = 0;
     context->flags       = 0;
-    context->priority_0  = WINDIVERT_PRIORITY_DEFAULT;
-    context->priority    = WINDIVERT_PRIORITY_DEFAULT;
+    context->priority_0  =
+        WINDIVERT_CONTEXT_PRIORITY(WINDIVERT_PRIORITY_DEFAULT);
+    context->priority    = context->priority_0;
     context->filter      = NULL;
     for (i = 0; i < WINDIVERT_CONTEXT_MAXWORKERS; i++)
     {
@@ -683,19 +846,13 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->worker_curr = 0;
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
-        context->registered[i] = FALSE;
+        context->installed[i] = FALSE;
     }
     context->filter_on = FALSE;
     KeInitializeSpinLock(&context->lock);
     InitializeListHead(&context->packet_queue);
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
-        status = ExUuidCreate(&context->sublayer_guid[i]);
-        if (!NT_SUCCESS(status))
-        {
-            DEBUG_ERROR("failed to create sub-layer GUID", status);
-            goto windivert_create_exit;
-        }
         status = ExUuidCreate(&context->callout_guid[i]);
         if (!NT_SUCCESS(status))
         {
@@ -785,7 +942,7 @@ windivert_create_exit:
 /*
  * Register all WFP callouts.
  */
-static NTSTATUS windivert_register_callouts(context_t context, BOOL is_inbound,
+static NTSTATUS windivert_install_callouts(context_t context, BOOL is_inbound,
     BOOL is_outbound, BOOL is_ipv4, BOOL is_ipv6)
 {
     UINT8 i, j;
@@ -829,40 +986,20 @@ static NTSTATUS windivert_register_callouts(context_t context, BOOL is_inbound,
             return STATUS_INVALID_PARAMETER;
     }
 
-    status = FwpmTransactionBegin0(context->engine_handle, 0);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to begin WFP transaction", status);
-        goto windivert_register_callouts_exit;
-    }
     for (j = 0; j < i; j++)
     {
-        status = windivert_register_callout(context, j, layers[j]);
+        status = windivert_install_callout(context, j, layers[j]);
         if (!NT_SUCCESS(status))
         {
-            FwpmTransactionAbort0(context->engine_handle);
-            goto windivert_register_callouts_exit;
+            goto windivert_install_callouts_exit;
         }
     }
-    status = FwpmTransactionCommit0(context->engine_handle);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to commit WFP transaction", status);
-        goto windivert_register_callouts_exit;
-    }
 
-windivert_register_callouts_exit:
+windivert_install_callouts_exit:
 
     if (!NT_SUCCESS(status))
     {
-        for (j = 0; j < i; j++)
-        {
-            if (context->registered[j])
-            {
-                FwpsCalloutUnregisterByKey0(&context->callout_guid[j]);
-                context->registered[j] = FALSE;
-            }
-        }
+        windivert_uninstall_callouts(context);
     }
 
     return status;
@@ -871,22 +1008,17 @@ windivert_register_callouts_exit:
 /*
  * Register a WFP callout.
  */
-static NTSTATUS windivert_register_callout(context_t context, UINT idx,
+static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     layer_t layer)
 {
-    FWPM_SUBLAYER0 sublayer;
     FWPS_CALLOUT0 scallout;
     FWPM_CALLOUT0 mcallout;
     FWPM_FILTER0 filter;
-    BOOL registered = FALSE;
+    UINT64 weight;
     NTSTATUS status;
 
-    RtlZeroMemory(&sublayer, sizeof(sublayer));
-    sublayer.subLayerKey             = context->sublayer_guid[idx];
-    sublayer.displayData.name        = layer->sublayer_name;
-    sublayer.displayData.description = layer->sublayer_desc;
-    sublayer.weight                  =
-       (UINT16)(WINDIVERT_PRIORITY_MAX - context->priority);
+    weight = WINDIVERT_FILTER_WEIGHT(context->priority);
+    
     RtlZeroMemory(&scallout, sizeof(scallout));
     scallout.calloutKey              = context->callout_guid[idx];
     scallout.classifyFn              = layer->callout;
@@ -896,53 +1028,95 @@ static NTSTATUS windivert_register_callout(context_t context, UINT idx,
     mcallout.calloutKey              = context->callout_guid[idx];
     mcallout.displayData.name        = layer->callout_name;
     mcallout.displayData.description = layer->callout_desc;
-    mcallout.applicableLayer         = layer->guid;
+    mcallout.applicableLayer         = layer->layer_guid;
     RtlZeroMemory(&filter, sizeof(filter));
     filter.filterKey                 = context->filter_guid[idx];
-    filter.layerKey                  = layer->guid;
+    filter.layerKey                  = layer->layer_guid;
     filter.displayData.name          = layer->filter_name;
     filter.displayData.description   = layer->filter_desc;
-    filter.action.type               = FWP_ACTION_CALLOUT_TERMINATING;
+    filter.action.type               = FWP_ACTION_CALLOUT_UNKNOWN;
     filter.action.calloutKey         = context->callout_guid[idx];
-    filter.subLayerKey               = context->sublayer_guid[idx];
-    filter.weight.type               = FWP_EMPTY;
+    filter.subLayerKey               = layer->sublayer_guid;
+    filter.weight.type               = FWP_UINT64;
+    filter.weight.uint64             = &weight;
     filter.rawContext                = (UINT64)context;
-    status = FwpmSubLayerAdd0(context->engine_handle, &sublayer, NULL);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to add WFP sub-layer", status);
-        goto windivert_register_callout_error;
-    }
     status = FwpsCalloutRegister0(WdfDeviceWdmGetDeviceObject(context->device),
         &scallout, NULL);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to register WFP callout", status);
-        goto windivert_register_callout_error;
+        DEBUG_ERROR("failed to install WFP callout", status);
+        return status;
     }
-    registered = TRUE;
     status = FwpmCalloutAdd0(context->engine_handle, &mcallout, NULL, NULL);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to add WFP callout", status);
-        goto windivert_register_callout_error;
+        FwpsCalloutUnregisterByKey0(&context->callout_guid[idx]);
+        return status;
     }
     status = FwpmFilterAdd0(context->engine_handle, &filter, NULL, NULL);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to add WFP filter", status);
-        goto windivert_register_callout_error;
+        FwpsCalloutUnregisterByKey0(&context->callout_guid[idx]);
+        return status;
     }
-    context->registered[idx] = TRUE;
+    context->installed[idx] = TRUE;
 
     return STATUS_SUCCESS;
+}
 
-windivert_register_callout_error:
-    if (registered)
+/*
+ * WinDivert uninstall callouts routine.
+ */
+static void windivert_uninstall_callouts(context_t context)
+{
+    LARGE_INTEGER timeout;
+    int retries;
+    UINT i;
+    NTSTATUS status;
+
+    timeout.HighPart = 0;
+    timeout.LowPart  = -640;        // 64ms
+
+    for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
-        FwpsCalloutUnregisterByKey0(&context->callout_guid[idx]);
+	    if (!context->installed[i])
+	    {
+	        continue;
+	    }
+
+        // It is essential that the filter/callout be deleted, otherwise
+        // networking will break.  Sometimes these calls fail with generic
+        // RPC errors (e.g. RPC_NT_CALL_FAILED), so we retry until they work.
+        // There should be a better solution?
+        for (retries = 8; retries > 0; retries--)
+        {
+            status = FwpmFilterDeleteByKey0(context->engine_handle,
+                &context->filter_guid[i]);
+            if (NT_SUCCESS(status))
+            {
+                break;
+            }
+            retries--;
+            KeDelayExecutionThread(KernelMode, FALSE, &timeout);
+        }
+
+        for (retries = 8; retries > 0; retries--)
+        {
+            status = FwpmCalloutDeleteByKey0(context->engine_handle,
+                &context->callout_guid[i]);
+            if (NT_SUCCESS(status))
+            {
+                break;
+            }
+            retries--;
+            KeDelayExecutionThread(KernelMode, FALSE, &timeout);
+        }
+
+        FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
+        context->installed[i] = FALSE;
     }
-    return status;
 }
 
 /*
@@ -1030,52 +1204,8 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
         WdfWorkItemFlush(context->workers[i]);
         WdfObjectDelete(context->workers[i]);
     }
-
-    status = FwpmTransactionBegin0(context->engine_handle, 0);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to begin WFP transaction", status);
-        goto windivert_cleanup_exit;
-    }
-    for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
-    {
-	    if (!context->registered[i])
-	    {
-	        continue;
-	    }
-        status = FwpmFilterDeleteByKey0(context->engine_handle,
-            context->filter_guid+i);
-        if (!NT_SUCCESS(status))
-        {
-            DEBUG_ERROR("failed delete WFP filter", status);
-            FwpmTransactionAbort0(context->engine_handle);
-            goto windivert_cleanup_exit;
-        }
-        status = FwpmSubLayerDeleteByKey0(context->engine_handle,
-            context->sublayer_guid+i);
-        if (!NT_SUCCESS(status))
-        {
-            DEBUG_ERROR("failed delete WFP sub-layer", status);
-            FwpmTransactionAbort0(context->engine_handle);
-            goto windivert_cleanup_exit;
-        }
-    }
-    status = FwpmTransactionCommit0(context->engine_handle);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to commit WFP transaction", status);
-        goto windivert_cleanup_exit;
-    }
-
-windivert_cleanup_exit:
+    windivert_uninstall_callouts(context);
     FwpmEngineClose0(context->engine_handle);
-    for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
-    {
-        if (context->registered[i])
-        {
-            FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
-        }
-    }
     if (context->filter != NULL)
     {   
         ExFreePoolWithTag(context->filter, WINDIVERT_TAG);
@@ -1191,16 +1321,26 @@ static void windivert_read_service(context_t context)
             goto windivert_read_service_complete;
         }
         dst_len = MmGetMdlByteCount(dst_mdl);
-        buffer = NET_BUFFER_LIST_FIRST_NB(packet->net_buffer_list);
-        src_len = NET_BUFFER_DATA_LENGTH(buffer);
-        dst_len = (src_len < dst_len? src_len: dst_len);
-        src = NdisGetDataBuffer(buffer, dst_len, NULL, 1, 0);
-        if (src == NULL)
+        if (packet->net_buffer_list != NULL)
         {
-            NdisGetDataBuffer(buffer, dst_len, dst, 1, 0);
+            buffer = NET_BUFFER_LIST_FIRST_NB(packet->net_buffer_list);
+            src_len = NET_BUFFER_DATA_LENGTH(buffer);
+            dst_len = (src_len < dst_len? src_len: dst_len);
+            src = NdisGetDataBuffer(buffer, dst_len, NULL, 1, 0);
+            if (src == NULL)
+            {
+                NdisGetDataBuffer(buffer, dst_len, dst, 1, 0);
+            }
+            else
+            {
+                RtlCopyMemory(dst, src, dst_len);
+            }
         }
         else
         {
+            src_len = packet->data_len;
+            dst_len = (src_len < dst_len? src_len: dst_len);
+            src = packet->data;
             RtlCopyMemory(dst, src, dst_len);
         }
         
@@ -1649,7 +1789,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
 
             windivert_filter_analyze(context->filter, &is_inbound,
                 &is_outbound, &is_ipv4, &is_ipv6);
-            status = windivert_register_callouts(context, is_inbound,
+            status = windivert_install_callouts(context, is_inbound,
                 is_outbound, is_ipv4, is_ipv6);
 
             // Start the timer.
@@ -1672,13 +1812,16 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
 
         case IOCTL_WINDIVERT_SET_PRIORITY:
             ioctl = (windivert_ioctl_t)inbuf;
-            if (ioctl->arg > WINDIVERT_PRIORITY_MAX)
+            if (ioctl->arg < WINDIVERT_PRIORITY_MIN ||
+                ioctl->arg > WINDIVERT_PRIORITY_MAX)
             {
                 status = STATUS_INVALID_DEVICE_REQUEST;
-                DEBUG_ERROR("failed to set priority; value too big", status);
+                DEBUG_ERROR("failed to set priority; value out of range",
+                    status);
                 goto windivert_ioctl_exit;
             }
-            context->priority_0 = (UINT16)ioctl->arg;
+            context->priority_0 =
+                WINDIVERT_CONTEXT_PRIORITY((UINT32)ioctl->arg);
             break;
 
         case IOCTL_WINDIVERT_SET_FLAGS:
@@ -1836,7 +1979,7 @@ static void windivert_classify_inbound_network_v4_callout(
         0, NULL);
     if (!NT_SUCCESS(status))
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
     windivert_classify_callout(WINDIVERT_DIRECTION_INBOUND,
@@ -1875,7 +2018,7 @@ static void windivert_classify_inbound_network_v6_callout(
         0, NULL);
     if (!NT_SUCCESS(status))
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
     windivert_classify_callout(WINDIVERT_DIRECTION_INBOUND,
@@ -1951,7 +2094,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     context = (context_t)filter->context;
     if (!windivert_context_verify(context, WINDIVERT_CONTEXT_STATE_OPEN))
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
     buffers = (PNET_BUFFER_LIST)data;
@@ -1962,7 +2105,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
          * This is a fragment group.  This can be ignored since each
          * fragment should already have been indicated.
          */
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
     if (isipv4)
@@ -1979,9 +2122,9 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
         packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF)
     {
         priority = (UINT32)packet_context;
-        if (priority <= context->priority)
+        if (priority >= context->priority)
         {
-            result->actionType = FWP_ACTION_PERMIT;
+            result->actionType = FWP_ACTION_CONTINUE;
             return;
         }
     }
@@ -2007,7 +2150,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     }
     else
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
 
@@ -2037,7 +2180,7 @@ windivert_classify_callout_exit:
 
     if ((context->flags & WINDIVERT_FLAG_SNIFF) != 0)
     {
-        result->actionType = FWP_ACTION_PERMIT;
+        result->actionType = FWP_ACTION_CONTINUE;
     }
     else
     {
@@ -2055,6 +2198,8 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksum_info;
+    PNET_BUFFER buffer;
+    PVOID data;
     PLIST_ENTRY entry;
     packet_t packet;
     NTSTATUS status;
@@ -2065,13 +2210,41 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
     {
         return FALSE;
     }
-
-    status = FwpsAllocateCloneNetBufferList0(buffers, pool_handle, NULL,
-        0, &packet->net_buffer_list);
-    if (!NT_SUCCESS(status))
+    packet->net_buffer_list = NULL;
+    packet->data = NULL;
+    packet->data_len = 0;
+    if ((context->flags & WINDIVERT_FLAG_SNIFF) != 0)
     {
-        ExFreePoolWithTag(packet, WINDIVERT_TAG);
-        return FALSE;
+        // Deep copy for sniff-mode:
+        buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
+        packet->data_len = NET_BUFFER_DATA_LENGTH(buffer);
+        packet->data = ExAllocatePoolWithTag(NonPagedPool,
+            packet->data_len, WINDIVERT_TAG);
+        if (packet->data == NULL)
+        {
+            ExFreePoolWithTag(packet, WINDIVERT_TAG);
+            return FALSE;
+        }
+        data = NdisGetDataBuffer(buffer, packet->data_len, NULL, 1, 0);
+        if (data == NULL)
+        {
+            NdisGetDataBuffer(buffer, packet->data_len, packet->data, 1, 0);
+        }
+        else
+        {
+            RtlCopyMemory(packet->data, data, packet->data_len);
+        }
+    }
+    else
+    {
+        // Shallow copy for divert-mode:
+        status = FwpsAllocateCloneNetBufferList0(buffers, pool_handle, NULL,
+            0, &packet->net_buffer_list);
+        if (!NT_SUCCESS(status))
+        {
+            ExFreePoolWithTag(packet, WINDIVERT_TAG);
+            return FALSE;
+        }
     }
 
     checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
@@ -2128,7 +2301,14 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
  */
 static void windivert_free_packet(packet_t packet)
 {
-    FwpsFreeCloneNetBufferList0(packet->net_buffer_list, 0);
+    if (packet->net_buffer_list != NULL)
+    {
+        FwpsFreeCloneNetBufferList0(packet->net_buffer_list, 0);
+    }
+    if (packet->data != NULL)
+    {
+        ExFreePoolWithTag(packet->data, WINDIVERT_TAG);
+    }
     ExFreePoolWithTag(packet, WINDIVERT_TAG);
 }
 

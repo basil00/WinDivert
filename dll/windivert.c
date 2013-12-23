@@ -495,6 +495,13 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
+    priority32 = WINDIVERT_PRIORITY(priority);
+    if (priority32 < WINDIVERT_PRIORITY_MIN ||
+        priority32 > WINDIVERT_PRIORITY_MAX)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return INVALID_HANDLE_VALUE;
+    }
 
     // Parse the filter:
     if (!WinDivertCompileFilter(filter, layer, ioctl_filter, &filter_len))
@@ -502,6 +509,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
+
 
 #ifdef WINDIVERT_DEBUG
     WinDivertFilterDump(ioctl_filter, filter_len);
@@ -568,7 +576,6 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     }
 
     // Set the priority:
-    priority32 = WINDIVERT_PRIORITY(priority);
     if (priority32 != WINDIVERT_PRIORITY_DEFAULT)
     {
         if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PRIORITY, 0,
