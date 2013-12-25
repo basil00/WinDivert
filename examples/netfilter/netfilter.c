@@ -348,7 +348,7 @@ int __cdecl main(int argc, char **argv)
                 WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length, 0);
 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = WINDIVERT_DIRECTION_OUTBOUND;
+                send_addr.Direction = !recv_addr.Direction;
                 if (!WinDivertSend(handle, (PVOID)dnrv6, icmpv6_length,
                         &send_addr, NULL))
                 {

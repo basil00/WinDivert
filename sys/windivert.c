@@ -334,6 +334,7 @@ static UINT32 windivert_context_priority(UINT32 priority0)
 /*
  * Prototypes.
  */
+static void windivert_driver_unload(void);
 extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     IN size_t in_length, IN size_t out_len, IN ULONG code);
 static NTSTATUS windivert_read(context_t context, WDFREQUEST request);
@@ -709,22 +710,7 @@ driver_entry_exit:
 
     if (!NT_SUCCESS(status))
     {
-        if (inject_handle != NULL)
-        {
-            FwpsInjectionHandleDestroy0(inject_handle);
-        }
-        if (injectv6_handle != NULL)
-        {
-            FwpsInjectionHandleDestroy0(injectv6_handle);
-        }
-        if (pool_handle != NULL)
-        {
-            NdisFreeNetBufferListPool(pool_handle);
-        }
-        if (engine_handle != NULL)
-        {
-            FwpmEngineClose0(engine_handle);
-        }
+        windivert_driver_unload();
     }
 
     return status;
@@ -735,24 +721,44 @@ driver_entry_exit:
  */
 extern VOID windivert_unload(IN WDFDRIVER Driver)
 {
+    windivert_driver_unload();
+}
+
+/*
+ * WinDivert driver unload.
+ */
+static void windivert_driver_unload(void)
+{
     DEBUG("UNLOAD: unloading the WinDivert driver");
 
-    FwpmSubLayerDeleteByKey0(engine_handle,
-        &layer_inbound_network_ipv4->sublayer_guid);
-    FwpmSubLayerDeleteByKey0(engine_handle,
-        &layer_outbound_network_ipv4->sublayer_guid);
-    FwpmSubLayerDeleteByKey0(engine_handle,
-        &layer_inbound_network_ipv6->sublayer_guid);
-    FwpmSubLayerDeleteByKey0(engine_handle,
-        &layer_outbound_network_ipv6->sublayer_guid);
-    FwpmSubLayerDeleteByKey0(engine_handle,
-        &layer_forward_network_ipv4->sublayer_guid);
-    FwpmSubLayerDeleteByKey0(engine_handle,
-        &layer_forward_network_ipv6->sublayer_guid);
-    FwpsInjectionHandleDestroy0(inject_handle);
-    FwpsInjectionHandleDestroy0(injectv6_handle);
-    NdisFreeNetBufferListPool(pool_handle);
-    FwpmEngineClose0(engine_handle);
+    if (inject_handle != NULL)
+    {
+        FwpsInjectionHandleDestroy0(inject_handle);
+    }
+    if (injectv6_handle != NULL)
+    {
+        FwpsInjectionHandleDestroy0(injectv6_handle);
+    }
+    if (pool_handle != NULL)
+    {
+        NdisFreeNetBufferListPool(pool_handle);
+    }
+    if (engine_handle != NULL)
+    {
+        FwpmSubLayerDeleteByKey0(engine_handle,
+            &layer_inbound_network_ipv4->sublayer_guid);
+        FwpmSubLayerDeleteByKey0(engine_handle,
+            &layer_outbound_network_ipv4->sublayer_guid);
+        FwpmSubLayerDeleteByKey0(engine_handle,
+            &layer_inbound_network_ipv6->sublayer_guid);
+        FwpmSubLayerDeleteByKey0(engine_handle,
+            &layer_outbound_network_ipv6->sublayer_guid);
+        FwpmSubLayerDeleteByKey0(engine_handle,
+            &layer_forward_network_ipv4->sublayer_guid);
+        FwpmSubLayerDeleteByKey0(engine_handle,
+            &layer_forward_network_ipv6->sublayer_guid);
+        FwpmEngineClose0(engine_handle);
+    }
 }
 
 /*
