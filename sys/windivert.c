@@ -197,7 +197,6 @@ struct packet_s
 {
     LIST_ENTRY entry;                       // Entry for queue.
     PNET_BUFFER_LIST net_buffer_list;       // Clone of the net buffer list.
-    PVOID data;                             // Copy of the packet data.
     size_t data_len;                        // Length of `data'.
     UINT8 direction;                        // Packet direction.
     UINT32 if_idx;                          // Interface index.
@@ -206,6 +205,7 @@ struct packet_s
     BOOL tcp_checksum;                      // TCP checksum is valid.
     BOOL udp_checksum;                      // UDP checksum is valid.
     BOOL timer_ticktock;                    // Time-out ticktock.
+    char data[];                            // Packet data.
 };
 typedef struct packet_s *packet_t;
 
@@ -395,8 +395,14 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
-static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
-    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx);
+static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
+    PNET_BUFFER_LIST buffers, UINT8 direction, UINT32 if_idx,
+    UINT32 sub_if_idx);
+static BOOL windivert_reinject_packet(context_t context, UINT8 direction,
+    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, UINT32 priority,
+    PNET_BUFFER buffer);
+static void NTAPI windivert_reinject_complete(VOID *context,
+    NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level);
 static void windivert_free_packet(packet_t packet);
 static UINT16 windivert_checksum(const void *pseudo_header,
     size_t pseudo_header_len, const void *data, size_t size);
@@ -1327,28 +1333,10 @@ static void windivert_read_service(context_t context)
             goto windivert_read_service_complete;
         }
         dst_len = MmGetMdlByteCount(dst_mdl);
-        if (packet->net_buffer_list != NULL)
-        {
-            buffer = NET_BUFFER_LIST_FIRST_NB(packet->net_buffer_list);
-            src_len = NET_BUFFER_DATA_LENGTH(buffer);
-            dst_len = (src_len < dst_len? src_len: dst_len);
-            src = NdisGetDataBuffer(buffer, dst_len, NULL, 1, 0);
-            if (src == NULL)
-            {
-                NdisGetDataBuffer(buffer, dst_len, dst, 1, 0);
-            }
-            else
-            {
-                RtlCopyMemory(dst, src, dst_len);
-            }
-        }
-        else
-        {
-            src_len = packet->data_len;
-            dst_len = (src_len < dst_len? src_len: dst_len);
-            src = packet->data;
-            RtlCopyMemory(dst, src, dst_len);
-        }
+        src_len = packet->data_len;
+        dst_len = (src_len < dst_len? src_len: dst_len);
+        src = packet->data;
+        RtlCopyMemory(dst, src, dst_len);
         
         // Write the address information.
         req_context = windivert_req_context_get(request);
@@ -2085,7 +2073,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     HANDLE packet_context;
     UINT32 priority;
     PNET_BUFFER_LIST buffers;
-    PNET_BUFFER buffer;
+    PNET_BUFFER buffer, buffer_fst, buffer_itr;
     BOOL outbound, queued;
     context_t context;
     packet_t packet;
@@ -2136,28 +2124,91 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     }
 
     /*
-     * Test if the packet matches the filter or not.  If so, queue the
-     * packet; otherwise permit the packet.
+     * This code is complicated by the fact the a single NET_BUFFER_LIST
+     * may contain several NET_BUFFER structures.  Each NET_BUFFER needs to
+     * be filtered independently.  To achieve this we do the following:
+     * 1) First check if any NET_BUFFER passes the filter.
+     * 2) If no, then CONTINUE the entire NET_BUFFER_LIST.
+     * 3) Else, split the NET_BUFFER_LIST into individual NET_BUFFERs; and
+     *    either queue or re-inject based on the filter.
      */
-    queued = FALSE;
+
+    // Find the first NET_BUFFER we need to queue:
+    buffer_fst = buffer;
     outbound = (direction == WINDIVERT_DIRECTION_OUTBOUND);
-    if (windivert_filter(buffer, if_idx, sub_if_idx, outbound,
-            context->filter))
+    do
     {
-        if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
+        if (windivert_filter(buffer_fst, if_idx, sub_if_idx, outbound,
+                context->filter))
         {
-            if (!windivert_queue_packet(context, buffers, direction, if_idx,
-                    sub_if_idx))
+            break;
+        }
+        buffer_fst = NET_BUFFER_NEXT_NB(buffer_fst);
+    }
+    while (buffer_fst != NULL);
+
+    if (buffer_fst == NULL)
+    {
+        result->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
+    
+    if ((context->flags & WINDIVERT_FLAG_SNIFF) == 0)
+    {
+        // Re-inject all packets up to 'buffer_fst'
+        buffer_itr = buffer;
+        while (buffer_itr != buffer_fst)
+        {
+            if (!windivert_reinject_packet(context, direction, isipv4, if_idx,
+                    sub_if_idx, priority, buffer_itr))
             {
                 goto windivert_classify_callout_exit;
             }
-            queued = TRUE;
+            buffer_itr = NET_BUFFER_NEXT_NB(buffer_itr);
         }
     }
     else
     {
-        result->actionType = FWP_ACTION_CONTINUE;
-        return;
+        buffer_itr = buffer_fst;
+    }
+
+    queued = FALSE;
+    if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
+    {
+        if (!windivert_queue_packet(context, buffer_itr, buffers, direction,
+                if_idx, sub_if_idx))
+        {
+            goto windivert_classify_callout_exit;
+        }
+        queued = TRUE;
+    }
+
+    // Queue or re-inject remaining packets.
+    buffer_itr = NET_BUFFER_NEXT_NB(buffer_itr);
+    while (buffer_itr != NULL)
+    {
+        if (windivert_filter(buffer_itr, if_idx, sub_if_idx, outbound,
+            context->filter))
+        {
+            if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
+            {
+                if (!windivert_queue_packet(context, buffer_itr, buffers,
+                        direction, if_idx, sub_if_idx))
+                {
+                    goto windivert_classify_callout_exit;
+                }
+                queued = TRUE;
+            }
+        }
+        else if ((context->flags & WINDIVERT_FLAG_SNIFF) == 0)
+        {
+            if (!windivert_reinject_packet(context, direction, isipv4, if_idx,
+                    sub_if_idx, priority, buffer_itr))
+            {
+                goto windivert_classify_callout_exit;
+            }
+        }
+        buffer_itr = NET_BUFFER_NEXT_NB(buffer_itr);
     }
 
     /*
@@ -2199,58 +2250,35 @@ windivert_classify_callout_exit:
 /*
  * Queue a NET_BUFFER.
  */
-static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
-    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx)
+static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
+    PNET_BUFFER_LIST buffers, UINT8 direction, UINT32 if_idx,
+    UINT32 sub_if_idx)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksum_info;
-    PNET_BUFFER buffer;
     PVOID data;
     PLIST_ENTRY entry;
     packet_t packet;
+    UINT data_len;
     NTSTATUS status;
 
+    data_len = NET_BUFFER_DATA_LENGTH(buffer);
     packet = (packet_t)ExAllocatePoolWithTag(NonPagedPool,
-        WINDIVERT_PACKET_SIZE, WINDIVERT_TAG);
+        WINDIVERT_PACKET_SIZE + data_len, WINDIVERT_TAG);
     if (packet == NULL)
     {
         return FALSE;
     }
     packet->net_buffer_list = NULL;
-    packet->data = NULL;
-    packet->data_len = 0;
-    if ((context->flags & WINDIVERT_FLAG_SNIFF) != 0)
+    packet->data_len = data_len;
+    data = NdisGetDataBuffer(buffer, data_len, NULL, 1, 0);
+    if (data == NULL)
     {
-        // Deep copy for sniff-mode:
-        buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
-        packet->data_len = NET_BUFFER_DATA_LENGTH(buffer);
-        packet->data = ExAllocatePoolWithTag(NonPagedPool,
-            packet->data_len, WINDIVERT_TAG);
-        if (packet->data == NULL)
-        {
-            ExFreePoolWithTag(packet, WINDIVERT_TAG);
-            return FALSE;
-        }
-        data = NdisGetDataBuffer(buffer, packet->data_len, NULL, 1, 0);
-        if (data == NULL)
-        {
-            NdisGetDataBuffer(buffer, packet->data_len, packet->data, 1, 0);
-        }
-        else
-        {
-            RtlCopyMemory(packet->data, data, packet->data_len);
-        }
+        NdisGetDataBuffer(buffer, data_len, packet->data, 1, 0);
     }
     else
     {
-        // Shallow copy for divert-mode:
-        status = FwpsAllocateCloneNetBufferList0(buffers, pool_handle, NULL,
-            0, &packet->net_buffer_list);
-        if (!NT_SUCCESS(status))
-        {
-            ExFreePoolWithTag(packet, WINDIVERT_TAG);
-            return FALSE;
-        }
+        RtlCopyMemory(packet->data, data, data_len);
     }
 
     checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
@@ -2303,6 +2331,120 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER_LIST buffers,
 }
 
 /*
+ * Re-inject a NET_BUFFER.
+ */
+static BOOL windivert_reinject_packet(context_t context, UINT8 direction,
+    BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, UINT32 priority,
+    PNET_BUFFER buffer)
+{
+    UINT data_len;
+    PVOID data, data_copy = NULL;
+    PNET_BUFFER_LIST buffers = NULL;
+    PMDL mdl_copy = NULL;
+    HANDLE handle;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    data_len = NET_BUFFER_DATA_LENGTH(buffer);
+    data_copy = ExAllocatePoolWithTag(NonPagedPool, data_len, WINDIVERT_TAG);
+    if (data_copy == NULL)
+    {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        DEBUG_ERROR("failed to allocate memory for (re)injected packet data",
+            status);
+        return FALSE;
+    }
+
+    data = NdisGetDataBuffer(buffer, data_len, NULL, 1, 0);
+    if (data == NULL)
+    {
+        NdisGetDataBuffer(buffer, data_len, data_copy, 1, 0);
+    }
+    else
+    {
+        RtlCopyMemory(data_copy, data, data_len);
+    }
+
+    mdl_copy = IoAllocateMdl(data_copy, data_len, FALSE, FALSE, NULL);
+    if (mdl_copy == NULL)
+    {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        DEBUG_ERROR("failed to allocate MDL for injected packet", status);
+        goto windivert_reinject_packet_exit;
+    }
+
+    MmBuildMdlForNonPagedPool(mdl_copy);
+    status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle, 0, 0,
+        mdl_copy, 0, data_len, &buffers);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
+            status);
+        goto windivert_reinject_packet_exit;
+    }
+
+    handle = (isipv4? inject_handle: injectv6_handle);
+    if (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD)
+    {
+        status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
+            (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
+            if_idx, buffers, windivert_reinject_complete, (HANDLE)NULL);
+    }
+    else if (direction == WINDIVERT_DIRECTION_OUTBOUND)
+    {
+        status = FwpsInjectNetworkSendAsync0(handle,
+            (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, buffers,
+            windivert_reinject_complete, (HANDLE)NULL);
+    }
+    else
+    {
+        status = FwpsInjectNetworkReceiveAsync0(handle, 
+            (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, if_idx,
+            sub_if_idx, buffers, windivert_reinject_complete, (HANDLE)NULL);
+    }
+
+windivert_reinject_packet_exit:
+
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to (re)inject packet", status);
+        if (buffers != NULL)
+        {
+            FwpsFreeNetBufferList0(buffers);
+        }
+        if (mdl_copy != NULL)
+        {
+            IoFreeMdl(mdl_copy);
+        }
+        if (data_copy != NULL)
+        {
+            ExFreePoolWithTag(data_copy, WINDIVERT_TAG);
+        }
+    }
+
+    return status;
+}
+
+/*
+ * WinDivert (re)inject complete.
+ */
+static void NTAPI windivert_reinject_complete(VOID *context,
+    NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level)
+{
+    PMDL mdl;
+    PVOID data;
+    PNET_BUFFER buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
+    
+    mdl = NET_BUFFER_FIRST_MDL(buffer);
+    data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
+    if (data != NULL)
+    {
+        ExFreePoolWithTag(data, WINDIVERT_TAG);
+    }
+    IoFreeMdl(mdl);
+    FwpsFreeNetBufferList0(buffers);
+}
+
+/*
  * Free a packet.
  */
 static void windivert_free_packet(packet_t packet)
@@ -2310,10 +2452,6 @@ static void windivert_free_packet(packet_t packet)
     if (packet->net_buffer_list != NULL)
     {
         FwpsFreeCloneNetBufferList0(packet->net_buffer_list, 0);
-    }
-    if (packet->data != NULL)
-    {
-        ExFreePoolWithTag(packet->data, WINDIVERT_TAG);
     }
     ExFreePoolWithTag(packet, WINDIVERT_TAG);
 }
