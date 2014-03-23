@@ -679,11 +679,18 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     }
 
     // Register WFP sub-layers:
+    status = FwpmTransactionBegin0(engine_handle, 0);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to begin WFP transaction", status);
+        goto driver_entry_exit;
+    }
     status = windivert_install_sublayer(layer_inbound_network_ipv4);
     if (!NT_SUCCESS(status))
     {
 driver_entry_sublayer_error:
         DEBUG_ERROR("failed to install WFP sub-layer", status);
+        FwpmTransactionAbort0(engine_handle);
         goto driver_entry_exit;
     }
     status = windivert_install_sublayer(layer_outbound_network_ipv4);
@@ -711,6 +718,12 @@ driver_entry_sublayer_error:
     {
         goto driver_entry_sublayer_error;
     }
+    status = FwpmTransactionCommit0(engine_handle);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to commit WFP transaction", status);
+        goto driver_entry_exit;
+    }
 
 driver_entry_exit:
 
@@ -735,6 +748,8 @@ extern VOID windivert_unload(IN WDFDRIVER Driver)
  */
 static void windivert_driver_unload(void)
 {
+    NTSTATUS status;
+
     DEBUG("UNLOAD: unloading the WinDivert driver");
 
     if (inject_handle != NULL)
@@ -751,6 +766,13 @@ static void windivert_driver_unload(void)
     }
     if (engine_handle != NULL)
     {
+        status = FwpmTransactionBegin0(engine_handle, 0);
+        if (!NT_SUCCESS(status))
+        {
+            DEBUG_ERROR("failed to begin WFP transaction", status);
+            FwpmEngineClose0(engine_handle);
+            return;
+        }
         FwpmSubLayerDeleteByKey0(engine_handle,
             &layer_inbound_network_ipv4->sublayer_guid);
         FwpmSubLayerDeleteByKey0(engine_handle,
@@ -763,6 +785,11 @@ static void windivert_driver_unload(void)
             &layer_forward_network_ipv4->sublayer_guid);
         FwpmSubLayerDeleteByKey0(engine_handle,
             &layer_forward_network_ipv6->sublayer_guid);
+        status = FwpmTransactionCommit0(engine_handle);
+        if (!NT_SUCCESS(status))
+        {
+            DEBUG_ERROR("failed to commit WFP transaction", status);
+        }
         FwpmEngineClose0(engine_handle);
     }
 }
@@ -1059,23 +1086,40 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
         DEBUG_ERROR("failed to install WFP callout", status);
         return status;
     }
+    status = FwpmTransactionBegin0(context->engine_handle, 0);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to begin WFP transaction", status);
+        FwpsCalloutUnregisterByKey0(&context->callout_guid[idx]);
+        return status;
+    }
     status = FwpmCalloutAdd0(context->engine_handle, &mcallout, NULL, NULL);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to add WFP callout", status);
-        FwpsCalloutUnregisterByKey0(&context->callout_guid[idx]);
-        return status;
+        goto windivert_install_callout_error;
     }
     status = FwpmFilterAdd0(context->engine_handle, &filter, NULL, NULL);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to add WFP filter", status);
+        goto windivert_install_callout_error;
+    }
+    status = FwpmTransactionCommit0(context->engine_handle);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to commit WFP transaction", status);
         FwpsCalloutUnregisterByKey0(&context->callout_guid[idx]);
         return status;
     }
-    context->installed[idx] = TRUE;
 
+    context->installed[idx] = TRUE;
     return STATUS_SUCCESS;
+
+windivert_install_callout_error:
+    FwpmTransactionAbort0(context->engine_handle);
+    FwpsCalloutUnregisterByKey0(&context->callout_guid[idx]);
+    return status;
 }
 
 /*
@@ -1083,14 +1127,15 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
  */
 static void windivert_uninstall_callouts(context_t context)
 {
-    LARGE_INTEGER timeout;
-    int retries;
     UINT i;
     NTSTATUS status;
 
-    timeout.HighPart = 0;
-    timeout.LowPart  = -640;        // 64ms
-
+    status = FwpmTransactionBegin0(context->engine_handle, 0);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to begin WFP transaction", status);
+        return;
+    }
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
 	    if (!context->installed[i])
@@ -1098,34 +1143,36 @@ static void windivert_uninstall_callouts(context_t context)
 	        continue;
 	    }
 
-        // It is essential that the filter/callout be deleted, otherwise
-        // networking will break.  Sometimes these calls fail with generic
-        // RPC errors (e.g. RPC_NT_CALL_FAILED), so we retry until they work.
-        // There should be a better solution?
-        for (retries = 8; retries > 0; retries--)
+        status = FwpmFilterDeleteByKey0(context->engine_handle,
+            &context->filter_guid[i]);
+        if (!NT_SUCCESS(status))
         {
-            status = FwpmFilterDeleteByKey0(context->engine_handle,
-                &context->filter_guid[i]);
-            if (NT_SUCCESS(status))
-            {
-                break;
-            }
-            retries--;
-            KeDelayExecutionThread(KernelMode, FALSE, &timeout);
+            DEBUG_ERROR("failed to delete filter", status);
+            break;
         }
 
-        for (retries = 8; retries > 0; retries--)
+        status = FwpmCalloutDeleteByKey0(context->engine_handle,
+            &context->callout_guid[i]);
+        if (!NT_SUCCESS(status))
         {
-            status = FwpmCalloutDeleteByKey0(context->engine_handle,
-                &context->callout_guid[i]);
-            if (NT_SUCCESS(status))
-            {
-                break;
-            }
-            retries--;
-            KeDelayExecutionThread(KernelMode, FALSE, &timeout);
+            DEBUG_ERROR("failed to delete callout", status);
+            break;
         }
+    }
+    if (!NT_SUCCESS(status))
+    {
+        FwpmTransactionAbort0(context->engine_handle);
+        return;
+    }
+    status = FwpmTransactionCommit0(context->engine_handle);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to commit WFP transaction", status);
+        return;
+    }
 
+    for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
+    {
         FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
         context->installed[i] = FALSE;
     }
@@ -2421,7 +2468,7 @@ windivert_reinject_packet_exit:
         }
     }
 
-    return status;
+    return NT_SUCCESS(status);
 }
 
 /*
