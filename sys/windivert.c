@@ -1644,7 +1644,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
 
     if (inbuflen != sizeof(struct windivert_ioctl_s))
     {
-        status = STATUS_INVALID_DEVICE_REQUEST;
+        status = STATUS_INVALID_PARAMETER;
         DEBUG_ERROR("input buffer not an ioctl message header", status);
         goto windivert_caller_context_error;
     }
@@ -1653,7 +1653,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     if (ioctl->version != WINDIVERT_IOCTL_VERSION ||
         ioctl->magic != WINDIVERT_IOCTL_MAGIC)
     {
-        status = STATUS_INVALID_DEVICE_REQUEST;
+        status = STATUS_INVALID_PARAMETER;
         DEBUG_ERROR("input buffer contained a bad ioctl message header",
             status);
         goto windivert_caller_context_error;
@@ -1667,14 +1667,15 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
         DEBUG_ERROR("failed to allocate request context for ioctl", status);
         goto windivert_caller_context_error;
     }
-    req_context->addr = NULL;
-    if (ioctl->arg == (UINT64)NULL)
-    {
-        goto windivert_caller_context_exit;
-    }
     switch (params.Parameters.DeviceIoControl.IoControlCode)
     {
         case IOCTL_WINDIVERT_RECV:
+            if ((PVOID)ioctl->arg == NULL)
+            {
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("null arg pointer for RECV ioctl", status);
+                goto windivert_caller_context_error;
+            }
             status = WdfRequestProbeAndLockUserBufferForWrite(request,
                 (PVOID)ioctl->arg, sizeof(struct windivert_addr_s), &memobj);
             if (!NT_SUCCESS(status))
@@ -1686,6 +1687,12 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
             break;
 
         case IOCTL_WINDIVERT_SEND:
+            if ((PVOID)ioctl->arg == NULL)
+            {
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("null arg pointer for SEND ioctl", status);
+                goto windivert_caller_context_error;
+            }
             status = WdfRequestProbeAndLockUserBufferForRead(request,
                 (PVOID)ioctl->arg, sizeof(struct windivert_addr_s), &memobj);
             if (!NT_SUCCESS(status))
@@ -1697,11 +1704,6 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
             break;
 
         case IOCTL_WINDIVERT_START_FILTER:
-            status = STATUS_INVALID_DEVICE_REQUEST;
-            DEBUG_ERROR("arg pointer is non-NULL for SET_FILTER ioctl",
-                status);
-            goto windivert_caller_context_error;
-
         case IOCTL_WINDIVERT_SET_LAYER:
         case IOCTL_WINDIVERT_SET_PRIORITY:
         case IOCTL_WINDIVERT_SET_FLAGS:
@@ -1809,8 +1811,8 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
 
             if (InterlockedExchange(&context->filter_on, TRUE) == TRUE)
             {
-                status = STATUS_INVALID_DEVICE_REQUEST;
-                DEBUG_ERROR("duplicate SET_FILTER ioctl", status);
+                status = STATUS_INVALID_DEVICE_STATE;
+                DEBUG_ERROR("duplicate START_FILTER ioctl", status);
                 goto windivert_ioctl_exit;
             }
 
@@ -1823,7 +1825,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             context->filter = windivert_filter_compile(filter, filter_len);
             if (context->filter == NULL)
             {
-                status = STATUS_INVALID_DEVICE_REQUEST;
+                status = STATUS_INVALID_PARAMETER;
                 DEBUG_ERROR("failed to compile filter", status);
                 goto windivert_ioctl_exit;
             }
@@ -1844,7 +1846,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             ioctl = (windivert_ioctl_t)inbuf;
             if (ioctl->arg > WINDIVERT_LAYER_MAX)
             {
-                status = STATUS_INVALID_DEVICE_REQUEST;
+                status = STATUS_INVALID_PARAMETER;
                 DEBUG_ERROR("failed to set layer; value too big", status);
                 goto windivert_ioctl_exit;
             }
@@ -1856,7 +1858,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             if (ioctl->arg < WINDIVERT_PRIORITY_MIN ||
                 ioctl->arg > WINDIVERT_PRIORITY_MAX)
             {
-                status = STATUS_INVALID_DEVICE_REQUEST;
+                status = STATUS_INVALID_PARAMETER;
                 DEBUG_ERROR("failed to set priority; value out of range",
                     status);
                 goto windivert_ioctl_exit;
@@ -1869,7 +1871,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             ioctl = (windivert_ioctl_t)inbuf;
             if (!WINDIVERT_FLAGS_VALID(ioctl->arg))
             {
-                status = STATUS_INVALID_DEVICE_REQUEST;
+                status = STATUS_INVALID_PARAMETER;
                 DEBUG_ERROR("failed to set flags; invalid flags value",
                     status);
                 goto windivert_ioctl_exit;
@@ -1886,7 +1888,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                     if (value < WINDIVERT_PARAM_QUEUE_LEN_MIN ||
                         value > WINDIVERT_PARAM_QUEUE_LEN_MAX)
                     {
-                        status = STATUS_INVALID_DEVICE_REQUEST;
+                        status = STATUS_INVALID_PARAMETER;
                         DEBUG_ERROR("failed to set queue length; invalid "
                             "value", status);
                         goto windivert_ioctl_exit;
@@ -1898,7 +1900,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                     if (value < WINDIVERT_PARAM_QUEUE_TIME_MIN ||
                         value > WINDIVERT_PARAM_QUEUE_TIME_MAX)
                     {
-                        status = STATUS_INVALID_DEVICE_REQUEST;
+                        status = STATUS_INVALID_PARAMETER;
                         DEBUG_ERROR("failed to set queue time; invalid "
                             "value", status);
                         goto windivert_ioctl_exit;
@@ -1907,7 +1909,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                     break;
 
                 default:
-                    status = STATUS_INVALID_DEVICE_REQUEST;
+                    status = STATUS_INVALID_PARAMETER;
                     DEBUG_ERROR("failed to set parameter; invalid parameter",
                         status);
                     goto windivert_ioctl_exit;
@@ -1918,7 +1920,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             ioctl = (windivert_ioctl_t)inbuf;
             if (outbuflen != sizeof(UINT64))
             {
-                status = STATUS_INVALID_DEVICE_REQUEST;
+                status = STATUS_INVALID_PARAMETER;
                 DEBUG_ERROR("failed to get parameter; invalid output "
                     "buffer size", status);
                 goto windivert_ioctl_exit;
@@ -1933,7 +1935,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                     *valptr = context->timer_timeout;
                     break;
                 default:
-                    status = STATUS_INVALID_DEVICE_REQUEST;
+                    status = STATUS_INVALID_PARAMETER;
                     DEBUG_ERROR("failed to get parameter; invalid parameter",
                         status);
                     goto windivert_ioctl_exit;
