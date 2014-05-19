@@ -305,7 +305,6 @@ struct udphdr
 #define UINT8_MAX       0xFF
 #define UINT16_MAX      0xFFFF
 #define UINT32_MAX      0xFFFFFFFF
-#define INT16_MAX       0x7FFF
 
 /*
  * Global state.
@@ -806,7 +805,7 @@ static NTSTATUS windivert_install_sublayer(layer_t layer)
     sublayer.subLayerKey = layer->sublayer_guid;
     sublayer.displayData.name        = layer->sublayer_name;
     sublayer.displayData.description = layer->sublayer_desc;
-    sublayer.weight = INT16_MAX;
+    sublayer.weight = UINT16_MAX;
 
     status = FwpmSubLayerAdd0(engine_handle, &sublayer, NULL);
     if (!NT_SUCCESS(status))
