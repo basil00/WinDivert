@@ -43,7 +43,7 @@ EVT_WDF_WORKITEM windivert_read_service_work_item;
 /*
  * Debugging macros.
  */
-// #define DEBUG_ON
+#undef DEBUG_ON
 #define DEBUG_BUFSIZE       256
 
 #ifdef DEBUG_ON
@@ -78,7 +78,12 @@ static void DEBUG_ERROR(PCCH format, NTSTATUS status, ...)
 #define DEBUG_ERROR(format, status, ...)
 #endif      // DEBUG_ON
 
+#define WINDIVERT_MAX_GLOB_DEEPNESS	100       // INFO(Santiago): defines the max of a
+                                              // recurssion level on a wildcard
+                                              // match-test.
+
 #define WINDIVERT_TAG                           'viDW'
+#define WINDIVERT_PKTBUF_TAG                    'pkDW'
 
 /*
  * WinDivert packet filter.
@@ -91,6 +96,8 @@ struct filter_s
     UINT16 success;                             // Success continuation
     UINT16 failure;                             // Fail continuation
     UINT32 arg[4];                              // Comparison argument
+    UINT8  str_arg[255];                        // String argument.
+    UINT16 str_arg_len;                         // String argument length.
 };
 typedef struct filter_s *filter_t;
 #define WINDIVERT_FILTER_PROTOCOL_NONE          0
@@ -415,6 +422,10 @@ static void windivert_filter_analyze(filter_t filter, BOOL *is_inbound,
     BOOL *is_outbound, BOOL *ip_ipv4, BOOL *is_ipv6);
 static BOOL windivert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
     UINT8 field, UINT32 arg);
+static BOOL windivert_wildcard_match(const UINT8 *buf, const size_t bufsize,
+                                    const UINT8 *wildcard, size_t wildcardsize);
+static BOOL windivert_wildcard_match_test(const UINT8 *buf, const size_t bufsize,
+                                    const UINT8 *wildcard, size_t wildcardsize);
 
 /*
  * WinDivert sublayer GUIDs
@@ -2641,6 +2652,127 @@ static void windivert_update_checksums(void *header, size_t len,
 }
 
 /*
+ * INFO(Santiago): Finds the first occurrence of wildcard in buf returning TRUE if it has
+ * otherwise FALSE.
+ */
+static BOOL windivert_wildcard_match(const UINT8 *buf, const size_t bufsize,
+                               const UINT8 *wildcard, size_t wildcardsize) {
+    const UINT8 *wp = wildcard;
+    const UINT8 *wp_end = wildcard + wildcardsize;
+    int deepness_ct = 0;
+    if (wildcard == NULL || buf == NULL) {
+        return FALSE;
+    }
+    if (*wp == '*') {
+        deepness_ct++;
+    }
+    wp++;
+    while (wp !=  wp_end) {
+        if (*wp == '*' && *(wp-1) != '\\') {
+            deepness_ct++;
+        }
+        wp++;
+    }
+    //  INFO(Santiago): We use it to avoid an uncontrolled stack growth.
+    if (deepness_ct > WINDIVERT_MAX_GLOB_DEEPNESS) {
+        DEBUG("WARNING: Wildcard match aborted! It would generate "
+              "an excessive stack growth."); 
+        return FALSE;
+    }
+    return windivert_wildcard_match_test(buf, bufsize, wildcard, wildcardsize);
+}
+ 
+/*
+ * INFO(Santiago): **Never** call it directly use windivert_wildcard_match() instead of it.
+ */
+static BOOL windivert_wildcard_match_test(const UINT8 *buf, const size_t bufsize,
+                                    const UINT8 *wildcard, size_t wildcardsize) {
+    const UINT8 *bp = buf, *bp_end = buf + bufsize, *bpp;
+    const UINT8 *wp = wildcard, *wp_end = wildcard + wildcardsize;
+    const UINT8 *gp = NULL, *gp_end = NULL;
+    int match = FALSE;
+    int not = 0;
+    while (bp != bp_end && !match) {
+        bpp = bp + 1;
+        match = 1;
+        for (wp = wildcard; wp != wp_end && match; wp++) {
+            switch (*wp) {
+                case '*':
+                    DEBUG("STAR: (match:%s)\n", match ? "TRUE" : "FALSE");
+                    match = 0;
+                    for (; bp != bp_end && !match; bp++) {
+                        match = windivert_wildcard_match_test(bp, bp_end - bp,
+                                                      wp + 1, wp_end - wp - 1);
+                    }
+            if (match) {
+                return TRUE;
+            }
+            break;
+            case '?':
+                match = (bp < bp_end);
+                bp++;
+                DEBUG("QUESTION: (match:%d)\n", match ? "TRUE" : "FALSE");
+                break;
+            case '[':
+                gp = wp + 1;
+                if (*gp == '^') {
+                    not = 1;
+                    gp++;
+                }
+                while (wp < wp_end && *wp != ']') {
+                    wp++;
+                }
+                if (wp == wp_end) {
+                    //  INFO(Santiago): invalid wildcard buffer that shouldn't
+                    //                  exist in normal situations.
+                    return FALSE;
+                }
+                gp_end = wp;
+                DEBUG("%s:\n", not ? "NGROUP" : "GROUP");
+                if (not) {
+                    match = 1;
+                    for (; gp != gp_end && match; gp++) {
+                        if (*gp == '\\') {
+                            gp++;
+                        }
+                        match = (*gp != *bp);
+                        DEBUG("\t%c == %c (match:%s)\n", *gp, *bp,
+                                         match ? "TRUE" : "FALSE");
+                    }
+                } else {
+                    match = 0;
+                    for (; gp != gp_end && !match; gp++) {
+                        if (*gp == '\\') {
+                            gp++;
+                        }
+                        match = (*gp == *bp);
+                        DEBUG("\t%c == %c (match:%s)\n", *gp, *bp,
+                                         match ? "TRUE" : "FALSE");
+                    }
+                }
+                bp++;
+                break;
+            case '\\':
+                if ((wp+1) != wp_end) {
+                    wp++;
+                    match = (*wp == *bp);
+                    bp++;
+                }
+                break;
+            default:
+                match = (*wp == *bp);
+                DEBUG("LITERAL: %c == %c (match:%s)\n", *wp, *bp, match ? "TRUE" : "FALSE");
+                bp++;
+                break;
+        }
+    }
+    match = match && (wp == wp_end);
+    bp = bpp;
+  }
+  return match;
+}
+ 
+/*
  * Checks if the given packet is of interest.
  */
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
@@ -2649,8 +2781,10 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     // Buffer contains enough space for a full size iphdr and tcphdr/udphdr
     // (without options)
     UINT8 storage[0xF*sizeof(UINT32) + sizeof(struct tcphdr)];
-    UINT8 *headers;
+    UINT8 *payload, *payload_p;
+    UINT8 *headers = NULL;
     size_t tot_len, cpy_len, ip_header_len;
+    UINT8 *payload_start_p = NULL;
     struct iphdr *ip_header = NULL;
     struct ipv6hdr *ipv6_header = NULL;
     struct icmphdr *icmp_header = NULL;
@@ -2666,10 +2800,15 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     {
         DEBUG("FILTER: REJECT (packet length too small)");
         return FALSE;
-    }
+    }    
     cpy_len = (tot_len < sizeof(storage)? tot_len: sizeof(storage));
-    headers = (UINT8 *)NdisGetDataBuffer(buffer, (ULONG)cpy_len, storage, 1,
+    payload = (UINT8 *) ExAllocatePoolWithTag(NonPagedPool, tot_len, WINDIVERT_PKTBUF_TAG);
+    if (payload == NULL) {
+        return FALSE;
+    }
+    payload_p = (UINT8 *)NdisGetDataBuffer(buffer, (ULONG)tot_len, payload, 1,
         0);
+    RtlCopyMemory(storage, payload_p, sizeof(storage));
     if (headers == NULL)
     {
         headers = storage;
@@ -2685,6 +2824,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                 ip_header_len > tot_len)
             {
                 DEBUG("FILTER: REJECT (bad IPv4 packet)");
+                ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
                 return FALSE;
             }
             protocol = ip_header->Protocol;
@@ -2698,12 +2838,14 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     sizeof(struct ipv6hdr) != tot_len)
             {
                 DEBUG("FILTER: REJECT (bad IPv6 packet)");
+                ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
                 return FALSE;
             }
             protocol = ipv6_header->NextHdr;
             break;
         default:
             DEBUG("FILTER: REJECT (packet is neither IPv4 nor IPv6)");
+            ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
             return FALSE;
     }
 
@@ -2715,6 +2857,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                 sizeof(struct icmphdr) + ip_header_len > tot_len)
             {
                 DEBUG("FILTER: REJECT (bad ICMP packet)");
+                ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
                 return FALSE;
             }
             break;
@@ -2724,6 +2867,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                 sizeof(struct icmpv6hdr) + ip_header_len > tot_len)
             {
                 DEBUG("FILTER: REJECT (bad ICMPV6 packet)");
+                ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
                 return FALSE;
             }
             break;
@@ -2733,6 +2877,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                 tcp_header->HdrLength*sizeof(UINT32) + ip_header_len > tot_len)
             {
                 DEBUG("FILTER: REJECT (bad TCP packet)");
+                ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
                 return FALSE;
             }
             break;
@@ -2741,6 +2886,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
             if (sizeof(struct udphdr) + ip_header_len > tot_len)
             {
                 DEBUG("FILTER: REJECT (bad UDP packet)");
+                ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
                 return FALSE;
             }
             break;
@@ -2755,6 +2901,8 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     {
         BOOL result;
         UINT32 field[4];
+        UINT8 str_field[255];
+        UINT16 str_field_len = 0;
         field[1] = 0;
         field[2] = 0;
         field[3] = 0;
@@ -2966,6 +3114,13 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     field[0] = (UINT32)(tot_len - ip_header_len -
                         tcp_header->HdrLength*sizeof(UINT32));
                     break;
+                case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+                    payload_start_p = (payload + ip_header_len +
+                                       tcp_header->HdrLength*sizeof(UINT32));
+                    str_field_len = (tot_len - ip_header_len -
+                        tcp_header->HdrLength*sizeof(UINT32)) % sizeof(str_field);
+                    RtlCopyMemory(str_field, payload_start_p, str_field_len);
+                    break;
                 case WINDIVERT_FILTER_FIELD_UDP_SRCPORT:
                     field[0] = (UINT32)RtlUshortByteSwap(udp_header->SrcPort);
                     break;
@@ -2981,6 +3136,13 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                 case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                     field[0] = (UINT32)(tot_len - ip_header_len -
                         sizeof(struct udphdr));
+                    break;
+                case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+                    payload_start_p = (payload + ip_header_len +
+                                       sizeof(struct udphdr));
+                    str_field_len = (tot_len - ip_header_len -
+                           sizeof(struct udphdr)) % sizeof(str_field);
+                    RtlCopyMemory(str_field, payload_start_p, str_field_len);
                     break;
                 default:
                     field[0] = 0;
@@ -3036,6 +3198,18 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                              (field[1] == filter[ip].arg[1] &&
                               field[0] >= filter[ip].arg[0]))));
                     break;
+                case WINDIVERT_FILTER_TEST_CONTAINS:
+                    result = windivert_wildcard_match(str_field,
+                                                      str_field_len,
+                                                      filter[ip].str_arg,
+                                                      filter[ip].str_arg_len);
+                    break;
+                case WINDIVERT_FILTER_TEST_NCONTAINS:
+                    result = !windivert_wildcard_match(str_field,
+                                                       str_field_len,
+                                                       filter[ip].str_arg,
+                                                       filter[ip].str_arg_len);
+                    break;
                 default:
                     result = FALSE;
                     break;
@@ -3051,6 +3225,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
             return FALSE;
         }
     }
+    ExFreePoolWithTag(payload, WINDIVERT_PKTBUF_TAG);
     DEBUG("FILTER: REJECT (filter TTL exceeded)");
     return FALSE;
 }
@@ -3164,7 +3339,7 @@ static BOOL windivert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
                 result = (arg >= filter[ip].arg[0]);
                 break;
             default:
-                result = FALSE;
+                result = FALSE;                
                 break;
         }
     }
@@ -3214,7 +3389,7 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
     {
         goto windivert_filter_compile_exit;
     }
- 
+
     for (i = 0; i < length; i++)
     {
         if (ioctl_filter[i].field > WINDIVERT_FILTER_FIELD_MAX ||
@@ -3343,14 +3518,22 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
             default:
                 break;
         }
-        filter0[i].field   = ioctl_filter[i].field;
-        filter0[i].test    = ioctl_filter[i].test;
-        filter0[i].success = ioctl_filter[i].success;
-        filter0[i].failure = ioctl_filter[i].failure;
-        filter0[i].arg[0]  = ioctl_filter[i].arg[0];
-        filter0[i].arg[1]  = ioctl_filter[i].arg[1];
-        filter0[i].arg[2]  = ioctl_filter[i].arg[2];
-        filter0[i].arg[3]  = ioctl_filter[i].arg[3];
+        filter0[i].field       = ioctl_filter[i].field;
+        filter0[i].test        = ioctl_filter[i].test;
+        filter0[i].success     = ioctl_filter[i].success;
+        filter0[i].failure     = ioctl_filter[i].failure;
+        filter0[i].arg[0]      = ioctl_filter[i].arg[0];
+        filter0[i].arg[1]      = ioctl_filter[i].arg[1];
+        filter0[i].arg[2]      = ioctl_filter[i].arg[2];
+        filter0[i].arg[3]      = ioctl_filter[i].arg[3];
+        filter0[i].str_arg_len = ioctl_filter[i].str_arg_len;
+        if (ioctl_filter[i].str_arg_len > 0) {
+            RtlCopyMemory(filter0[i].str_arg,
+                   ioctl_filter[i].str_arg,
+                   ioctl_filter[i].str_arg_len % sizeof(filter0[i].str_arg));
+        } else {
+            RtlZeroMemory(filter0[i].str_arg, sizeof(filter0[i].str_arg));
+        }
 
         // Protocol selection:
         switch (ioctl_filter[i].field)
@@ -3418,6 +3601,7 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
             case WINDIVERT_FILTER_FIELD_TCP_CHECKSUM:
             case WINDIVERT_FILTER_FIELD_TCP_URGPTR:
             case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
                 filter0[i].protocol = WINDIVERT_FILTER_PROTOCOL_TCP;
                 break;
             case WINDIVERT_FILTER_FIELD_UDP_SRCPORT:
@@ -3425,13 +3609,14 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
             case WINDIVERT_FILTER_FIELD_UDP_LENGTH:
             case WINDIVERT_FILTER_FIELD_UDP_CHECKSUM:
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
                 filter0[i].protocol = WINDIVERT_FILTER_PROTOCOL_UDP;
                 break;
             default:
                 goto windivert_filter_compile_exit;
         }
     }
-    
+
     result = (filter_t)ExAllocatePoolWithTag(NonPagedPool,
         i*sizeof(struct filter_s), WINDIVERT_TAG);
     if (result != NULL)

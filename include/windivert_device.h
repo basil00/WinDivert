@@ -104,8 +104,10 @@
 #define WINDIVERT_FILTER_FIELD_UDP_LENGTH           55
 #define WINDIVERT_FILTER_FIELD_UDP_CHECKSUM         56
 #define WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH    57
+#define WINDIVERT_FILTER_FIELD_TCP_PAYLOAD          58
+#define WINDIVERT_FILTER_FIELD_UDP_PAYLOAD          59
 #define WINDIVERT_FILTER_FIELD_MAX                  \
-    WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH
+    WINDIVERT_FILTER_FIELD_UDP_PAYLOAD
 
 #define WINDIVERT_FILTER_TEST_EQ                    0
 #define WINDIVERT_FILTER_TEST_NEQ                   1
@@ -113,7 +115,9 @@
 #define WINDIVERT_FILTER_TEST_LEQ                   3
 #define WINDIVERT_FILTER_TEST_GT                    4
 #define WINDIVERT_FILTER_TEST_GEQ                   5
-#define WINDIVERT_FILTER_TEST_MAX                   WINDIVERT_FILTER_TEST_GEQ
+#define WINDIVERT_FILTER_TEST_CONTAINS              6
+#define WINDIVERT_FILTER_TEST_NCONTAINS             7
+#define WINDIVERT_FILTER_TEST_MAX                   WINDIVERT_FILTER_TEST_NCONTAINS
 
 #define WINDIVERT_FILTER_MAXLEN                     128
 
@@ -181,6 +185,8 @@ struct windivert_ioctl_filter_s
     UINT16 success;                 // Success continuation.
     UINT16 failure;                 // Fail continuation.
     UINT32 arg[4];                  // Argument.
+    UINT8  str_arg[255];            // String argument.
+    UINT16 str_arg_len;             // String argument length.
 };
 typedef struct windivert_ioctl_filter_s *windivert_ioctl_filter_t;
 #pragma pack(pop)
