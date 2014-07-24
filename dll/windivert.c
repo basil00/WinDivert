@@ -2119,7 +2119,7 @@ static UINT16 WinDivertFormatString(const char *token, char **endptr, UINT8 *str
                         *sp = '*';
                     }
                     break;
-                default:  //  INFO(Santiago): Anything "raw" but scaped for some reason.
+                default:  //  INFO(Santiago): Anything "raw" but escaped for some reason.
                     *sp = *tp;
                     break;
             }

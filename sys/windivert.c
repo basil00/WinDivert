@@ -1148,10 +1148,10 @@ static void windivert_uninstall_callouts(context_t context)
     }
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
-	    if (!context->installed[i])
-	    {
-	        continue;
-	    }
+        if (!context->installed[i])
+        {
+            continue;
+        }
 
         status = FwpmFilterDeleteByKey0(context->engine_handle,
             &context->filter_guid[i]);
@@ -1246,9 +1246,9 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
     context_t context = windivert_context_get(object);
     packet_t packet;
     NTSTATUS status;
-    
+
     DEBUG("CLEANUP: cleaning up WinDivert context (context=%p)", context);
-    
+
     if (!windivert_context_verify(context, WINDIVERT_CONTEXT_STATE_OPEN))
     {
         return;
@@ -1288,9 +1288,9 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
 extern VOID windivert_close(IN WDFFILEOBJECT object)
 {
     context_t context = windivert_context_get(object);
-    
+
     DEBUG("CLOSE: closing WinDivert context (context=%p)", context);
-    
+
     if (!windivert_context_verify(context, WINDIVERT_CONTEXT_STATE_CLOSING))
     {
         return;
@@ -1370,10 +1370,10 @@ static void windivert_read_service(context_t context)
         context->packet_queue_length--;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         packet = CONTAINING_RECORD(entry, struct packet_s, entry);
-        
+
         DEBUG("SERVICE: servicing read request (context=%p, request=%p, "
             "packet=%p)", context, request, packet);
-        
+
         // We have now have a read request and a packet; service the read.
         status = WdfRequestRetrieveOutputWdmMdl(request, &dst_mdl);
         dst_len = 0;
@@ -1394,7 +1394,7 @@ static void windivert_read_service(context_t context)
         dst_len = (src_len < dst_len? src_len: dst_len);
         src = packet->data;
         RtlCopyMemory(dst, src, dst_len);
-        
+
         // Write the address information.
         req_context = windivert_req_context_get(request);
         addr = req_context->addr;
@@ -1476,7 +1476,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
         DEBUG_ERROR("failed to get MDL address", status);
         goto windivert_write_exit;
     }
-    
+
     data_len = MmGetMdlByteCount(mdl);
     if (data_len > UINT16_MAX || data_len < sizeof(struct iphdr))
     {
@@ -1720,22 +1720,22 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
         case IOCTL_WINDIVERT_SET_PARAM:
         case IOCTL_WINDIVERT_GET_PARAM:
             break;
-        
+
         default:
             status = STATUS_INVALID_DEVICE_REQUEST;
             DEBUG_ERROR("failed to complete I/O control; invalid request",
                 status);
             goto windivert_caller_context_error;
     }
-    
+
     req_context->addr = addr;
 
 windivert_caller_context_exit:
 
     status = WdfDeviceEnqueueRequest(device, request);
-    
-windivert_caller_context_error:    
-    
+
+windivert_caller_context_error:
+
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to enqueue request", status);
@@ -1803,9 +1803,9 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 return;
             }
             break;
-        
+
         case IOCTL_WINDIVERT_SEND:
-            
+
             req_context = windivert_req_context_get(request);
             addr = req_context->addr;
             status = windivert_write(context, request, addr);
@@ -1814,7 +1814,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 return;
             }
             break;
-        
+
         case IOCTL_WINDIVERT_START_FILTER:
         {
             BOOL is_inbound, is_outbound, is_ipv4, is_ipv6;
@@ -2060,7 +2060,7 @@ static void windivert_classify_inbound_network_v6_callout(
     PNET_BUFFER_LIST buffers = (PNET_BUFFER_LIST)data;
     PNET_BUFFER buffer;
     NTSTATUS status;
-   
+
     if (!(result->rights & FWPS_RIGHT_ACTION_WRITE) || data == NULL)
     {
         return;
@@ -2211,7 +2211,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
         result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
-    
+
     if ((context->flags & WINDIVERT_FLAG_SNIFF) == 0)
     {
         // Re-inject all packets up to 'buffer_fst'
@@ -2492,7 +2492,7 @@ static void NTAPI windivert_reinject_complete(VOID *context,
     PMDL mdl;
     PVOID data;
     PNET_BUFFER buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
-    
+
     mdl = NET_BUFFER_FIRST_MDL(buffer);
     data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
     if (data != NULL)
@@ -2537,7 +2537,7 @@ static UINT16 windivert_checksum(const void *pseudo_header,
     {
         sum += (UINT32)data16[i];
     }
-    
+
     if (len & 0x1)
     {
         const UINT8 *data8 = (const UINT8 *)data;
@@ -2771,7 +2771,7 @@ static BOOL windivert_wildcard_match_test(const UINT8 *buf, const size_t bufsize
   }
   return match;
 }
- 
+
 /*
  * Checks if the given packet is of interest.
  */
@@ -2800,7 +2800,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     {
         DEBUG("FILTER: REJECT (packet length too small)");
         return FALSE;
-    }    
+    }
     cpy_len = (tot_len < sizeof(storage)? tot_len: sizeof(storage));
     payload = (UINT8 *) ExAllocatePoolWithTag(NonPagedPool, tot_len, WINDIVERT_PKTBUF_TAG);
     if (payload == NULL) {
@@ -3339,7 +3339,7 @@ static BOOL windivert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
                 result = (arg >= filter[ip].arg[0]);
                 break;
             default:
-                result = FALSE;                
+                result = FALSE;
                 break;
         }
     }
