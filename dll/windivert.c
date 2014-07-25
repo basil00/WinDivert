@@ -99,6 +99,7 @@ typedef enum
     FILTER_TOKEN_TCP_FIN,
     FILTER_TOKEN_TCP_HDR_LENGTH,
     FILTER_TOKEN_TCP_PAYLOAD_LENGTH,
+    FILTER_TOKEN_TCP_PAYLOAD,
     FILTER_TOKEN_TCP_PSH,
     FILTER_TOKEN_TCP_RST,
     FILTER_TOKEN_TCP_SEQ_NUM,
@@ -112,6 +113,7 @@ typedef enum
     FILTER_TOKEN_UDP_DST_PORT,
     FILTER_TOKEN_UDP_LENGTH,
     FILTER_TOKEN_UDP_PAYLOAD_LENGTH,
+    FILTER_TOKEN_UDP_PAYLOAD,
     FILTER_TOKEN_UDP_SRC_PORT,
     FILTER_TOKEN_TRUE,
     FILTER_TOKEN_FALSE,
@@ -131,13 +133,20 @@ typedef enum
     FILTER_TOKEN_AND,
     FILTER_TOKEN_OR,
     FILTER_TOKEN_NUMBER,
-    FILTER_TOKEN_END,
+    FILTER_TOKEN_STRING,
+    FILTER_TOKEN_CONTAINS,
+    FILTER_TOKEN_NCONTAINS,
+    FILTER_TOKEN_END
 } FILTER_TOKEN_KIND;
+
+#define FILTER_STRING_MAXLEN           255
 
 typedef struct
 {
     FILTER_TOKEN_KIND kind;
     UINT32 val[4];
+    unsigned short str_len;
+    UINT8 str[FILTER_STRING_MAXLEN];
 } FILTER_TOKEN;
 
 #define FILTER_TOKEN_MAXLEN             32      // Fits longest IPv6
@@ -184,6 +193,12 @@ typedef struct
 #define IPPROTO_ICMPV6  58
 
 /*
+ * Windivert conversion macros.
+ */
+#define windivert_get_nibble_value(n) ( isxdigit((n)) && isalpha((n)) ?\
+                                                    toupper((n)) - 55 :\
+                                                    (n) - 48 )
+/*
  * Prototypes.
  */
 static BOOLEAN WinDivertUse32Bit(void);
@@ -210,6 +225,10 @@ static void WinDivertInitPseudoHeaderV6(PWINDIVERT_IPV6HDR ipv6_header,
     PWINDIVERT_PSEUDOV6HDR pseudov6_header, UINT8 protocol, UINT len);
 static UINT16 WinDivertHelperCalcChecksum(PVOID pseudo_header,
     UINT16 pseudo_header_len, PVOID data, UINT len);
+static UINT16 WinDivertFormatString(const char *token, char **endptr,
+    UINT8 *str, const size_t str_len);
+
+#undef WINDIVERT_DEBUG
 
 #ifdef WINDIVERT_DEBUG
 static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len);
@@ -590,7 +609,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_START_FILTER, 0, 0,
             ioctl_filter, filter_len*sizeof(struct windivert_ioctl_filter_s),
             NULL))
-    {
+    {        
         CloseHandle(handle);
         return INVALID_HANDLE_VALUE;
     }
@@ -736,18 +755,18 @@ static BOOL WinDivertCompileFilter(const char *filter_str,
 
     if (!WinDivertTokenizeFilter(filter_str, layer, tokens,
             WINDIVERT_FILTER_MAXLEN*3-1))
-    {
+    {        
         return FALSE;
     }
 
     tp = 0;
     *fp = 0;
     if (!WinDivertParseFilter(tokens, &tp, filter, fp, FILTER_TOKEN_AND))
-    {
+    {     
         return FALSE;
     }
     if (tokens[tp].kind != FILTER_TOKEN_END)
-    {
+    {     
         return FALSE;
     }
     return TRUE;
@@ -836,6 +855,7 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"tcp.DstPort",         FILTER_TOKEN_TCP_DST_PORT},
         {"tcp.Fin",             FILTER_TOKEN_TCP_FIN},
         {"tcp.HdrLength",       FILTER_TOKEN_TCP_HDR_LENGTH},
+        {"tcp.Payload",         FILTER_TOKEN_TCP_PAYLOAD},
         {"tcp.PayloadLength",   FILTER_TOKEN_TCP_PAYLOAD_LENGTH},
         {"tcp.Psh",             FILTER_TOKEN_TCP_PSH},
         {"tcp.Rst",             FILTER_TOKEN_TCP_RST},
@@ -850,6 +870,7 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"udp.Checksum",        FILTER_TOKEN_UDP_CHECKSUM},
         {"udp.DstPort",         FILTER_TOKEN_UDP_DST_PORT},
         {"udp.Length",          FILTER_TOKEN_UDP_LENGTH},
+        {"udp.Payload",         FILTER_TOKEN_UDP_PAYLOAD},
         {"udp.PayloadLength",   FILTER_TOKEN_UDP_PAYLOAD_LENGTH},
         {"udp.SrcPort",         FILTER_TOKEN_UDP_SRC_PORT},
     };
@@ -858,6 +879,8 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
     char token[FILTER_TOKEN_MAXLEN];
     UINT i = 0, j;
     UINT tp = 0;
+    UINT16 s_len = 0;
+    UINT8 str[FILTER_STRING_MAXLEN];
 
     while (TRUE)
     {
@@ -936,18 +959,32 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 }
                 tokens[tp++].kind = FILTER_TOKEN_OR;
                 continue;
+            case '?':
+                tokens[tp++].kind = FILTER_TOKEN_CONTAINS;
+                continue;
             default:
                 break;
         }
         token[0] = c;
-        if (isalnum(c) || c == '.' || c == ':')
+        if (isalnum(c) || c == '.' || c == ':' || c == '\"')
         {
             UINT32 num;
             char *end;
-            for (j = 1; j < FILTER_TOKEN_MAXLEN && (isalnum(filter[i]) ||
-                    filter[i] == '.' || filter[i] == ':'); j++, i++)
-            {
-                token[j] = filter[i];
+            if (c != '\"') {
+                for (j = 1; j < FILTER_TOKEN_MAXLEN && (isalnum(filter[i]) ||
+                        filter[i] == '.' || filter[i] == ':' || filter[i] == '\"'); j++, i++)
+                {
+                    token[j] = filter[i];
+                }
+            } else {
+                for (j = 1; j < FILTER_TOKEN_MAXLEN && filter[i] != '\"' &&
+                            filter[i] != '\0'; j++, i++) {
+                    token[j] = filter[i];
+                    if (filter[i] == '\\') {
+                        token[j++] = filter[i++];
+                    }
+                }
+                token[j++] = filter[i++];
             }
             if (j >= FILTER_TOKEN_MAXLEN)
             {
@@ -993,6 +1030,16 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 tp++;
                 continue;
             }
+            
+            // Check for string:
+            if ((s_len = WinDivertFormatString(token, &end, str, sizeof(str))) && *end == '\0')
+            {
+                tokens[tp].kind    = FILTER_TOKEN_STRING;
+                memcpy(tokens[tp].str, str, s_len % sizeof(tokens[tp].str));
+                tokens[tp].str_len = s_len;
+                tp++;
+                continue;
+            }
 
             // Check for IPv4 address:
             if (WinDivertHelperParseIPv4Address(token, tokens[tp].val))
@@ -1018,6 +1065,18 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             return FALSE;
         }
     }
+}
+
+static BOOL IsStringField(const UINT8 field) {
+    return (field == WINDIVERT_FILTER_FIELD_TCP_PAYLOAD ||
+            field == WINDIVERT_FILTER_FIELD_UDP_PAYLOAD);
+}
+
+static BOOL IsValidContainsExpression(const windivert_ioctl_filter_t filter) {
+    //  Contains operator must works only with String type fields.
+    return ((filter->test == WINDIVERT_FILTER_TEST_CONTAINS ||
+            filter->test == WINDIVERT_FILTER_TEST_NCONTAINS) &&
+            IsStringField(filter->field));    
 }
 
 /*
@@ -1046,9 +1105,12 @@ WinDivertParseFilterNext:
     }
     filter[f].success = WINDIVERT_FILTER_RESULT_ACCEPT;
     filter[f].failure = WINDIVERT_FILTER_RESULT_REJECT;
+    filter[f].arg[0] = 0;
     filter[f].arg[1] = 0;
     filter[f].arg[2] = 0;
-    filter[f].arg[3] = 0;
+    filter[f].arg[3] = 0;    
+    filter[f].str_arg_len = 0;
+    memset(filter[f].str_arg, '\0', sizeof(filter[f].str_arg));
     if (token.kind == FILTER_TOKEN_NOT)
     {
         negate = TRUE;
@@ -1231,6 +1293,9 @@ WinDivertParseFilterNext:
         case FILTER_TOKEN_TCP_PAYLOAD_LENGTH:
             filter[f].field = WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH;
             break;
+        case FILTER_TOKEN_TCP_PAYLOAD:
+            filter[f].field = WINDIVERT_FILTER_FIELD_TCP_PAYLOAD;
+            break;
         case FILTER_TOKEN_UDP_SRC_PORT:
             filter[f].field = WINDIVERT_FILTER_FIELD_UDP_SRCPORT;
             break;
@@ -1245,6 +1310,9 @@ WinDivertParseFilterNext:
             break;
         case FILTER_TOKEN_UDP_PAYLOAD_LENGTH:
             filter[f].field = WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH;
+            break;
+        case FILTER_TOKEN_UDP_PAYLOAD:
+            filter[f].field = WINDIVERT_FILTER_FIELD_UDP_PAYLOAD;
             break;
         default:
             return FALSE;
@@ -1280,6 +1348,9 @@ WinDivertParseFilterNext:
                 case FILTER_TOKEN_GEQ:
                     filter[f].test = WINDIVERT_FILTER_TEST_GEQ;
                     break;
+                case FILTER_TOKEN_CONTAINS:
+                    filter[f].test = WINDIVERT_FILTER_TEST_CONTAINS;
+                    break;
                 default:
                     filter[f].test = WINDIVERT_FILTER_TEST_NEQ;
                     filter[f].arg[0] = 0;
@@ -1309,6 +1380,9 @@ WinDivertParseFilterNext:
                 case FILTER_TOKEN_GEQ:
                     filter[f].test = WINDIVERT_FILTER_TEST_LT;
                     break;
+                case FILTER_TOKEN_CONTAINS:
+                    filter[f].test = WINDIVERT_FILTER_TEST_NCONTAINS;
+                    break;
                 default:
                     filter[f].test = WINDIVERT_FILTER_TEST_EQ;
                     filter[f].arg[0] = 0;
@@ -1316,20 +1390,34 @@ WinDivertParseFilterNext:
                     break;
             }
         }
-
+        
         if (testop)
         {
             *tp = *tp + 1;
             token = tokens[*tp];
-            *tp = *tp + 1;
-            if (token.kind != FILTER_TOKEN_NUMBER)
-            {
+            *tp = *tp + 1;            
+            if (token.kind == FILTER_TOKEN_NUMBER &&
+                filter[f].test != WINDIVERT_FILTER_TEST_CONTAINS &&
+                filter[f].test != WINDIVERT_FILTER_TEST_NCONTAINS &&
+                !IsStringField(filter[f].field)) {
+                filter[f].arg[0] = token.val[0];
+                filter[f].arg[1] = token.val[1];
+                filter[f].arg[2] = token.val[2];
+                filter[f].arg[3] = token.val[3];
+            } else if (token.kind == FILTER_TOKEN_STRING &&
+                       IsValidContainsExpression(&filter[f])) {
+                if (token.str_len > 0) {
+                    memcpy(filter[f].str_arg,
+                           token.str,
+                           token.str_len % sizeof(filter[f].str_arg));
+                    filter[f].str_arg_len = token.str_len;
+                } else {
+                    filter[f].str_arg[0] = '\0';
+                    filter[f].str_arg_len = 0;
+                }
+            } else {
                 return FALSE;
             }
-            filter[f].arg[0] = token.val[0];
-            filter[f].arg[1] = token.val[1];
-            filter[f].arg[2] = token.val[2];
-            filter[f].arg[3] = token.val[3];
         }
     }
 
@@ -1977,6 +2065,74 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
     return TRUE;
 }
 
+static UINT16 WinDivertFormatString(const char *token, char **endptr, UINT8 *str, const size_t str_len) {
+    UINT8 *sp = str;
+    UINT8 *sp_end = (str + str_len) - 1;
+    const char *tp = token;
+    int nibble_nr = 0;
+    if (*tp != '\"') {
+        memset(str, '\0', str_len);
+        return 0;
+    }
+    tp++;
+    while (*tp != '\"' && sp < sp_end) {
+        if (*tp != '\\') {
+            *sp = (UINT8)*tp;  //  INFO(Santiago): Single character.
+        } else {
+            tp++;
+            switch (*tp) {
+                case 'x': //  INFO(Santiago): Hexadecimal byte stream.
+                    tp++;
+                    nibble_nr = 0;
+                    *sp = '\0';
+                    sp--;
+                    while (isxdigit(*tp) && sp < sp_end) {
+                        if (nibble_nr == 0) {
+                            sp++;
+                            if (sp < sp_end) {
+                                *sp = '\0';
+                            }
+                        }
+                        *sp = (*sp) << 4;
+                        *sp = (*sp) | windivert_get_nibble_value(*tp);
+                        tp++;
+                        nibble_nr = (nibble_nr + 1) % 2;
+                    }
+                    tp--;
+                    break;
+                case 'n': //  INFO(Santiago): New Line.
+                    *sp = '\n';
+                    break;
+                case 'r': //  INFO(Santiago): Carriage Return.
+                    *sp = '\r';
+                    break;
+                case 't': //  INFO(Santiago): Tabulation.
+                    *sp = '\t';
+                    break;
+                case '*': //  INFO(Santiago): Special wildcard meta-chars
+                case '[':
+                case ']':
+                case '?':
+                    *sp = '\\';
+                    sp++;
+                    if (sp != sp_end) {
+                        *sp = '*';
+                    }
+                    break;
+                default:  //  INFO(Santiago): Anything "raw" but escaped for some reason.
+                    *sp = *tp;
+                    break;
+            }
+        }
+        tp++;
+        sp++;
+    }
+    if (endptr != NULL) {
+        *endptr = (char *)(str + (sp - str));
+    }
+    return (sp - str);
+}
+
 /***************************************************************************/
 /* LEGACY                                                                  */
 /***************************************************************************/
@@ -2044,7 +2200,7 @@ extern BOOL DivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
  */
 static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len)
 {
-    UINT16 i;
+    UINT16 i, s;
 
     for (i = 0; i < len; i++)
     {
@@ -2210,6 +2366,12 @@ static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len)
             case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
                 printf("tcp.PayloadLength " );
                 break;
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+                if (filter[i].test == WINDIVERT_FILTER_TEST_NCONTAINS) {
+                    printf("not ");
+                }
+                printf("tcp.Payload ");
+                break;
             case WINDIVERT_FILTER_FIELD_UDP_SRCPORT:
                 printf("udp.SrcPort ");
                 break;
@@ -2225,8 +2387,14 @@ static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len)
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                 printf("udp.PayloadLength ");
                 break;
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+                if (filter[i].test == WINDIVERT_FILTER_TEST_NCONTAINS) {
+                    printf("not ");
+                }
+                printf("udp.Payload ");
+                break;
             default:
-                printf("unknown.Field ");       
+                printf("unknown.Field ");
                 break;
         }
         switch (filter[i].test)
@@ -2249,11 +2417,24 @@ static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len)
             case WINDIVERT_FILTER_TEST_GEQ:
                 printf(">= ");
                 break;
+            case WINDIVERT_FILTER_TEST_CONTAINS:
+            case WINDIVERT_FILTER_TEST_NCONTAINS:
+                printf("? ");
+                break;
             default:
-                printf("?? ");
+                printf("(unk) ");
                 break;
         }
-        printf("%u)\n", filter[i].arg[0]);
+        if (filter[i].test != WINDIVERT_FILTER_TEST_CONTAINS &&
+            filter[i].test != WINDIVERT_FILTER_TEST_NCONTAINS) {
+            printf("%u)\n", filter[i].arg[0]);
+        } else {
+            printf("\"");
+            for (s = 0; s < filter[i].str_arg_len; s++) {
+                printf("\\x%.2x", filter[i].str_arg[s]);
+            }
+            printf("\")\n");
+        }
         switch (filter[i].success)
         {
             case WINDIVERT_FILTER_RESULT_ACCEPT:
