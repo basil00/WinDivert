@@ -221,15 +221,21 @@ static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len);
 static DWORD windivert_tls_idx;
 
 /*
+ * Current DLL hmodule.
+ */
+static HMODULE module = NULL;
+
+/*
  * Dll Entry
  */
-extern BOOL APIENTRY WinDivertDllEntry(HANDLE module, DWORD reason,
+extern BOOL APIENTRY WinDivertDllEntry(HANDLE module0, DWORD reason,
     LPVOID reserved)
 {
     HANDLE event;
     switch (reason)
     {
         case DLL_PROCESS_ATTACH:
+            module = module0;
             if ((windivert_tls_idx = TlsAlloc()) == TLS_OUT_OF_INDEXES)
             {
                 return FALSE;
@@ -309,8 +315,8 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
             return FALSE;
         }
     }
- 
-    dir_len = (size_t)GetCurrentDirectory(MAX_PATH, sys_str);
+
+    dir_len = (size_t)GetModuleFileName(module, sys_str, MAX_PATH);
     if (dir_len == 0)
     {
         return FALSE;
