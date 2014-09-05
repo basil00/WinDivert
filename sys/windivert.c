@@ -1344,8 +1344,6 @@ static void windivert_read_service(context_t context)
     req_context_t req_context;
     windivert_addr_t addr;
 
-    DEBUG("windivert_read_service");
-
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     while (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
            !IsListEmpty(&context->packet_queue))

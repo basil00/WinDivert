@@ -48,3 +48,6 @@ WinDivert 1.1.4
       WinDivertRecv(..) or WinDivertSend(..).
 WinDivert 1.1.5
     - Insert WinDivert as the highest priority WFP sublayer.
+WinDivert 1.1.6
+    - WinDivert now searches for the driver files in the application's
+      directory (as opposed to the current directory).
