@@ -321,7 +321,9 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
     {
         return FALSE;
     }
-    if (dir_len + sys_len + 1 >= MAX_PATH)
+    for (; dir_len > 0 && sys_str[dir_len] != L'\\'; dir_len--)
+        ;
+    if (sys_str[dir_len] != L'\\' || dir_len + sys_len + 1 >= MAX_PATH)
     {
         SetLastError(ERROR_BAD_PATHNAME);
         return FALSE;
