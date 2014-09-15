@@ -107,7 +107,7 @@ typedef struct filter_s *filter_t;
 #define WINDIVERT_CONTEXT_MAGIC                 0xAA5D1C5BC439AA72ull
 #define WINDIVERT_CONTEXT_SIZE                  (sizeof(struct context_s))
 #define WINDIVERT_CONTEXT_MAXLAYERS             4
-#define WINDIVERT_CONTEXT_MAXWORKERS            4
+#define WINDIVERT_CONTEXT_MAXWORKERS            2
 #define WINDIVERT_CONTEXT_OUTBOUND_IPV4_LAYER   0
 #define WINDIVERT_CONTEXT_INBOUND_IPV4_LAYER    1
 #define WINDIVERT_CONTEXT_OUTBOUND_IPV6_LAYER   2
