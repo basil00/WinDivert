@@ -22,7 +22,7 @@
 #define VER_FILETYPE                VFT_DRV
 #define VER_FILESUBTYPE             VFT2_DRV_NETWORK
 #define VER_FILEDESCRIPTION_STR     \
-    "WinDivert network packet capture and (re)injection driver"
+    "WinDivert network packet capture and (re)injection driver" \
     " (http://reqrypt.org/windivert.html)"
 #define VER_INTERNALNAME_STR        "WinDivert.sys"
 #define VER_ORIGINALFILENAME_STR    "WinDivert.sys"
