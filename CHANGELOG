@@ -51,3 +51,6 @@ WinDivert 1.1.5
 WinDivert 1.1.6
     - WinDivert now searches for the driver files in the application's
       directory (as opposed to the current directory).
+WinDivert 1.1.7
+    - Fixed incorrect IPV6 TCP/UDP checksum calculation in
+      WinDivertHelperCalcChecksums().

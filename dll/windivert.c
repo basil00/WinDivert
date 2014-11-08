@@ -165,8 +165,8 @@ typedef struct
     UINT32 SrcAddr[4];
     UINT32 DstAddr[4];
     UINT32 Length;
-    UINT32 NextHdr:8;
     UINT32 Zero:24;
+    UINT32 NextHdr:8;
 } WINDIVERT_PSEUDOV6HDR, *PWINDIVERT_PSEUDOV6HDR;
 
 /*
