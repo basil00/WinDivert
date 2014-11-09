@@ -403,6 +403,7 @@ static BOOL windivert_reinject_packet(context_t context, UINT8 direction,
 static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level);
 static void windivert_free_packet(packet_t packet);
+static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len);
 static UINT16 windivert_checksum(const void *pseudo_header,
     size_t pseudo_header_len, const void *data, size_t size);
 static void windivert_update_checksums(void *header, size_t len,
@@ -2538,6 +2539,54 @@ static UINT16 windivert_checksum(const void *pseudo_header,
 }
 
 /*
+ * Skip well-known IPv6 extension headers.
+ */
+static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len)
+{
+    UINT8 *hdrlen_ptr;
+    size_t hdrlen;
+
+    while (TRUE)
+    {
+        if (*len <= 2)
+        {
+            return IPPROTO_NONE;
+        }
+
+        hdrlen = (size_t)*(*header + 1);
+        switch (proto)
+        {
+            case IPPROTO_FRAGMENT:
+                hdrlen = 8;
+                break;
+            case IPPROTO_AH:
+                hdrlen += 2;
+                hdrlen *= 4;
+                break;
+            case IPPROTO_HOPOPTS:
+            case IPPROTO_DSTOPTS:
+            case IPPROTO_ROUTING:
+                hdrlen++;
+                hdrlen *= 8;
+                break;
+            case IPPROTO_NONE:
+                return proto;
+            default:
+                return proto;
+        }
+
+        if (hdrlen >= *len)
+        {
+            return IPPROTO_NONE;
+        }
+
+        proto = **header;
+        *header += hdrlen;
+        *len -= hdrlen;
+    }
+}
+
+/*
  * Given a well-formed packet, update the IP and/or TCP/UDP checksums if
  * required.
  */
@@ -2550,13 +2599,26 @@ static void windivert_update_checksums(void *header, size_t len,
         UINT32 DstAddr;
         UINT8  Zero;
         UINT8  Protocol;
-        UINT16 TransLength;
-    } pseudo_header;
+        UINT16 Length;
+    } pseudo_headerv4;
+    struct
+    {
+        UINT32 SrcAddr[4];
+        UINT32 DstAddr[4];
+        UINT32 Length;
+        UINT32 NextHdr:8;
+        UINT32 Zero:24;
+    } pseudo_headerv6;
+    void *pseudo_header;
+    size_t pseudo_header_len;
     struct iphdr *ip_header = (struct iphdr *)header;
+    struct ipv6hdr *ipv6_header = (struct ipv6hdr *)header;
     size_t ip_header_len, trans_len;
     void *trans_header;
     struct tcphdr *tcp_header;
     struct udphdr *udp_header;
+    BOOL is_ipv4 = TRUE;
+    UINT8 proto;
     UINT16 *trans_check_ptr;
     UINT sum;
 
@@ -2570,27 +2632,51 @@ static void windivert_update_checksums(void *header, size_t len,
         return;
     }
 
-    if (ip_header->Version != 4)
+    switch (ip_header->Version)
     {
-        return;
+        case 4:
+            ip_header_len = ip_header->HdrLength*sizeof(UINT32);
+            if (len < ip_header_len)
+            {
+                return;
+            }
+
+            if (update_ip)
+            {
+                ip_header->Checksum = 0;
+                ip_header->Checksum = windivert_checksum(NULL, 0, ip_header,
+                    ip_header_len);
+            }
+
+            proto = ip_header->Protocol;
+            trans_len = len - ip_header_len;
+            trans_header = (UINT8 *)ip_header + ip_header_len;
+            break;
+        
+        case 6:
+            if (!update_tcp && !update_udp)
+            {
+                return;
+            }
+            is_ipv4 = FALSE;
+            if (len < sizeof(struct ipv6hdr))
+            {
+                return;
+            }
+
+            trans_len = len - sizeof(struct ipv6hdr);
+            trans_header = (UINT8 *)(ipv6_header + 1);
+
+            // Skip extension headers:
+            proto = windivert_skip_headers(ipv6_header->NextHdr,
+                &(UINT8 *)trans_header, &trans_len);
+            break;
+
+        default:
+            return;
     }
 
-    ip_header_len = ip_header->HdrLength*sizeof(UINT32);
-    if (len < ip_header_len)
-    {
-        return;
-    }
-
-    if (update_ip)
-    {
-        ip_header->Checksum = 0;
-        ip_header->Checksum = windivert_checksum(NULL, 0, ip_header,
-            ip_header_len);
-    }
-
-    trans_len = RtlUshortByteSwap(ip_header->Length) - ip_header_len;
-    trans_header = (UINT8 *)ip_header + ip_header_len;
-    switch (ip_header->Protocol)
+    switch (proto)
     {
         case IPPROTO_TCP:
             if (!update_tcp)
@@ -2620,15 +2706,33 @@ static void windivert_update_checksums(void *header, size_t len,
             return;
     }
 
-    pseudo_header.SrcAddr     = ip_header->SrcAddr;
-    pseudo_header.DstAddr     = ip_header->DstAddr;
-    pseudo_header.Zero        = 0x0;
-    pseudo_header.Protocol    = ip_header->Protocol;
-    pseudo_header.TransLength = RtlUshortByteSwap((UINT16)trans_len);
+    if (is_ipv4)
+    {
+        pseudo_headerv4.SrcAddr  = ip_header->SrcAddr;
+        pseudo_headerv4.DstAddr  = ip_header->DstAddr;
+        pseudo_headerv4.Zero     = 0x0;
+        pseudo_headerv4.Protocol = proto;
+        pseudo_headerv4.Length   = RtlUshortByteSwap((UINT16)trans_len);
+        pseudo_header = &pseudo_headerv4;
+        pseudo_header_len = sizeof(pseudo_headerv4);
+    }
+    else
+    {
+        RtlCopyMemory(&pseudo_headerv6.SrcAddr, ipv6_header->SrcAddr,
+            sizeof(pseudo_headerv6.SrcAddr));
+        RtlCopyMemory(&pseudo_headerv6.DstAddr, ipv6_header->DstAddr,
+            sizeof(pseudo_headerv6.DstAddr));
+        pseudo_headerv6.Length  = RtlUlongByteSwap((UINT32)trans_len);
+        pseudo_headerv6.NextHdr = proto;
+        pseudo_headerv6.Zero    = 0x0;
+        pseudo_header = &pseudo_headerv6;
+        pseudo_header_len = sizeof(pseudo_headerv6);
+    }
+
     *trans_check_ptr = 0x0;
-    sum = windivert_checksum(&pseudo_header, sizeof(pseudo_header),
-        trans_header, trans_len);
-    if (sum == 0 && ip_header->Protocol == IPPROTO_UDP)
+    sum = windivert_checksum(pseudo_header, pseudo_header_len, trans_header,
+        trans_len);
+    if (sum == 0 && proto == IPPROTO_UDP)
     {
         *trans_check_ptr = 0xFFFF;
     }

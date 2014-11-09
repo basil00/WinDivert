@@ -442,9 +442,8 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
         TlsSetValue(windivert_tls_idx, (LPVOID)event);
     }
 
-    overlapped.Offset     = 0;
-    overlapped.OffsetHigh = 0;
-    overlapped.hEvent     = event;
+    memset(&overlapped, 0, sizeof(overlapped));
+    overlapped.hEvent = event;
     if (!WinDivertIoControlEx(handle, code, arg8, arg, buf, len, iolen,
             &overlapped))
     {

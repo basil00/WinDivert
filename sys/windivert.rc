@@ -22,13 +22,14 @@
 #define VER_FILETYPE                VFT_DRV
 #define VER_FILESUBTYPE             VFT2_DRV_NETWORK
 #define VER_FILEDESCRIPTION_STR     \
-    "WinDivert network packet capture and (re)injection driver" \
-    " (http://reqrypt.org/windivert.html)"
+    "WinDivert" \
+    " (web: http://reqrypt.org/windivert.html)" \
+    " (donate: 1C5vZVSbizPeZ8ydTYhUfm4LA2cNwBfcYh)"
 #define VER_INTERNALNAME_STR        "WinDivert.sys"
 #define VER_ORIGINALFILENAME_STR    "WinDivert.sys"
-#define VER_PRODUCTVERSION          1.1.6
-#define VER_PRODUCTVERSION_STR      "1.1.6"
-#define VER_COMPANYNAME_STR         "Basil's Projects"
+#define VER_PRODUCTVERSION          1.1.7
+#define VER_PRODUCTVERSION_STR      "1.1.7"
+#define VER_COMPANYNAME_STR         "Basil"
 #define VER_LEGALCOPYRIGHT_YEARS    "2011-2014"
 #define VER_LEGALCOPYRIGHT_STR      \
     "Copyright \251 " VER_COMPANYNAME_STR " " VER_LEGALCOPYRIGHT_YEARS 
