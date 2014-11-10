@@ -2543,7 +2543,6 @@ static UINT16 windivert_checksum(const void *pseudo_header,
  */
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len)
 {
-    UINT8 *hdrlen_ptr;
     size_t hdrlen;
 
     while (TRUE)
@@ -2669,7 +2668,7 @@ static void windivert_update_checksums(void *header, size_t len,
 
             // Skip extension headers:
             proto = windivert_skip_headers(ipv6_header->NextHdr,
-                &(UINT8 *)trans_header, &trans_len);
+                (UINT8 **)&trans_header, &trans_len);
             break;
 
         default:

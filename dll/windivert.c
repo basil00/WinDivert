@@ -204,6 +204,7 @@ static BOOL WinDivertParseFilter(FILTER_TOKEN *tokens, UINT16 *tp,
     windivert_ioctl_filter_t filter, UINT16 *fp, FILTER_TOKEN_KIND op);
 static void WinDivertFilterUpdate(windivert_ioctl_filter_t filter, UINT16 s,
     UINT16 e, UINT16 success, UINT16 failure);
+static UINT8 WinDivertSkipExtHeaders(UINT8 proto, UINT8 **header, UINT *len);
 static void WinDivertInitPseudoHeader(PWINDIVERT_IPHDR ip_header,
     PWINDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len);
 static void WinDivertInitPseudoHeaderV6(PWINDIVERT_IPV6HDR ipv6_header,
@@ -1403,6 +1404,53 @@ static void WinDivertFilterUpdate(windivert_ioctl_filter_t filter, UINT16 s,
 /****************************************************************************/
 
 /*
+ * Skip well-known IPv6 extension headers.
+ */
+static UINT8 WinDivertSkipExtHeaders(UINT8 proto, UINT8 **header, UINT *len)
+{
+    UINT hdrlen;
+
+    while (TRUE)
+    {
+        if (*len <= 2)
+        {
+            return IPPROTO_NONE;
+        }
+
+        hdrlen = (UINT)*(*header + 1);
+        switch (proto)
+        {
+            case IPPROTO_FRAGMENT:
+                hdrlen = 8;
+                break;
+            case IPPROTO_AH:
+                hdrlen += 2;
+                hdrlen *= 4;
+                break;
+            case IPPROTO_HOPOPTS:
+            case IPPROTO_DSTOPTS:
+            case IPPROTO_ROUTING:
+                hdrlen++;
+                hdrlen *= 8;
+                break;
+            case IPPROTO_NONE:
+                return proto;
+            default:
+                return proto;
+        }
+
+        if (hdrlen >= *len)
+        {
+            return IPPROTO_NONE;
+        }
+
+        proto = **header;
+        *header += hdrlen;
+        *len -= hdrlen;
+    }
+}
+
+/*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
 extern BOOL WinDivertHelperParsePacket(PVOID pPacket, UINT packetLen,
@@ -1460,6 +1508,8 @@ extern BOOL WinDivertHelperParsePacket(PVOID pPacket, UINT packetLen,
             trans_proto = ipv6_header->NextHdr;
             data = (PVOID)((UINT8 *)data + sizeof(WINDIVERT_IPV6HDR));
             data_len -= sizeof(WINDIVERT_IPV6HDR);
+            trans_proto = WinDivertSkipExtHeaders(trans_proto, (UINT8 **)&data,
+                &data_len);
             break;
         default:
             ip_header = NULL;
