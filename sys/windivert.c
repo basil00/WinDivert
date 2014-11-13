@@ -2343,13 +2343,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     packet->direction = direction;
     packet->if_idx = if_idx;
     packet->sub_if_idx = sub_if_idx;
-    if (isloopback)
-    {
-        // Workaround: Do not trust checksum info for loopback packets.
-        packet->ip_checksum = TRUE;
-        packet->tcp_checksum = TRUE;
-        packet->udp_checksum = TRUE;
-    }
     if (direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
         if (isloopback)
