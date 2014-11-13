@@ -389,14 +389,12 @@ static void windivert_classify_forward_network_v6_callout(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
-    IN UINT32 sub_if_idx, IN BOOL isipv4,
-    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
-    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
-    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    IN UINT32 sub_if_idx, IN BOOL isipv4, IN BOOL isloopback,
+    IN OUT void *data, const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     PNET_BUFFER_LIST buffers, UINT8 direction, UINT32 if_idx,
-    UINT32 sub_if_idx);
+    UINT32 sub_if_idx, BOOL isloopback);
 static BOOL windivert_reinject_packet(context_t context, UINT8 direction,
     BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx, UINT32 priority,
     PNET_BUFFER buffer);
@@ -1977,7 +1975,11 @@ static void windivert_classify_outbound_network_v4_callout(
             FWPS_FIELD_OUTBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
             FWPS_FIELD_OUTBOUND_IPPACKET_V4_SUB_INTERFACE_INDEX].value.uint32,
-        TRUE, fixed_vals, meta_vals, data, filter, flow_context, result);
+        TRUE,
+        (fixed_vals->incomingValue[
+            FWPS_FIELD_OUTBOUND_IPPACKET_V4_FLAGS].value.uint32 &
+            FWP_CONDITION_FLAG_IS_LOOPBACK) != 0,
+        data, filter, flow_context, result);
 }
 
 /*
@@ -1994,7 +1996,11 @@ static void windivert_classify_outbound_network_v6_callout(
             FWPS_FIELD_OUTBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
             FWPS_FIELD_OUTBOUND_IPPACKET_V6_SUB_INTERFACE_INDEX].value.uint32,
-        FALSE, fixed_vals, meta_vals, data, filter, flow_context, result);
+        FALSE,
+        (fixed_vals->incomingValue[
+            FWPS_FIELD_OUTBOUND_IPPACKET_V6_FLAGS].value.uint32 &
+            FWP_CONDITION_FLAG_IS_LOOPBACK) != 0,
+        data, filter, flow_context, result);
 }
 
 /*
@@ -2028,7 +2034,11 @@ static void windivert_classify_inbound_network_v4_callout(
             FWPS_FIELD_INBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
             FWPS_FIELD_INBOUND_IPPACKET_V4_SUB_INTERFACE_INDEX].value.uint32,
-        TRUE, fixed_vals, meta_vals, data, filter, flow_context, result);
+        TRUE,
+        (fixed_vals->incomingValue[
+            FWPS_FIELD_INBOUND_IPPACKET_V4_FLAGS].value.uint32 &
+            FWP_CONDITION_FLAG_IS_LOOPBACK) != 0,
+        data, filter, flow_context, result);
     if (result->actionType != FWP_ACTION_BLOCK)
     {
         NdisAdvanceNetBufferDataStart(buffer, meta_vals->ipHeaderSize,
@@ -2067,7 +2077,11 @@ static void windivert_classify_inbound_network_v6_callout(
             FWPS_FIELD_INBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32,
         fixed_vals->incomingValue[
             FWPS_FIELD_INBOUND_IPPACKET_V6_SUB_INTERFACE_INDEX].value.uint32,
-        FALSE, fixed_vals, meta_vals, data, filter, flow_context, result);
+        FALSE,
+        (fixed_vals->incomingValue[
+            FWPS_FIELD_INBOUND_IPPACKET_V6_FLAGS].value.uint32 &
+            FWP_CONDITION_FLAG_IS_LOOPBACK) != 0,
+        data, filter, flow_context, result);
     if (result->actionType != FWP_ACTION_BLOCK)
     {
         NdisAdvanceNetBufferDataStart(buffer, sizeof(struct ipv6hdr), FALSE,
@@ -2087,7 +2101,7 @@ static void windivert_classify_forward_network_v4_callout(
     windivert_classify_callout(WINDIVERT_DIRECTION_OUTBOUND,
         fixed_vals->incomingValue[
             FWPS_FIELD_IPFORWARD_V4_DESTINATION_INTERFACE_INDEX].value.uint32,
-        0, TRUE, fixed_vals, meta_vals, data, filter, flow_context, result);
+        0, TRUE, FALSE, data, filter, flow_context, result);
 }
 
 /*
@@ -2102,17 +2116,15 @@ static void windivert_classify_forward_network_v6_callout(
     windivert_classify_callout(WINDIVERT_DIRECTION_OUTBOUND,
         fixed_vals->incomingValue[
             FWPS_FIELD_IPFORWARD_V6_DESTINATION_INTERFACE_INDEX].value.uint32,
-        0, FALSE, fixed_vals, meta_vals, data, filter, flow_context, result);
+        0, FALSE, FALSE, data, filter, flow_context, result);
 }
 
 /*
  * WinDivert classify callout.
  */
 static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
-    IN UINT32 sub_if_idx, IN BOOL isipv4,
-    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
-    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
-    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    IN UINT32 sub_if_idx, IN BOOL isipv4, IN BOOL isloopback,
+    IN OUT void *data, const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
@@ -2223,7 +2235,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
     {
         if (!windivert_queue_packet(context, buffer_itr, buffers, direction,
-                if_idx, sub_if_idx))
+                if_idx, sub_if_idx, isloopback))
         {
             goto windivert_classify_callout_exit;
         }
@@ -2240,7 +2252,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
             if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
             {
                 if (!windivert_queue_packet(context, buffer_itr, buffers,
-                        direction, if_idx, sub_if_idx))
+                        direction, if_idx, sub_if_idx, isloopback))
                 {
                     goto windivert_classify_callout_exit;
                 }
@@ -2299,7 +2311,7 @@ windivert_classify_callout_exit:
  */
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     PNET_BUFFER_LIST buffers, UINT8 direction, UINT32 if_idx,
-    UINT32 sub_if_idx)
+    UINT32 sub_if_idx, BOOL isloopback)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksum_info;
@@ -2328,17 +2340,35 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
         RtlCopyMemory(packet->data, data, data_len);
     }
 
-    checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
-        TcpIpChecksumNetBufferListInfo);
     packet->direction = direction;
     packet->if_idx = if_idx;
     packet->sub_if_idx = sub_if_idx;
+    if (isloopback)
+    {
+        // Workaround: Do not trust checksum info for loopback packets.
+        packet->ip_checksum = TRUE;
+        packet->tcp_checksum = TRUE;
+        packet->udp_checksum = TRUE;
+    }
     if (direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
-        // IPv4 Checksum is not calculated yet
-        packet->ip_checksum = TRUE;
-        packet->tcp_checksum = (BOOL)checksum_info.Transmit.TcpChecksum;
-        packet->udp_checksum = (BOOL)checksum_info.Transmit.UdpChecksum;
+        if (isloopback)
+        {
+            // Workaround: Do not trust checksum info for loopback packets.
+            packet->ip_checksum = TRUE;
+            packet->tcp_checksum = TRUE;
+            packet->udp_checksum = TRUE;
+        }
+        else
+        {
+            checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
+                TcpIpChecksumNetBufferListInfo);
+
+            // IPv4 Checksum is not calculated yet
+            packet->ip_checksum = TRUE;
+            packet->tcp_checksum = (BOOL)checksum_info.Transmit.TcpChecksum;
+            packet->udp_checksum = (BOOL)checksum_info.Transmit.UdpChecksum;
+        }
     }
     else
     {
