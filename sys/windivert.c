@@ -407,7 +407,7 @@ static UINT16 windivert_checksum(const void *pseudo_header,
 static void windivert_update_checksums(void *header, size_t len,
     BOOL update_ip, BOOL update_tcp, BOOL update_udp);
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
-    UINT32 sub_if_idx, BOOL outbound, filter_t filter);
+    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, filter_t filter);
 static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
     size_t ioctl_filter_len);
 static void windivert_filter_analyze(filter_t filter, BOOL *is_inbound,
@@ -2198,7 +2198,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     do
     {
         if (windivert_filter(buffer_fst, if_idx, sub_if_idx, outbound,
-                context->filter))
+                isipv4, context->filter))
         {
             break;
         }
@@ -2247,7 +2247,7 @@ static void windivert_classify_callout(IN UINT8 direction, IN UINT32 if_idx,
     while (buffer_itr != NULL)
     {
         if (windivert_filter(buffer_itr, if_idx, sub_if_idx, outbound,
-            context->filter))
+                isipv4, context->filter))
         {
             if ((context->flags & WINDIVERT_FLAG_DROP) == 0)
             {
@@ -2768,13 +2768,9 @@ static void windivert_update_checksums(void *header, size_t len,
  * Checks if the given packet is of interest.
  */
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
-    UINT32 sub_if_idx, BOOL outbound, filter_t filter)
+    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, filter_t filter)
 {
-    // Buffer contains enough space for a full size iphdr and tcphdr/udphdr
-    // (without options)
-    UINT8 storage[0xF*sizeof(UINT32) + sizeof(struct tcphdr)];
-    UINT8 *headers;
-    size_t tot_len, cpy_len, ip_header_len;
+    size_t tot_len, ip_header_len;
     struct iphdr *ip_header = NULL;
     struct ipv6hdr *ipv6_header = NULL;
     struct icmphdr *icmp_header = NULL;
@@ -2782,7 +2778,8 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     struct tcphdr *tcp_header = NULL;
     struct udphdr *udp_header = NULL;
     UINT16 ip, ttl;
-    UINT8 protocol;
+    UINT8 proto;
+    NTSTATUS status;
 
     // Parse the headers:
     tot_len = NET_BUFFER_DATA_LENGTH(buffer);
@@ -2791,85 +2788,136 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
         DEBUG("FILTER: REJECT (packet length too small)");
         return FALSE;
     }
-    cpy_len = (tot_len < sizeof(storage)? tot_len: sizeof(storage));
-    headers = (UINT8 *)NdisGetDataBuffer(buffer, (ULONG)cpy_len, storage, 1,
-        0);
-    if (headers == NULL)
-    {
-        headers = storage;
-    }
 
-    ip_header = (struct iphdr *)headers;
-    switch (ip_header->Version)
+    // Get the IP header.
+    if (isipv4)
     {
-        case 4:
-            ip_header_len = ip_header->HdrLength*sizeof(UINT32);
-            if (RtlUshortByteSwap(ip_header->Length) != tot_len ||
-                ip_header->HdrLength < 5 ||
-                ip_header_len > tot_len)
-            {
-                DEBUG("FILTER: REJECT (bad IPv4 packet)");
-                return FALSE;
-            }
-            protocol = ip_header->Protocol;
-            break;
-        case 6:
-            ip_header = NULL;
-            ipv6_header = (struct ipv6hdr *)headers;
-            ip_header_len = sizeof(struct ipv6hdr);
-            if (ip_header_len > tot_len ||
-                RtlUshortByteSwap(ipv6_header->Length) +
-                    sizeof(struct ipv6hdr) != tot_len)
-            {
-                DEBUG("FILTER: REJECT (bad IPv6 packet)");
-                return FALSE;
-            }
-            protocol = ipv6_header->NextHdr;
-            break;
-        default:
-            DEBUG("FILTER: REJECT (packet is neither IPv4 nor IPv6)");
+        // IPv4:
+        if (tot_len < sizeof(struct iphdr))
+        {
+            DEBUG("FILTER: REJECT (packet length too small)");
             return FALSE;
+        }
+        ip_header = (struct iphdr *)NdisGetDataBuffer(buffer,
+            sizeof(struct iphdr), NULL, 1, 0);
+        if (ip_header == NULL)
+        {
+            DEBUG("FILTER: REJECT (failed to get IPv4 header)");
+            return FALSE;
+        }
+        ip_header_len = ip_header->HdrLength*sizeof(UINT32);
+        if (ip_header->Version != 4 ||
+            RtlUshortByteSwap(ip_header->Length) != tot_len ||
+            ip_header->HdrLength < 5 ||
+            ip_header_len > tot_len)
+        {
+            DEBUG("FILTER: REJECT (bad IPv4 packet)");
+            return FALSE;
+        }
+        proto = ip_header->Protocol;
+        NdisAdvanceNetBufferDataStart(buffer, ip_header_len, FALSE, NULL);
+    }
+    else
+    {
+        // IPv6:
+        if (tot_len < sizeof(struct ipv6hdr))
+        {
+            DEBUG("FILTER: REJECT (packet length too small)");
+            return FALSE;
+        }
+        ipv6_header = (struct ipv6hdr *)NdisGetDataBuffer(buffer,
+            sizeof(struct ipv6hdr), NULL, 1, 0);
+        if (ipv6_header == NULL)
+        {
+            DEBUG("FILTER: REJECT (failed to get IPv6 header)");
+            return FALSE;
+        }
+        ip_header_len = sizeof(struct ipv6hdr);
+        if (ipv6_header->Version != 6 ||
+            ip_header_len > tot_len ||
+            RtlUshortByteSwap(ipv6_header->Length) +
+                sizeof(struct ipv6hdr) != tot_len)
+        {
+            DEBUG("FILTER: REJECT (bad IPv6 packet)");
+            return FALSE;
+        }
+        proto = ipv6_header->NextHdr;
+        NdisAdvanceNetBufferDataStart(buffer, ip_header_len, FALSE, NULL);
+
+        // Skip extension headers:
+        while (TRUE)
+        {
+            UINT8 *ext_header;
+            size_t ext_header_len;
+            BOOL isexthdr = TRUE;
+
+            ext_header = (UINT8 *)NdisGetDataBuffer(buffer, 2, NULL, 1, 0);
+            if (ext_header == NULL)
+            {
+                break;
+            }
+
+            ext_header_len = (size_t)ext_header[1];
+            switch (proto)
+            {
+                case IPPROTO_FRAGMENT:
+                    ext_header_len = 8;
+                    break;
+                case IPPROTO_AH:
+                    ext_header_len += 2;
+                    ext_header_len *= 4;
+                    break;
+                case IPPROTO_HOPOPTS:
+                case IPPROTO_DSTOPTS:
+                case IPPROTO_ROUTING:
+                    ext_header_len++;
+                    ext_header_len *= 8;
+                    break;
+                default:
+                    isexthdr = FALSE;
+                    break;
+            }
+
+            if (!isexthdr)
+            {
+                break;
+            }
+
+            proto = ext_header[0];
+            ip_header_len += ext_header_len;
+            NdisAdvanceNetBufferDataStart(buffer, ext_header_len, FALSE,
+                NULL);
+        }
     }
 
-    switch (protocol)
+    switch (proto)
     {
         case IPPROTO_ICMP:
-            icmp_header = (struct icmphdr *)(headers + ip_header_len);
-            if (ip_header == NULL ||
-                sizeof(struct icmphdr) + ip_header_len > tot_len)
-            {
-                DEBUG("FILTER: REJECT (bad ICMP packet)");
-                return FALSE;
-            }
+            icmp_header = (struct icmphdr *)NdisGetDataBuffer(buffer,
+                sizeof(struct icmphdr), NULL, 1, 0);
             break;
         case IPPROTO_ICMPV6:
-            icmpv6_header = (struct icmpv6hdr *)(headers + ip_header_len);
-            if (ipv6_header == NULL ||
-                sizeof(struct icmpv6hdr) + ip_header_len > tot_len)
-            {
-                DEBUG("FILTER: REJECT (bad ICMPV6 packet)");
-                return FALSE;
-            }
+            icmpv6_header = (struct icmpv6hdr *)NdisGetDataBuffer(buffer,
+                sizeof(struct icmpv6hdr), NULL, 1, 0);
             break;
         case IPPROTO_TCP:
-            tcp_header = (struct tcphdr *)(headers + ip_header_len);
-            if (tcp_header->HdrLength < 5 ||
-                tcp_header->HdrLength*sizeof(UINT32) + ip_header_len > tot_len)
-            {
-                DEBUG("FILTER: REJECT (bad TCP packet)");
-                return FALSE;
-            }
+            tcp_header = (struct tcphdr *)NdisGetDataBuffer(buffer,
+                sizeof(struct tcphdr), NULL, 1, 0);
             break;
         case IPPROTO_UDP:
-            udp_header = (struct udphdr *)(headers + ip_header_len);
-            if (sizeof(struct udphdr) + ip_header_len > tot_len)
-            {
-                DEBUG("FILTER: REJECT (bad UDP packet)");
-                return FALSE;
-            }
+            udp_header = (struct udphdr *)NdisGetDataBuffer(buffer,
+                sizeof(struct udphdr), NULL, 1, 0);
             break;
         default:
             break;
+    }
+
+    status = NdisRetreatNetBufferDataStart(buffer, ip_header_len, 0, NULL);
+    if (!NT_SUCCESS(status))
+    {
+        // Should never occur.
+        DEBUG("FILTER: REJECT (failed to retreat buffer)");
+        return FALSE;
     }
 
     // Execute the filter:
