@@ -1891,11 +1891,11 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
         WinDivertAToX(part_str, NULL, &part);
         if (!end)
         {
-            addr[i] = (UINT16)ntohs(part);
+            addr[i] = (UINT16)part;
         }
         else
         {
-            addr[j--] = (UINT16)ntohs(part);
+            addr[j--] = (UINT16)part;
         }
         if (*str == '\0')
         {
@@ -1933,7 +1933,8 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
     {
         for (i = 0; i < sizeof(addr) / sizeof(UINT32); i++)
         {
-            addr_ptr[i] = addr[i];
+            addr_ptr[i] = (UINT32)addr[2 * i + 1] |
+                          (UINT32)addr[2 * i];
         }
     }
 
