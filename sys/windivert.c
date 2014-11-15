@@ -2628,8 +2628,8 @@ static void windivert_update_checksums(void *header, size_t len,
         UINT32 SrcAddr[4];
         UINT32 DstAddr[4];
         UINT32 Length;
-        UINT32 NextHdr:8;
         UINT32 Zero:24;
+        UINT32 NextHdr:8;
     } pseudo_headerv6;
     void *pseudo_header;
     size_t pseudo_header_len;
