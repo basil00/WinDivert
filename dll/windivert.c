@@ -1838,11 +1838,14 @@ extern BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
  */
 extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
 {
-    UINT16 addr[8] = {0};
-    UINT part;
-    UINT i, j, k;
-    BOOL end = FALSE;
+    UINT16 laddr[8];
+    UINT16 raddr[8];
+    BOOL left = TRUE;
+    UINT i, j, k, l, part;
     char part_str[5];
+
+    memset(laddr, 0, sizeof(laddr));
+    memset(raddr, 0, sizeof(raddr));
 
     if (*str == ':')
     {
@@ -1852,58 +1855,54 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
-        end = TRUE;
+        left = FALSE;
         str++;
     }
 
-    for (i = 0, j = 7; i < 8; i++)
+    for (i = 0, j = 0, k = 0; k < 8; k++)
     {
         if (*str == ':')
         {
-            if (end)
+            if (!left)
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
-            end = TRUE;
+            left = FALSE;
             str++;
-            if (*str == '\0')
-            {
-                break;
-            }
         }
-        for (k = 0; k < 4 && isxdigit(*str); k++)
+        for (l = 0; l < 4 && isxdigit(*str); l++)
         {
-            part_str[k] = *str;
+            part_str[l] = *str;
             str++;
         }
-        if (k == 0)
+        if (l == 0)
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
-        part_str[k] = '\0';
+        part_str[l] = '\0';
         if (*str != ':' && *str != '\0')
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
         WinDivertAToX(part_str, NULL, &part);
-        if (!end)
+        if (left)
         {
-            addr[i] = (UINT16)part;
+            laddr[i++] = (UINT16)part;
         }
         else
         {
-            addr[j--] = (UINT16)part;
+            raddr[j++] = (UINT16)part;
         }
         if (*str == '\0')
         {
-            if (end)
+            if (!left)
             {
                 break;
             }
-            if (i == 7)
+            if (k == 7)
             {
                 break;
             }
@@ -1912,32 +1911,29 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
         }
         str++;
     }
-
     if (*str != '\0')
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-
-    if (end)
+    
+    if (addr_ptr == NULL)
     {
-        j++;
-        for (i = 7; j < i; j++, i--)
-        {
-            UINT16 tmp = addr[i];
-            addr[i] = addr[j];
-            addr[j] = tmp;
-        }
+        return TRUE;
     }
-    if (addr_ptr != NULL)
+    
+    for (i = 0; i < 4; i++)
     {
-        for (i = 0; i < sizeof(addr) / sizeof(UINT32); i++)
-        {
-            addr_ptr[i] = (UINT32)addr[2 * i + 1] |
-                          (UINT32)addr[2 * i];
-        }
+        k = 2 * i + j;
+        l = k + 1;
+        k = (k >= 8? k - 8: k);
+        l = (l >= 8? l - 8: l);
+        addr_ptr[i] =
+            (UINT32)laddr[2 * i + 1] |
+            (UINT32)laddr[2 * i] << 16 |
+            (UINT32)raddr[l] |
+            (UINT32)raddr[k] << 16;
     }
-
     return TRUE;
 }
 
@@ -2021,7 +2017,14 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
     {
         num0 = num;
         num *= 16;
-        num += (UINT32)(str[i] - '0');
+        if (isdigit(str[i]))
+        {
+            num += (UINT32)(str[i] - '0');
+        }
+        else
+        {
+            num += (UINT32)(tolower(str[i]) - 'a') + 0x0A;
+        }
         if (num0 > num)
         {
             return FALSE;

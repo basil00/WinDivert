@@ -59,25 +59,31 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
 /*
  * Test data.
  */
-struct packet pkt_echo_request =
+static struct packet pkt_echo_request =
 {
     echo_request,
     sizeof(echo_request),
     "ipv4_icmp_echo_req"
 };
-struct packet pkt_http_request =
+static struct packet pkt_http_request =
 {
     http_request,
     sizeof(http_request),
     "ipv4_tcp_http_req"
 };
-struct packet pkt_ipv6_exthdrs_udp =
+static struct packet pkt_ipv6_tcp_syn =
+{
+    ipv6_tcp_syn,
+    sizeof(ipv6_tcp_syn),
+    "ipv6_tcp_syn"
+};
+static struct packet pkt_ipv6_exthdrs_udp =
 {
     ipv6_exthdrs_udp,
     sizeof(ipv6_exthdrs_udp),
     "ipv6_exthdrs_udp"
 };
-struct test tests[] =
+static struct test tests[] =
 {
     {"outbound and icmp",                      &pkt_echo_request, TRUE},
     {"outbound",                               &pkt_echo_request, TRUE},
@@ -98,6 +104,15 @@ struct test tests[] =
     {"tcp.PayloadLength <= 469",               &pkt_http_request, TRUE},
     {"tcp.PayloadLength > 469",                &pkt_http_request, FALSE},
     {"tcp.PayloadLength < 469",                &pkt_http_request, FALSE},
+    {"ipv6",                                   &pkt_ipv6_tcp_syn, TRUE},
+    {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
+    {"tcp.Syn",                                &pkt_ipv6_tcp_syn, TRUE},
+    {"tcp.Syn == 1 && tcp.Ack == 0",           &pkt_ipv6_tcp_syn, TRUE},
+    {"tcp.PayloadLength == 0",                 &pkt_ipv6_tcp_syn, TRUE},
+    {"ipv6.SrcAddr == 1234:5678:1::aabb:ccdd", &pkt_ipv6_tcp_syn, TRUE},
+    {"ipv6.SrcAddr == aabb:5678:1::1234:ccdd", &pkt_ipv6_tcp_syn, FALSE},
+    {"tcp.SrcPort == 50046",                   &pkt_ipv6_tcp_syn, TRUE},
+    {"tcp.SrcPort == 0x0000C37E",              &pkt_ipv6_tcp_syn, TRUE},
     {"true",                                   &pkt_ipv6_exthdrs_udp, TRUE},
     {"udp",                                    &pkt_ipv6_exthdrs_udp, TRUE},
     {"tcp",                                    &pkt_ipv6_exthdrs_udp, FALSE},
@@ -233,7 +248,7 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     }
 
     // (3) Wait for the packet to arrive.
-    // NOTE: This may fail, so set a generous time-out of 1 second.
+    // NOTE: This may fail, so set a generous time-out of 250ms.
     memset(&overlapped, 0, sizeof(overlapped));
     event = CreateEvent(NULL, FALSE, FALSE, NULL);
     if (event == NULL)
@@ -254,7 +269,7 @@ read_failed:
             goto failed;
         }
 
-        switch (WaitForSingleObject(event, 1000))
+        switch (WaitForSingleObject(event, 250))
         {
             case WAIT_OBJECT_0:
                 break;

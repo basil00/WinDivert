@@ -1552,7 +1552,7 @@ windivert_write_exit:
 
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to (re)inject packet", status);
+        DEBUG_ERROR("failed to inject packet", status);
         if (buffers != NULL)
         {
             FwpsFreeNetBufferList0(buffers);
