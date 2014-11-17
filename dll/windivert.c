@@ -1014,6 +1014,16 @@ static BOOL WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             SetLastError(0);
             if (WinDivertHelperParseIPv6Address(token, tokens[tp].val))
             {
+                // Work-around the different word orderings between the
+                // DLL vs SYS.
+                UINT32 tmp;
+                tmp = tokens[tp].val[0];
+                tokens[tp].val[0] = tokens[tp].val[3];
+                tokens[tp].val[3] = tmp;
+                tmp = tokens[tp].val[1];
+                tokens[tp].val[1] = tokens[tp].val[2];
+                tokens[tp].val[2] = tmp;
+
                 tokens[tp].kind = FILTER_TOKEN_NUMBER;
                 tp++;
                 continue;

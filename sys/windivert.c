@@ -3048,23 +3048,23 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     field[0] = (UINT32)ipv6_header->HopLimit;
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
-                    field[0] =
-                        (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[0]);
-                    field[1] =
-                        (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[1]);
-                    field[2] =
-                        (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[2]);
                     field[3] =
+                        (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[0]);
+                    field[2] =
+                        (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[1]);
+                    field[1] =
+                        (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[2]);
+                    field[0] =
                         (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[3]);
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
-                    field[0] =
-                        (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[0]);
-                    field[1] =
-                        (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[1]);
-                    field[2] =
-                        (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[2]);
                     field[3] =
+                        (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[0]);
+                    field[2] =
+                        (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[1]);
+                    field[1] =
+                        (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[2]);
+                    field[0] =
                         (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[3]);
                     break;
                 case WINDIVERT_FILTER_FIELD_ICMP_TYPE:
