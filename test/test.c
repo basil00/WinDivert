@@ -77,6 +77,12 @@ static struct packet pkt_ipv6_tcp_syn =
     sizeof(ipv6_tcp_syn),
     "ipv6_tcp_syn"
 };
+static struct packet pkt_ipv6_echo_reply =
+{
+    ipv6_echo_reply,
+    sizeof(ipv6_echo_reply),
+    "ipv6_icmpv6_echo_rep"
+};
 static struct packet pkt_ipv6_exthdrs_udp =
 {
     ipv6_exthdrs_udp,
@@ -113,6 +119,15 @@ static struct test tests[] =
     {"ipv6.SrcAddr == aabb:5678:1::1234:ccdd", &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.SrcPort == 50046",                   &pkt_ipv6_tcp_syn, TRUE},
     {"tcp.SrcPort == 0x0000C37E",              &pkt_ipv6_tcp_syn, TRUE},
+    {"icmpv6",                                 &pkt_ipv6_echo_reply, TRUE},
+    {"icmp",                                   &pkt_ipv6_echo_reply, FALSE},
+    {"icmp or icmpv6",                         &pkt_ipv6_echo_reply, TRUE},
+    {"not icmp",                               &pkt_ipv6_echo_reply, TRUE},
+    {"icmpv6.Type == 129",                     &pkt_ipv6_echo_reply, TRUE},
+    {"icmpv6.Code == 0",                       &pkt_ipv6_echo_reply, TRUE},
+    {"icmpv6.Body == 0x10720003",              &pkt_ipv6_echo_reply, TRUE},
+    {"ipv6.DstAddr >= 1000",                   &pkt_ipv6_echo_reply, FALSE},
+    {"ipv6.DstAddr <= 1",                      &pkt_ipv6_echo_reply, TRUE},
     {"true",                                   &pkt_ipv6_exthdrs_udp, TRUE},
     {"udp",                                    &pkt_ipv6_exthdrs_udp, TRUE},
     {"tcp",                                    &pkt_ipv6_exthdrs_udp, FALSE},

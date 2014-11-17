@@ -3087,10 +3087,12 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     field[0] = (UINT32)icmpv6_header->Code;
                     break;
                 case WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM:
-                    field[0] = (UINT32)icmpv6_header->Checksum;
+                    field[0] =
+                        (UINT32)RtlUshortByteSwap(icmpv6_header->Checksum);
                     break;
                 case WINDIVERT_FILTER_FIELD_ICMPV6_BODY:
-                    field[0] = (UINT32)icmpv6_header->Body;
+                    field[0] =
+                        (UINT32)RtlUlongByteSwap(icmpv6_header->Body);
                     break;
                 case WINDIVERT_FILTER_FIELD_TCP_SRCPORT:
                     field[0] = (UINT32)RtlUshortByteSwap(tcp_header->SrcPort);
