@@ -1168,7 +1168,9 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Parses an IPv4 address stored in <tt>addrStr</tt>.
-If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>.
+If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>
+in host-byte-order.
+Use <tt>htonl()</tt> to convert the result into network-byte-order.
 </p>
 <dd></dl>
 
@@ -1198,6 +1200,18 @@ Parses an IPv6 address stored in <tt>addrStr</tt>.
 If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>.
 The <tt>pAddr</tt> parameter is assumed to point to a buffer large enough
 to hold a 16-byte IPv6 address.
+Given an IPv6 address of the form
+<tt>0011:2233:4455:6677:8899:aabb:ccdd:eeff</tt>, then
+the result is ordered as follows:
+<pre>
+pAddr[0] = 0x00112233
+pAddr[1] = 0x44556677
+pAddr[2] = 0x8899aabb
+pAddr[3] = 0xccddeeff
+</pre>
+where each <tt>pAddr[i]</tt> is in host-byte-order.
+The result can be converted into network-byte-order by setting
+<tt>pAddr[i] = htonl(pAddr[i])</tt> for each <tt>i</tt>.
 </p>
 <dd></dl>
 
