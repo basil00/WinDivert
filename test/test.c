@@ -71,6 +71,12 @@ static struct packet pkt_http_request =
     sizeof(http_request),
     "ipv4_tcp_http_req"
 };
+static struct packet pkt_dns_request =
+{
+    dns_request,
+    sizeof(dns_request),
+    "ipv4_udp_dns_req"
+};
 static struct packet pkt_ipv6_tcp_syn =
 {
     ipv6_tcp_syn,
@@ -110,6 +116,17 @@ static struct test tests[] =
     {"tcp.PayloadLength <= 469",               &pkt_http_request, TRUE},
     {"tcp.PayloadLength > 469",                &pkt_http_request, FALSE},
     {"tcp.PayloadLength < 469",                &pkt_http_request, FALSE},
+    {"udp",                                    &pkt_dns_request, TRUE},
+    {"udp && udp.SrcPort > 1 && ipv6",         &pkt_dns_request, FALSE},
+    {"udp.DstPort == 53",                      &pkt_dns_request, TRUE},
+    {"udp.DstPort > 100",                      &pkt_dns_request, FALSE},
+    {"ip.DstAddr = 8.8.4.4",                   &pkt_dns_request, TRUE},
+    {"ip.DstAddr = 8.8.8.8",                   &pkt_dns_request, FALSE},
+    {"ip.SrcAddr >= 10.0.0.0 && ip.SrcAddr <= 10.255.255.255",
+                                               &pkt_dns_request, TRUE},
+    {"ip.SrcAddr < 10.0.0.0 or ip.SrcAddr > 10.255.255.255",
+                                               &pkt_dns_request, FALSE},
+    {"udp.PayloadLength == 29",                &pkt_dns_request, TRUE},
     {"ipv6",                                   &pkt_ipv6_tcp_syn, TRUE},
     {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.Syn",                                &pkt_ipv6_tcp_syn, TRUE},
