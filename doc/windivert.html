@@ -1512,10 +1512,6 @@ They are
     An error will be returned and the packet will be lost.
     The work-around is to inject inbound ICMP messages as <tt>outbound</tt>.
     </li>
-<li><i>No IPv6 extension header support</i>:
-    Currently there is no filter support for IPv6 packets with extension
-    headers.
-    The work around is to capture all IPv6 traffic.</li>
 <li><i>The forward layer does not interact well with the Windows NAT</i>:
     It is not possible to block packets pre-NAT with WinDivert.
     As a general principle, you should not try and mix WinDivert at the
