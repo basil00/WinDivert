@@ -219,7 +219,7 @@ static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len);
 /*
  * Thread local.
  */
-static DWORD windivert_tls_idx;
+static DWORD windivert_tls_idx = TLS_OUT_OF_INDEXES;
 
 /*
  * Current DLL hmodule.
@@ -431,34 +431,51 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
     OVERLAPPED overlapped;
     DWORD iolen0;
     HANDLE event;
+    BOOL success = TRUE;
 
+    if ((windivert_tls_idx = TlsAlloc()) == TLS_OUT_OF_INDEXES)
+    {
+      return FALSE;
+    }
+
+    do {
+        event = (HANDLE)TlsGetValue(windivert_tls_idx);
+        if (event == (HANDLE)NULL)
+        {
+            event = CreateEvent(NULL, FALSE, FALSE, NULL);
+            if (event == NULL)
+            {
+                success = FALSE;
+                break;
+            }
+            TlsSetValue(windivert_tls_idx, (LPVOID)event);
+        }
+
+        memset(&overlapped, 0, sizeof(overlapped));
+        overlapped.hEvent = event;
+        if (!WinDivertIoControlEx(handle, code, arg8, arg, buf, len, iolen,
+                &overlapped))
+        {
+            if (GetLastError() != ERROR_IO_PENDING ||
+                !GetOverlappedResult(handle, &overlapped, &iolen0, TRUE))
+            {
+                success = FALSE;
+                break;
+            }
+            if (iolen != NULL)
+            {
+                *iolen = (UINT)iolen0;
+            }
+        }
+    } while (FALSE);
     event = (HANDLE)TlsGetValue(windivert_tls_idx);
-    if (event == (HANDLE)NULL)
+    if (event != (HANDLE)NULL)
     {
-        event = CreateEvent(NULL, FALSE, FALSE, NULL);
-        if (event == NULL)
-        {
-            return FALSE;
-        }
-        TlsSetValue(windivert_tls_idx, (LPVOID)event);
+      CloseHandle(event);
     }
+    TlsFree(windivert_tls_idx);
 
-    memset(&overlapped, 0, sizeof(overlapped));
-    overlapped.hEvent = event;
-    if (!WinDivertIoControlEx(handle, code, arg8, arg, buf, len, iolen,
-            &overlapped))
-    {
-        if (GetLastError() != ERROR_IO_PENDING ||
-            !GetOverlappedResult(handle, &overlapped, &iolen0, TRUE))
-        {
-            return FALSE;
-        }
-        if (iolen != NULL)
-        {
-            *iolen = (UINT)iolen0;
-        }
-    }
-    return TRUE;
+    return success;
 }
 
 /*
