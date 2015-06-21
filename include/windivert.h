@@ -352,6 +352,24 @@ extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
     __in        UINT packetLen,
     __in        UINT64 flags);
 
+/*
+ * Check the given filter string.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperCheckFilter(
+    __in        const char *filter,
+    __in        WINDIVERT_LAYER layer,
+    __out_opt   const char **errorStr,
+    __out_opt   UINT *errorPos);
+
+/*
+ * Evaluate the given filter string.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
+    __in        const char *filter,
+    __in        WINDIVERT_LAYER layer,
+    __in        PVOID pPacket,
+    __in        UINT packetLen,
+    __in        PWINDIVERT_ADDRESS pAddr);
 
 /****************************************************************************/
 /* WINDIVERT LEGACY API                                                     */
