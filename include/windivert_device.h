@@ -131,14 +131,14 @@
  * WinDivert flags.
  */
 #define WINDIVERT_FLAGS_ALL                                                 \
-    (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP |                           \
-     WINDIVERT_FLAG_NO_CHECKSUM)
+    (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP)
 #define WINDIVERT_FLAGS_EXCLUDE(flags, flag1, flag2)                        \
     (((flags) & ((flag1) | (flag2))) != ((flag1) | (flag2)))
 #define WINDIVERT_FLAGS_VALID(flags)                                        \
     ((((flags) & ~WINDIVERT_FLAGS_ALL) == 0) &&                             \
      WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_SNIFF,                   \
         WINDIVERT_FLAG_DROP))
+
 /*
  * WinDivert priorities.
  */

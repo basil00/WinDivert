@@ -13,13 +13,5 @@ EXPORTS
     WinDivertHelperParsePacket
     WinDivertHelperParseIPv4Address
     WinDivertHelperParseIPv6Address
-    DivertOpen
-    DivertRecv
-    DivertSend
-    DivertClose
-    DivertSetParam
-    DivertGetParam
-    DivertHelperCalcChecksums
-    DivertHelperParsePacket
-    DivertHelperParseIPv4Address
-    DivertHelperParseIPv6Address
+    WinDivertHelperCheckFilter
+    WinDivertHelperEvalFilter

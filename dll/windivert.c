@@ -724,63 +724,6 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
 }
 
 /***************************************************************************/
-/* LEGACY                                                                  */
-/***************************************************************************/
-
-/*
- * Legacy functions.
- */
-extern HANDLE DivertOpen(const char *filter, DIVERT_LAYER layer,
-    INT16 priority, UINT64 flags)
-{
-    return WinDivertOpen(filter, layer, priority, flags);
-}
-extern BOOL DivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
-    PDIVERT_ADDRESS addr, UINT *readlen)
-{
-    return WinDivertRecv(handle, pPacket, packetLen, addr, readlen);
-}
-extern BOOL DivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
-    PDIVERT_ADDRESS addr, UINT *writelen)
-{
-    return WinDivertSend(handle, pPacket, packetLen, addr, writelen);
-}
-extern BOOL DivertClose(HANDLE handle)
-{
-    return WinDivertClose(handle);
-}
-extern BOOL DivertSetParam(HANDLE handle, DIVERT_PARAM param, UINT64 value)
-{
-    return WinDivertSetParam(handle, param, value);
-}
-extern BOOL DivertGetParam(HANDLE handle, DIVERT_PARAM param, UINT64 *pValue)
-{
-    return WinDivertGetParam(handle, param, pValue);
-}
-extern BOOL DivertHelperParsePacket(PVOID pPacket, UINT packetLen,
-    PDIVERT_IPHDR *ppIpHdr, PDIVERT_IPV6HDR *ppIpv6Hdr,
-    PDIVERT_ICMPHDR *ppIcmpHdr, PDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
-    PDIVERT_TCPHDR *ppTcpHdr, PDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
-    UINT *pDataLen)
-{
-    return WinDivertHelperParsePacket(pPacket, packetLen, ppIpHdr, ppIpv6Hdr,
-        ppIcmpHdr, ppIcmpv6Hdr, ppTcpHdr, ppUdpHdr, ppData, pDataLen);
-}
-extern UINT DivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
-    UINT64 flags)
-{
-    return WinDivertHelperCalcChecksums(pPacket, packetLen, flags);
-}
-extern BOOL DivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
-{
-    return WinDivertHelperParseIPv4Address(str, addr_ptr);
-}
-extern BOOL DivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
-{
-    return WinDivertHelperParseIPv6Address(str, addr_ptr);
-}
-
-/***************************************************************************/
 /* DEBUGGING                                                               */
 /***************************************************************************/
 

@@ -201,9 +201,6 @@ struct packet_s
     UINT8 direction;                        // Packet direction.
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
-    BOOL ip_checksum;                       // IP checksum is valid.
-    BOOL tcp_checksum;                      // TCP checksum is valid.
-    BOOL udp_checksum;                      // UDP checksum is valid.
     BOOL timer_ticktock;                    // Time-out ticktock.
     char data[];                            // Packet data.
 };
@@ -404,8 +401,6 @@ static void windivert_free_packet(packet_t packet);
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len);
 static UINT16 windivert_checksum(const void *pseudo_header,
     size_t pseudo_header_len, const void *data, size_t size);
-static void windivert_update_checksums(void *header, size_t len,
-    BOOL update_ip, BOOL update_tcp, BOOL update_udp);
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, filter_t filter);
 static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
@@ -1391,13 +1386,6 @@ static void windivert_read_service(context_t context)
             addr->Direction = packet->direction;
         }
 
-        // Compute the IP/TCP/UDP checksums here (if required).
-        if ((context->flags & WINDIVERT_FLAG_NO_CHECKSUM) == 0)
-        {
-            windivert_update_checksums(dst, dst_len, packet->ip_checksum,
-                packet->tcp_checksum, packet->udp_checksum);
-        }
-
         status = STATUS_SUCCESS;
 
 windivert_read_service_complete:
@@ -2343,32 +2331,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     packet->direction = direction;
     packet->if_idx = if_idx;
     packet->sub_if_idx = sub_if_idx;
-    if (direction == WINDIVERT_DIRECTION_OUTBOUND)
-    {
-        if (isloopback)
-        {
-            // Workaround: Do not trust checksum info for loopback packets.
-            packet->ip_checksum = TRUE;
-            packet->tcp_checksum = TRUE;
-            packet->udp_checksum = TRUE;
-        }
-        else
-        {
-            checksum_info.Value = NET_BUFFER_LIST_INFO(buffers,
-                TcpIpChecksumNetBufferListInfo);
-
-            // IPv4 Checksum is not calculated yet
-            packet->ip_checksum = TRUE;
-            packet->tcp_checksum = (BOOL)checksum_info.Transmit.TcpChecksum;
-            packet->udp_checksum = (BOOL)checksum_info.Transmit.UdpChecksum;
-        }
-    }
-    else
-    {
-        packet->ip_checksum = FALSE;
-        packet->tcp_checksum = FALSE;
-        packet->udp_checksum = FALSE;
-    }
     packet->timer_ticktock = context->timer_ticktock;
     entry = &packet->entry;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -2605,162 +2567,6 @@ static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len)
         proto = **header;
         *header += hdrlen;
         *len -= hdrlen;
-    }
-}
-
-/*
- * Given a well-formed packet, update the IP and/or TCP/UDP checksums if
- * required.
- */
-static void windivert_update_checksums(void *header, size_t len,
-    BOOL update_ip, BOOL update_tcp, BOOL update_udp)
-{
-    struct
-    {
-        UINT32 SrcAddr;
-        UINT32 DstAddr;
-        UINT8  Zero;
-        UINT8  Protocol;
-        UINT16 Length;
-    } pseudo_headerv4;
-    struct
-    {
-        UINT32 SrcAddr[4];
-        UINT32 DstAddr[4];
-        UINT32 Length;
-        UINT32 Zero:24;
-        UINT32 NextHdr:8;
-    } pseudo_headerv6;
-    void *pseudo_header;
-    size_t pseudo_header_len;
-    struct iphdr *ip_header = (struct iphdr *)header;
-    struct ipv6hdr *ipv6_header = (struct ipv6hdr *)header;
-    size_t ip_header_len, trans_len;
-    void *trans_header;
-    struct tcphdr *tcp_header;
-    struct udphdr *udp_header;
-    BOOL is_ipv4 = TRUE;
-    UINT8 proto;
-    UINT16 *trans_check_ptr;
-    UINT sum;
-
-    if (!update_ip && !update_tcp && !update_udp)
-    {
-        return;
-    }
-
-    if (len < sizeof(struct iphdr))
-    {
-        return;
-    }
-
-    switch (ip_header->Version)
-    {
-        case 4:
-            ip_header_len = ip_header->HdrLength*sizeof(UINT32);
-            if (len < ip_header_len)
-            {
-                return;
-            }
-
-            if (update_ip)
-            {
-                ip_header->Checksum = 0;
-                ip_header->Checksum = windivert_checksum(NULL, 0, ip_header,
-                    ip_header_len);
-            }
-
-            proto = ip_header->Protocol;
-            trans_len = len - ip_header_len;
-            trans_header = (UINT8 *)ip_header + ip_header_len;
-            break;
-        
-        case 6:
-            if (!update_tcp && !update_udp)
-            {
-                return;
-            }
-            is_ipv4 = FALSE;
-            if (len < sizeof(struct ipv6hdr))
-            {
-                return;
-            }
-
-            trans_len = len - sizeof(struct ipv6hdr);
-            trans_header = (UINT8 *)(ipv6_header + 1);
-
-            // Skip extension headers:
-            proto = windivert_skip_headers(ipv6_header->NextHdr,
-                (UINT8 **)&trans_header, &trans_len);
-            break;
-
-        default:
-            return;
-    }
-
-    switch (proto)
-    {
-        case IPPROTO_TCP:
-            if (!update_tcp)
-            {
-                return;
-            }
-            tcp_header = (struct tcphdr *)trans_header;
-            if (trans_len < sizeof(struct tcphdr))
-            {
-                return;
-            }
-            trans_check_ptr = &tcp_header->Checksum;
-            break;
-        case IPPROTO_UDP:
-            if (!update_udp)
-            {
-                return;
-            }
-            udp_header = (struct udphdr *)trans_header;
-            if (trans_len < sizeof(struct udphdr))
-            {
-                return;
-            }
-            trans_check_ptr = &udp_header->Checksum;
-            break;
-        default:
-            return;
-    }
-
-    if (is_ipv4)
-    {
-        pseudo_headerv4.SrcAddr  = ip_header->SrcAddr;
-        pseudo_headerv4.DstAddr  = ip_header->DstAddr;
-        pseudo_headerv4.Zero     = 0x0;
-        pseudo_headerv4.Protocol = proto;
-        pseudo_headerv4.Length   = RtlUshortByteSwap((UINT16)trans_len);
-        pseudo_header = &pseudo_headerv4;
-        pseudo_header_len = sizeof(pseudo_headerv4);
-    }
-    else
-    {
-        RtlCopyMemory(&pseudo_headerv6.SrcAddr, ipv6_header->SrcAddr,
-            sizeof(pseudo_headerv6.SrcAddr));
-        RtlCopyMemory(&pseudo_headerv6.DstAddr, ipv6_header->DstAddr,
-            sizeof(pseudo_headerv6.DstAddr));
-        pseudo_headerv6.Length  = RtlUlongByteSwap((UINT32)trans_len);
-        pseudo_headerv6.NextHdr = proto;
-        pseudo_headerv6.Zero    = 0x0;
-        pseudo_header = &pseudo_headerv6;
-        pseudo_header_len = sizeof(pseudo_headerv6);
-    }
-
-    *trans_check_ptr = 0x0;
-    sum = windivert_checksum(pseudo_header, pseudo_header_len, trans_header,
-        trans_len);
-    if (sum == 0 && proto == IPPROTO_UDP)
-    {
-        *trans_check_ptr = 0xFFFF;
-    }
-    else
-    {
-        *trans_check_ptr = (UINT16)sum;
     }
 }
 
