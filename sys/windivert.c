@@ -104,7 +104,7 @@ typedef struct filter_s *filter_t;
 /*
  * WinDivert context information.
  */
-#define WINDIVERT_CONTEXT_MAGIC                 0xAA5D1C5BC439AA72ull
+#define WINDIVERT_CONTEXT_MAGIC                 0x4F55ED0DBA2AD939ull
 #define WINDIVERT_CONTEXT_SIZE                  (sizeof(struct context_s))
 #define WINDIVERT_CONTEXT_MAXLAYERS             4
 #define WINDIVERT_CONTEXT_MAXWORKERS            2
@@ -399,8 +399,6 @@ static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level);
 static void windivert_free_packet(packet_t packet);
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len);
-static UINT16 windivert_checksum(const void *pseudo_header,
-    size_t pseudo_header_len, const void *data, size_t size);
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, filter_t filter);
 static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
@@ -414,23 +412,23 @@ static BOOL windivert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
  * WinDivert sublayer GUIDs
  */
 DEFINE_GUID(WINDIVERT_SUBLAYER_INBOUND_IPV4_GUID,
-    0xAC32F237, 0x1408, 0x435A,
-    0x90, 0xF1, 0xF1, 0xAA, 0x58, 0x4C, 0xCA, 0x7F);
+    0xBFAEB248, 0xF26B, 0x4690,
+    0xAA, 0xD6, 0x10, 0x52, 0x48, 0x34, 0xA7, 0x3B);
 DEFINE_GUID(WINDIVERT_SUBLAYER_OUTBOUND_IPV4_GUID,
-    0xF229AF90, 0xC7CC, 0x4351,
-    0x8A, 0x5E, 0x51, 0xB1, 0xE1, 0xB5, 0x97, 0x0A);
+    0x917F96C5, 0x4639, 0x470B,
+    0xA8, 0x80, 0xFB, 0xA3, 0x62, 0xE9, 0xC2, 0x71);
 DEFINE_GUID(WINDIVERT_SUBLAYER_INBOUND_IPV6_GUID,
-    0x0C25C18F, 0x4F3E, 0x4F3E,
-    0xBA, 0xB4, 0x26, 0xBD, 0x1E, 0x6E, 0x41, 0x31);
+    0x58227ABF, 0xEEFC, 0x4972,
+    0x86, 0xA6, 0xD8, 0xE1, 0x0B, 0x40, 0x9D, 0xCD);
 DEFINE_GUID(WINDIVERT_SUBLAYER_OUTBOUND_IPV6_GUID,
-    0x26966F53, 0x4BCD, 0x4DE2,
-    0xAA, 0x0E, 0xA6, 0x70, 0x59, 0x20, 0x37, 0xC0);
+    0xD59C83DA, 0x3239, 0x400C,
+    0x90, 0xCF, 0xB9, 0x7A, 0x76, 0x84, 0xAD, 0xAF);
 DEFINE_GUID(WINDIVERT_SUBLAYER_FORWARD_IPV4_GUID,
-    0x2F472BD8, 0x346F, 0x4D9C,
-    0x8A, 0xEE, 0x68, 0xCA, 0xFD, 0x00, 0x71, 0x11);
+    0x26D0F799, 0x9068, 0x428E,
+    0x8A, 0xD7, 0x70, 0xA3, 0xB9, 0x71, 0x2B, 0xBB);
 DEFINE_GUID(WINDIVERT_SUBLAYER_FORWARD_IPV6_GUID,
-    0xA196BAC6, 0x6546, 0x4FD5,
-    0x96, 0xD3, 0x18, 0xD5, 0x7D, 0x5C, 0x3D, 0x78);
+    0x74CD8910, 0xC933, 0x4DBE,
+    0xAE, 0x3C, 0xC4, 0x7F, 0x4F, 0xF2, 0xA8, 0xF8);
 
 /*
  * WinDivert supported layers.
@@ -2486,41 +2484,6 @@ static void windivert_free_packet(packet_t packet)
         FwpsFreeCloneNetBufferList0(packet->net_buffer_list, 0);
     }
     ExFreePoolWithTag(packet, WINDIVERT_TAG);
-}
-
-/*
- * Generic checksum calculation.
- */
-static UINT16 windivert_checksum(const void *pseudo_header,
-    size_t pseudo_header_len, const void *data, size_t len)
-{
-    register const UINT16 *data16 = (const UINT16 *)pseudo_header;
-    register size_t len16 = pseudo_header_len >> 1;
-    register UINT32 sum = 0;
-    size_t i;
-
-    for (i = 0; i < len16; i++)
-    {
-        sum += (UINT32)data16[i];
-    }
-
-    data16 = (const UINT16 *)data;
-    len16 = len >> 1;
-    for (i = 0; i < len16; i++)
-    {
-        sum += (UINT32)data16[i];
-    }
-    
-    if (len & 0x1)
-    {
-        const UINT8 *data8 = (const UINT8 *)data;
-        sum += (UINT32)data8[len-1];
-    }
-
-    sum = (sum & 0xFFFF) + (sum >> 16);
-    sum += (sum >> 16);
-    sum = ~sum;
-    return (UINT16)sum;
 }
 
 /*
