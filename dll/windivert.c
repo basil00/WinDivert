@@ -383,6 +383,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 {
     struct windivert_ioctl_filter_s object[WINDIVERT_FILTER_MAXLEN];
     UINT obj_len;
+    ERROR comp_err;
     DWORD err;
     HANDLE handle;
     SC_HANDLE service;
@@ -403,7 +404,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     }
 
     // Compile the filter:
-    if (!WinDivertCompileFilter(filter, layer, object, &obj_len))
+    comp_err = WinDivertCompileFilter(filter, layer, object, &obj_len);
+    if (IS_ERROR(comp_err))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;

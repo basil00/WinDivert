@@ -2767,7 +2767,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     field[0] = (UINT32)ip_header->HdrLength;
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_TOS:
-                    field[0] = (UINT32)RtlUshortByteSwap(ip_header->TOS);
+                    field[0] = (UINT32)ip_header->TOS;
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_LENGTH:
                     field[0] = (UINT32)RtlUshortByteSwap(ip_header->Length);
@@ -3234,6 +3234,7 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
                     goto windivert_filter_compile_exit;
                 }
                 break;
+            case WINDIVERT_FILTER_FIELD_IP_TOS:
             case WINDIVERT_FILTER_FIELD_IP_TTL:
             case WINDIVERT_FILTER_FIELD_IP_PROTOCOL:
             case WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
@@ -3254,7 +3255,6 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
                     goto windivert_filter_compile_exit;
                 }
                 break;
-            case WINDIVERT_FILTER_FIELD_IP_TOS:
             case WINDIVERT_FILTER_FIELD_IP_LENGTH:
             case WINDIVERT_FILTER_FIELD_IP_ID:
             case WINDIVERT_FILTER_FIELD_IP_CHECKSUM:

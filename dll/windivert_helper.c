@@ -1150,12 +1150,13 @@ static PEXPR WinDivertMakeZero(PPOOL pool)
  */
 static PEXPR WinDivertMakeNumber(PPOOL pool, TOKEN *tok)
 {
+    PEXPR expr;
     if (tok->kind != TOKEN_NUMBER)
     {
         pool->error = MAKE_ERROR(WINDIVERT_ERROR_ASSERTION_FAILED, 0);
         return NULL;
     }
-    PEXPR expr = (PEXPR)WinDivertAlloc(pool, sizeof(EXPR));
+    expr = (PEXPR)WinDivertAlloc(pool, sizeof(EXPR));
     if (expr == NULL)
     {
         return NULL;
@@ -1174,11 +1175,12 @@ static PEXPR WinDivertMakeNumber(PPOOL pool, TOKEN *tok)
  */
 static PEXPR WinDivertMakeBinOp(PPOOL pool, KIND kind, PEXPR arg0, PEXPR arg1)
 {
+    PEXPR expr;
     if (arg0 == NULL || arg1 == NULL)
     {
         return NULL;
     }
-    PEXPR expr = (PEXPR)WinDivertAlloc(pool, sizeof(EXPR));
+    expr = (PEXPR)WinDivertAlloc(pool, sizeof(EXPR));
     if (expr == NULL)
     {
         return NULL;
@@ -1214,6 +1216,8 @@ static PEXPR WinDivertMakeIfThenElse(PPOOL pool, PEXPR cond, PEXPR th,
  */
 static PEXPR WinDivertParseTest(PPOOL pool, TOKEN *toks, UINT *i)
 {
+    PEXPR var, val;
+    KIND kind;
     BOOL not = FALSE;
     while (toks[*i].kind == TOKEN_NOT)
     {
@@ -1287,9 +1291,8 @@ static PEXPR WinDivertParseTest(PPOOL pool, TOKEN *toks, UINT *i)
                 toks[*i].pos);
             return NULL;
     }
-    PEXPR var = WinDivertMakeVar(pool, toks[*i].kind);
+    var = WinDivertMakeVar(pool, toks[*i].kind);
     *i = *i + 1;
-    KIND kind;
     switch (toks[*i].kind)
     {
         case TOKEN_EQ:
@@ -1337,7 +1340,7 @@ static PEXPR WinDivertParseTest(PPOOL pool, TOKEN *toks, UINT *i)
             toks[*i].pos);
         return NULL;
     }
-    PEXPR val = WinDivertMakeNumber(pool, toks + *i);
+    val = WinDivertMakeNumber(pool, toks + *i);
     *i = *i + 1;
     return WinDivertMakeBinOp(pool, kind, var, val);
 }
@@ -1347,12 +1350,12 @@ static PEXPR WinDivertParseTest(PPOOL pool, TOKEN *toks, UINT *i)
  */
 static PEXPR WinDivertParseArg(PPOOL pool, TOKEN *toks, UINT *i, INT depth)
 {
+    PEXPR arg, th, el;
     if (depth-- < 0)
     {
         pool->error = MAKE_ERROR(WINDIVERT_ERROR_TOO_DEEP, toks[*i].pos);
         return NULL;
     }
-    PEXPR arg, th, el;
     switch (toks[*i].kind)
     {
         case TOKEN_OPEN:
@@ -2201,7 +2204,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 val[0] = iphdr->HdrLength;
                 break;
             case WINDIVERT_FILTER_FIELD_IP_TOS:
-                val[0] = ntohs(iphdr->TOS);
+                val[0] = iphdr->TOS;
                 break;
             case WINDIVERT_FILTER_FIELD_IP_LENGTH:
                 val[0] = ntohs(iphdr->Length);
