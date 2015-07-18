@@ -1,10 +1,10 @@
 <!doctype html>
 <html>
 <head>
-    <title>WinDivert 1.1 Documentation</title>
+    <title>WinDivert 1.2 Documentation</title>
 </head>
 <body>
-<h1>WinDivert 1.1: Windows Packet Divert</h1>
+<h1>WinDivert 1.2: Windows Packet Divert</h1>
 <h2>Table of Contents</h2>
 <ul>
 <li><a href="#introduction">1. Introduction</a></li>
@@ -40,6 +40,8 @@
 <li><a href="#divert_help_parse_ipv4_address">6.8 WinDivertHelperParseIPv4Address</li>
 <li><a href="#divert_help_parse_ipv6_address">6.9 WinDivertHelperParseIPv6Address</li>
 <li><a href="#divert_helper_calc_checksums">6.10 WinDivertHelperCalcChecksums</a></li>
+<li><a href="#divert_helper_check_filter">6.11 WinDivertHelperCheckFilter</a></li>
+<li><a href="#divert_helper_eval_filter">6.12 WinDivertHelperEvalFilter</a></li>
 </ul>
 <li><a href="#filter_language">7. Filter Language</a></li>
 <ul>
@@ -284,8 +286,8 @@ uninstalled during the next machine reboot.
 The WinDivert driver can also be manually removed by issuing the following
 commands at the command prompt
 <pre>
-sc stop WinDivert1.1
-sc delete WinDivert1.1
+sc stop WinDivert1.2
+sc delete WinDivert1.2
 </pre>
 Note that this is not recommended as it will interfere with other
 applications that depend on WinDivert.
@@ -546,15 +548,6 @@ This is useful for implementing simple packet filters using the
 WinDivert <a href="#filter_language">filter language</a>.
 </td>
 </tr>
-<tr>
-<td>
-<tt>WINDIVERT_FLAG_NO_CHECKSUM</tt>
-</td>
-<td>
-By default WinDivert ensures that each diverted packet has a valid checksum.
-If the checksum is missing (e.g. with TCP checksum offloading), WinDivert
-will calculate it before passing the packet to the user application.
-This flag disables this behavior.
 </table>
 </center>
 Note that only one of <tt>WINDIVERT_FLAG_SNIFF</tt> or
@@ -1264,6 +1257,86 @@ instead (not provided by this API).
 <p>
 </dd></dl>
 
+<a name="divert_helper_check_filter"><h3>6.11 WinDivertHelperCheckFilter</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperCheckFilter</b>(
+    __in const char *filter,
+    __in WINDIVERT_LAYER layer,
+    __out_opt const char **errorStr,
+    __out_opt UINT *errorPos
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>filter</tt>: The packet filter string to be checked.</li>
+<li> <tt>layer</tt>: The layer.
+<li> <tt>errorStr</tt>: The error description.</li>
+<li> <tt>errorPos</tt>: The error position.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if the packet filter string is valid, <tt>FALSE</tt> otherwise.
+</p><p>
+<b>Remarks</b><br>
+Checks if the given packet filter string is valid with respect to the
+<a href="#filter_language">filter language</a>.
+If the filter is invalid, then a human readable description of the error is
+returned by <tt>errorStr</tt> (if non-<tt>NULL</tt>), and the error's
+position is returned by <tt>errorPos</tt> (if non-<tt>NULL</tt>).
+</p><p>
+Note that all strings returned through <tt>errorStr</tt> are global static
+objects, and therefore do not need to be deallocated.
+<p>
+</dd></dl>
+
+<a name="divert_helper_eval_filter"><h3>6.12 WinDivertHelperEvalFilter</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperEvalFilter</b>(
+    __in const char *filter,
+    __in WINDIVERT_LAYER layer,
+    __in PVOID pPacket,
+    __in UINT packetLen,
+    __in PWINDIVERT_ADDRESS pAddr
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>filter</tt>: The packet filter string to be evaluated.</li>
+<li> <tt>layer</tt>: The layer.
+<li> <tt>pPacket</tt>: The packet.</li>
+<li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
+<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> of the packet
+    <tt>pPacket</tt>.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if the packet matches the filter string,
+    <tt>FALSE</tt> otherwise.
+</p><p>
+<b>Remarks</b><br>
+Evaluates the given packet against the given packet filter string.
+This function returns <tt>TRUE</tt> if the packet matches, and
+returns <tt>FALSE</tt> otherwise.
+</p><p>
+This function also returns <tt>FALSE</tt> if an error occurs, in which
+case <tt>GetLastError()</tt> can be used to get the reason for the error.
+Otherwise, if no error occurred, <tt>GetLastError()</tt> will return
+<tt>0</tt>.
+</p><p>
+Note that this function is relatively slow since the packet filter string
+will be (re)compiled for each call.
+This function is mainly intended for debugging or testing purposes.
+<p>
+</dd></dl>
+
 <hr>
 <a name="filter_language"><h2>7. Filter Language</h2></a>
 
@@ -1293,10 +1366,16 @@ This filter specifies that we should only divert traffic that is
 </p><p>
 A <i>filter</i> is a Boolean expression of the form:
 <pre>
-        <i>FILTER</i> := true | false | <i>FILTER</i> and <i>FILTER</i> | <i>FILTER</i> or <i>FILTER</i> | (<i>FILTER</i>) | <i>TEST</i>
+        <i>FILTER</i> := true | false | <i>FILTER</i> and <i>FILTER</i> | <i>FILTER</i> or <i>FILTER</i> | (<i>FILTER</i>) | (<i>FILTER</i>? <i>FILTER</i>: <i>FILTER</i>) | <i>TEST</i>
 </pre>
 C-style syntax <tt>&amp;&amp;</tt>, <tt>||</tt>, and <tt>!</tt> may also
 be used instead of <tt>and</tt>, <tt>or</tt>, and <tt>not</tt>, respectively.
+C-style <i>conditional operators</i> are also supported,
+where the expression <tt>(A? B: C)</tt> evaluates to:
+<ul>
+<li> <tt>B</tt> if <tt>A</tt> evaluates to <tt>true</tt>; or</li>
+<li> <tt>C</tt> if <tt>A</tt> evaluates to <tt>false</tt>.
+</ul>
 A <i>test</i> is of the following form:
 <pre>
         <i>TEST</i> := <i>TEST0</i> | not <i>TEST0</i>
@@ -1327,8 +1406,8 @@ The possible fields are:
 <center>
 <table border="1" cellpadding="5">
 <tr><th>Field</th><th>Description</th></tr>
-<tr><td><tt>outbound</tt></td><td>Is outbound?</td></tr>
-<tr><td><tt>inbound</tt></td><td>Is inbound?</td></tr>
+<tr><td><tt>outbound</tt></td><td>Is outbound? (only valid for <tt>WINDIVERT_LAYER_NETWORK</tt>)</td></tr>
+<tr><td><tt>inbound</tt></td><td>Is inbound? (only valid for <tt>WINDIVERT_LAYER_NETWORK</tt>)</td></tr>
 <tr><td><tt>ifIdx</tt></td><td>Interface index</td></tr>
 <tr><td><tt>subIfIdx</tt></td><td>Sub-interface index</td></tr>
 <tr><td><tt>ip</tt></td><td>Is IPv4?</td></tr>
