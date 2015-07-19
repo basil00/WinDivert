@@ -321,6 +321,10 @@ read_failed:
         }
         buf_len = (UINT)iolen;
     }
+    if (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND)
+    {
+        WinDivertHelperCalcChecksums(buf, buf_len, 0);
+    }
 
     // (4) Verify that the packet is the same.
     if (buf_len != packet_len)

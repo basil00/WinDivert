@@ -52,6 +52,7 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
+    const char *err_str;
 
     // Check arguments.
     switch (argc)
@@ -68,7 +69,7 @@ int __cdecl main(int argc, char **argv)
             fprintf(stderr, "\t%s true\n", argv[0]);
             fprintf(stderr, "\t%s \"outbound and tcp.DstPort == 80\" 1000\n",
                 argv[0]);
-            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -4000\n", argv[0]);
+            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -400\n", argv[0]);
             exit(EXIT_FAILURE);
     }
 
@@ -80,9 +81,11 @@ int __cdecl main(int argc, char **argv)
         WINDIVERT_FLAG_SNIFF);
     if (handle == INVALID_HANDLE_VALUE)
     {
-        if (GetLastError() == ERROR_INVALID_PARAMETER)
+        if (GetLastError() == ERROR_INVALID_PARAMETER &&
+            !WinDivertHelperCheckFilter(argv[1], WINDIVERT_LAYER_NETWORK,
+                &err_str, NULL))
         {
-            fprintf(stderr, "error: filter syntax error\n");
+            fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
             exit(EXIT_FAILURE);
         }
         fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
@@ -113,6 +116,12 @@ int __cdecl main(int argc, char **argv)
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
             continue;
+        }
+
+        // Calculate checksums for outbound packets.
+        if (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND)
+        {
+            WinDivertHelperCalcChecksums(packet, packet_len, 0);
         }
        
         // Print info about the matching packet.

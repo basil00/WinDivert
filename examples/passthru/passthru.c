@@ -106,7 +106,14 @@ static DWORD passthru(LPVOID arg)
                 GetLastError());
             continue;
         }
-       
+
+        // NOTE: Since WinDivert1.2 outbound packets are not guaranteed
+        //       to have correct checksums.
+        if (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND)
+        {
+            WinDivertHelperCalcChecksums(packet, packet_len, 0);
+        }
+
         // Re-inject the matching packet.
         if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
         {

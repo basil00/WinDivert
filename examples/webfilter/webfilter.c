@@ -188,6 +188,7 @@ int __cdecl main(int argc, char **argv)
             !BlackListPayloadMatch(blacklist, payload, (UINT16)payload_len))
         {
             // Packet does not match the blacklist; simply reinject it.
+            WinDivertHelperCalcChecksums(packet, packet_len, 0);
             if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
             {
                 fprintf(stderr, "warning: failed to reinject packet (%d)\n",

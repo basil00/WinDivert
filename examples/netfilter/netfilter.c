@@ -98,6 +98,7 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
     UINT payload_len;
+    const char *err_str;
     
     TCPPACKET reset0;
     PTCPPACKET reset = &reset0;
@@ -125,7 +126,7 @@ int __cdecl main(int argc, char **argv)
             fprintf(stderr, "\t%s true\n", argv[0]);
             fprintf(stderr, "\t%s \"outbound and tcp.DstPort == 80\" 1000\n",
                 argv[0]);
-            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -4000\n", argv[0]);
+            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -400\n", argv[0]);
             exit(EXIT_FAILURE);
     }
 
@@ -152,9 +153,11 @@ int __cdecl main(int argc, char **argv)
     handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, priority, 0);
     if (handle == INVALID_HANDLE_VALUE)
     {
-        if (GetLastError() == ERROR_INVALID_PARAMETER)
+        if (GetLastError() == ERROR_INVALID_PARAMETER &&
+            !WinDivertHelperCheckFilter(argv[1], WINDIVERT_LAYER_NETWORK,
+                &err_str, NULL))
         {
-            fprintf(stderr, "error: filter syntax error\n");
+            fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
             exit(EXIT_FAILURE);
         }
         fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",

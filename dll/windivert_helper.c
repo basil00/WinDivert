@@ -424,6 +424,11 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     UINT payload_len, checksum_len;
     UINT count = 0;
 
+    if ((flags & 0x1F) == 0x1F)
+    {
+        return 0;
+    }
+
     WinDivertHelperParsePacket(pPacket, packetLen, &ip_header, &ipv6_header,
         &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
         &payload_len);
