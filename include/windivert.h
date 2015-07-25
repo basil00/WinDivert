@@ -313,6 +313,7 @@ typedef struct
 #define WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM                 4
 #define WINDIVERT_HELPER_NO_TCP_CHECKSUM                    8
 #define WINDIVERT_HELPER_NO_UDP_CHECKSUM                    16
+#define WINDIVERT_HELPER_NO_REPLACE                         2048
 
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.

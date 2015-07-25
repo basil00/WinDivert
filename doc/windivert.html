@@ -614,7 +614,7 @@ WinDivert sometimes captures outbound or loopback packets before the
 IP/TCP/UDP checksum fields have been calculated.
 For outbound packets, this occurs when <i>checksum offloading</i> is enabled,
 which defers checksum calculation to a compatible NIC card.
-If the checksum is absent the corresponding 
+If the checksum is absent then the corresponding 
 checksum field will be set to zero.
 Correct checksums can be reconstructed using the
 <a href="#divert_helper_calc_checksums"><tt>WinDivertHelperCalcChecksums()</tt></a>
@@ -730,6 +730,15 @@ fields are currently ignored and may be arbitrary values.
 Injecting an inbound packet on the outbound path <i>may</i> work (for some
 types of packets), however this should be considered "undocumented" behavior,
 and may be changed in the future.
+</p><p>
+Injected packets should have correct checksums.
+Correct checksums can be calculated using the
+<a
+href="#divert_helper_calc_checksums"><tt>WinDivertHelperCalcChecksums()</tt></a>
+function.
+Note that packets returned by
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a> are not
+guaranteed to have correct checksums.
 </p>
 </dd></dl>
 
@@ -1246,6 +1255,8 @@ UINT <b>WinDivertHelperCalcChecksums</b>(
     checksum.</li>
 <li> <tt>WINDIVERT_HELPER_NO_UDP_CHECKSUM</tt>: Do not calculate the UDP
     checksum.</li>
+<li> <tt>WINDIVERT_HELPER_NO_REPLACE</tt>: Do not replace non-zero
+    checksums.</li>
 </ul></li>
 </ul>
 </p><p>
@@ -1259,12 +1270,19 @@ Individual checksum calculations may be disabled via the appropriate flag.
 Typically this function should be invoked on a modified packet before it is
 injected with <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
 </p><p>
-This function will calculate each checksum from scratch, even if the existing
-checksum is correct.
+By default this function will calculate each checksum from scratch, even if
+the existing checksum is correct.
 This may be inefficient for some applications.
 For better performance, incremental checksum calculations should be used
 instead (not provided by this API).
-<p>
+</p><p>
+If the <tt>WINDIVERT_HELPER_NO_REPLACE</tt> flag is used, this function will
+assume that all non-zero checksum fields are already valid and will not
+replace them.
+This is useful for reconstructing checksums for packets returned by
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>, where
+non-zero checksum fields do not need to be recalculated.
+</p>
 </dd></dl>
 
 <a name="divert_helper_check_filter"><h3>6.11 WinDivertHelperCheckFilter</h3></a>

@@ -423,8 +423,14 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     PWINDIVERT_UDPHDR udp_header;
     UINT payload_len, checksum_len;
     UINT count = 0;
+    UINT64 flags_all =
+        (WINDIVERT_HELPER_NO_IP_CHECKSUM |
+         WINDIVERT_HELPER_NO_ICMP_CHECKSUM |
+         WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM |
+         WINDIVERT_HELPER_NO_TCP_CHECKSUM |
+         WINDIVERT_HELPER_NO_UDP_CHECKSUM);
 
-    if ((flags & 0x1F) == 0x1F)
+    if ((flags & flags_all) == flags_all)
     {
         return 0;
     }
@@ -433,7 +439,8 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
         &payload_len);
 
-    if (ip_header != NULL && !(flags & WINDIVERT_HELPER_NO_IP_CHECKSUM))
+    if (ip_header != NULL && !(flags & WINDIVERT_HELPER_NO_IP_CHECKSUM) &&
+        (!(flags & WINDIVERT_HELPER_NO_REPLACE) || ip_header->Checksum == 0))
     {
         ip_header->Checksum = 0;
         ip_header->Checksum = WinDivertHelperCalcChecksum(NULL, 0,
@@ -443,7 +450,9 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (icmp_header != NULL)
     {
-        if (flags & WINDIVERT_HELPER_NO_ICMP_CHECKSUM)
+        if ((flags & WINDIVERT_HELPER_NO_ICMP_CHECKSUM) ||
+            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
+                icmp_header->Checksum != 0))
         {
             return count;
         }
@@ -456,7 +465,9 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (icmpv6_header != NULL)
     {
-        if (flags & WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM)
+        if ((flags & WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM) ||
+            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
+                icmpv6_header->Checksum != 0))
         {
             return count;
         }
@@ -472,7 +483,9 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (tcp_header != NULL)
     {
-        if (flags & WINDIVERT_HELPER_NO_TCP_CHECKSUM)
+        if ((flags & WINDIVERT_HELPER_NO_TCP_CHECKSUM) ||
+            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
+                tcp_header->Checksum != 0))
         {
             return count;
         }
@@ -499,7 +512,9 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (udp_header != NULL)
     {
-        if (flags & WINDIVERT_HELPER_NO_UDP_CHECKSUM)
+        if ((flags & WINDIVERT_HELPER_NO_UDP_CHECKSUM) ||
+            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
+                udp_header->Checksum != 0))
         {
             return count;
         }

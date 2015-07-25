@@ -107,14 +107,11 @@ static DWORD passthru(LPVOID arg)
             continue;
         }
 
-        // NOTE: Since WinDivert1.2 outbound packets are not guaranteed
-        //       to have correct checksums.
-        if (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND)
-        {
-            WinDivertHelperCalcChecksums(packet, packet_len, 0);
-        }
-
         // Re-inject the matching packet.
+        // NOTE: Only use the WINDIVERT_HELPER_NO_REPLACE flag if the packet
+        //       was not modified.
+        WinDivertHelperCalcChecksums(packet, packet_len,
+            WINDIVERT_HELPER_NO_REPLACE);
         if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
         {
             fprintf(stderr, "warning: failed to reinject packet (%d)\n",
