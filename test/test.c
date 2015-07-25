@@ -99,12 +99,115 @@ static struct test tests[] =
 {
     {"outbound and icmp",                      &pkt_echo_request, TRUE},
     {"outbound",                               &pkt_echo_request, TRUE},
+    {"outbound and inbound",                   &pkt_echo_request, FALSE},
     {"icmp",                                   &pkt_echo_request, TRUE},
     {"not icmp",                               &pkt_echo_request, FALSE},
+    {"ip or ipv6",                             &pkt_echo_request, TRUE},
     {"inbound",                                &pkt_echo_request, FALSE},
     {"tcp",                                    &pkt_echo_request, FALSE},
     {"icmp.Type == 8",                         &pkt_echo_request, TRUE},
     {"icmp.Type == 9",                         &pkt_echo_request, FALSE},
+    {"(tcp? ip.Checksum == 0: icmp)",          &pkt_echo_request, TRUE},
+    {"(udp? icmp: icmp.Body == 5555)",         &pkt_echo_request, FALSE},
+    {"(false? false: false)",                  &pkt_echo_request, FALSE},
+    {"(true? true: true)",                     &pkt_echo_request, TRUE},
+    {"(tcp or udp or icmpv6 or ipv6? true: false)",
+                                               &pkt_echo_request, FALSE},
+    {"(ip and ipv6 and tcp and udp? false: icmp > 0)",
+                                               &pkt_echo_request, TRUE},
+    {"(tcp? tcp.DstPort == 80: true) and (udp? udp.DstPort == 80: true)",
+                                               &pkt_echo_request, TRUE},
+    {"ip and ip and ip and ip and ip and "     // Max filter length:
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip and ip and ip and "
+     "ip and ip and ip",                       &pkt_echo_request, TRUE},
+    {"not true or false or not icmp or "       // All fields:
+     "icmp.Body == 33 or icmp.Checksum==2 or "
+     "icmp.Code == 0x777 or "
+     "icmp.Type == 0x333 or icmpv6 or "
+     "icmpv6.Body or icmpv6.Checksum or "
+     "icmpv6.Code or icmpv6.Type or "
+     "ifIdx == 93923 or inbound or "
+     "not ip or ip.Checksum == 8 or "
+     "not ip.DF or ip.DstAddr == 1.2.3.4 or "
+     "ip.FragOff == 4212 or "
+     "ip.HdrLength == 2 or ip.Id = 0x0987 or "
+     "ip.Length == 788 or ip.MF == 1 or "
+     "ip.Protocol == 999 or "
+     "ip.SrcAddr == 9.8.7.255 or "
+     "ip.TOS == 3 or ip.TTL = 221 or ipv6 or "
+     "ipv6.DstAddr or ipv6.FlowLabel or "
+     "ipv6.HopLimit or ipv6.Length or "
+     "ipv6.NextHdr or ipv6.SrcAddr or "
+     "ipv6.TrafficClass or not outbound or "
+     "subIfIdx == 888 or tcp or tcp.Ack or "
+     "tcp.AckNum or tcp.Checksum or "
+     "tcp.DstPort or tcp.Fin or "
+     "tcp.HdrLength or tcp.PayloadLength or "
+     "tcp.Psh or tcp.Rst or tcp.SeqNum or "
+     "tcp.SrcPort or tcp.Syn or tcp.Urg or "
+     "tcp.UrgPtr or tcp.Window or udp or "
+     "udp.Checksum or udp.DstPort or "
+     "udp.Length or udp.PayloadLength or "
+     "udp.SrcPort",                            &pkt_echo_request, FALSE},
+    {"(true and (true and (true and (true and "// Deep nesting:
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(true and (true and (true and (true and "
+     "(((((((((((((((icmp)))))))))))))))))))"
+     "))))))))))))))))))))))))))))))))))))))"
+     "))))))))))))))))))))))))))))))))))))))", &pkt_echo_request, TRUE},
+    {"not not not not not not not not icmp",   &pkt_echo_request, TRUE},
+    {"not not not not not not not icmp",       &pkt_echo_request, FALSE},
+    {"!!!!!!!icmp",                            &pkt_echo_request, FALSE},
+    {"false and true or true",                 &pkt_echo_request, TRUE},
+    {"true and false or false",                &pkt_echo_request, FALSE},
+    {"true or true and false",                 &pkt_echo_request, TRUE},
+    {"false or false and true",                &pkt_echo_request, FALSE},
+    {"tcp && icmp || ip",                      &pkt_echo_request, TRUE},
+    {"icmp && udp || tcp",                     &pkt_echo_request, FALSE},
+    {"ip || icmp && icmpv6",                   &pkt_echo_request, TRUE},
+    {"!ip || !icmp && !udp",                   &pkt_echo_request, FALSE},
+    {"(((icmp)? (true): (false)) and "
+     "(((tcp)? (false): (true)) and "
+     "((ipv6)? (false): (true))))",            &pkt_echo_request, TRUE},
     {"tcp",                                    &pkt_http_request, TRUE},
     {"outbound and tcp and tcp.DstPort == 80", &pkt_http_request, TRUE},
     {"outbound and tcp and tcp.DstPort == 81", &pkt_http_request, FALSE},
@@ -116,12 +219,18 @@ static struct test tests[] =
     {"tcp.PayloadLength <= 469",               &pkt_http_request, TRUE},
     {"tcp.PayloadLength > 469",                &pkt_http_request, FALSE},
     {"tcp.PayloadLength < 469",                &pkt_http_request, FALSE},
+    {"(outbound? (ip? (tcp.DstPort == 80? (tcp.PayloadLength > 0? true: "
+        "false): false): false): false)",      &pkt_http_request, TRUE},
+    {"(outbound? (ip? (tcp.DstPort == 80? (tcp.PayloadLength == 0? true: "
+        "false): false): false): false)",      &pkt_http_request, FALSE},
     {"udp",                                    &pkt_dns_request, TRUE},
     {"udp && udp.SrcPort > 1 && ipv6",         &pkt_dns_request, FALSE},
     {"udp.DstPort == 53",                      &pkt_dns_request, TRUE},
     {"udp.DstPort > 100",                      &pkt_dns_request, FALSE},
     {"ip.DstAddr = 8.8.4.4",                   &pkt_dns_request, TRUE},
     {"ip.DstAddr = 8.8.8.8",                   &pkt_dns_request, FALSE},
+    {"ip.DstAddr >= 8.8.0.0 &&"
+     "ip.DstAddr <= 8.8.255.255",              &pkt_dns_request, TRUE},
     {"ip.SrcAddr >= 10.0.0.0 && ip.SrcAddr <= 10.255.255.255",
                                                &pkt_dns_request, TRUE},
     {"ip.SrcAddr < 10.0.0.0 or ip.SrcAddr > 10.255.255.255",
@@ -131,6 +240,10 @@ static struct test tests[] =
     {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.Syn",                                &pkt_ipv6_tcp_syn, TRUE},
     {"tcp.Syn == 1 && tcp.Ack == 0",           &pkt_ipv6_tcp_syn, TRUE},
+    {"tcp.Rst or tcp.Fin",                     &pkt_ipv6_tcp_syn, FALSE},
+    {"(tcp.Syn? !tcp.Rst && !tcp.Fin: true)",  &pkt_ipv6_tcp_syn, TRUE},
+    {"(tcp.Rst? !tcp.Syn: (tcp.Fin? !tcp.Syn: tcp.Syn))",
+                                               &pkt_ipv6_tcp_syn, TRUE},
     {"tcp.PayloadLength == 0",                 &pkt_ipv6_tcp_syn, TRUE},
     {"ipv6.SrcAddr == 1234:5678:1::aabb:ccdd", &pkt_ipv6_tcp_syn, TRUE},
     {"ipv6.SrcAddr == aabb:5678:1::1234:ccdd", &pkt_ipv6_tcp_syn, FALSE},
@@ -150,10 +263,20 @@ static struct test tests[] =
     {"tcp",                                    &pkt_ipv6_exthdrs_udp, FALSE},
     {"ipv6.SrcAddr == ::1",                    &pkt_ipv6_exthdrs_udp, TRUE},
     {"ipv6.SrcAddr == ::2",                    &pkt_ipv6_exthdrs_udp, FALSE},
+    {"ipv6.SrcAddr < abcd::1",                 &pkt_ipv6_exthdrs_udp, TRUE},
+    {"ipv6.SrcAddr <= abcd::1",                &pkt_ipv6_exthdrs_udp, TRUE},
+    {"ipv6.SrcAddr != abcd::1",                &pkt_ipv6_exthdrs_udp, TRUE},
+    {"ipv6.SrcAddr >= abcd::1",                &pkt_ipv6_exthdrs_udp, FALSE},
+    {"ipv6.SrcAddr > abcd::1",                 &pkt_ipv6_exthdrs_udp, FALSE},
     {"udp.SrcPort == 4660 and udp.DstPort == 43690",
                                                &pkt_ipv6_exthdrs_udp, TRUE},
     {"udp.SrcPort == 4660 and udp.DstPort == 12345",
                                                &pkt_ipv6_exthdrs_udp, FALSE},
+    {"(outbound and tcp? tcp.DstPort == 0xABAB: false) or "
+     "(outbound and udp? udp.DstPort == 0xAAAA: false) or "
+     "(inbound and tcp? tcp.SrcPort == 0xABAB: false) or "
+     "(inbound and udp? udp.SrcPort == 0xAAAA: false)",
+                                               &pkt_ipv6_exthdrs_udp, TRUE},
 };
 
 /*
@@ -244,8 +367,28 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     DWORD iolen;
     WINDIVERT_ADDRESS addr;
     OVERLAPPED overlapped;
+    const char *err_str;
+    UINT err_pos;
     HANDLE handle = INVALID_HANDLE_VALUE, handle0 = INVALID_HANDLE_VALUE,
         event = NULL;
+
+    // (0) Verify the test data:
+    if (!WinDivertHelperCheckFilter(filter, WINDIVERT_LAYER_NETWORK, &err_str,
+            &err_pos))
+    {
+        fprintf(stderr, "error: filter string \"%s\" is invalid with error "
+            "\"%s\" (position=%u)\n", filter, err_str, err_pos);
+        goto failed;
+    }
+    memset(&addr, 0, sizeof(addr));
+    addr.Direction = WINDIVERT_DIRECTION_OUTBOUND;
+    if (WinDivertHelperEvalFilter(filter, WINDIVERT_LAYER_NETWORK,
+            (PVOID)packet, packet_len, &addr) != match)
+    {
+        fprintf(stderr, "error: filter \"%s\" does not match the given "
+            "packet\n", filter);
+        goto failed;
+    }
 
     // (1) Open a WinDivert handle to the given filter:
     handle = WinDivertOpen(filter, WINDIVERT_LAYER_NETWORK, 0, 0);
@@ -270,9 +413,7 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     }
 
     // (2) Inject the packet:
-    memset(&addr, 0, sizeof(addr));
-    addr.Direction = WINDIVERT_DIRECTION_OUTBOUND;
-    if (!WinDivertSend(inject_handle, packet, packet_len, &addr, NULL))
+    if (!WinDivertSend(inject_handle, (PVOID)packet, packet_len, &addr, NULL))
     {
         fprintf(stderr, "error: failed to inject test packet (err = %d)\n",
             GetLastError());

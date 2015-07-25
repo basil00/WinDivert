@@ -404,6 +404,7 @@ static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level);
 static void windivert_free_packet(packet_t packet);
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len);
+static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b);
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, UINT8 checksums,
     filter_t filter);
@@ -2655,6 +2656,46 @@ static void windivert_zero_checksums(void *header, size_t len,
 }
 
 /*
+ * Big number comparison.
+ */
+static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b)
+{
+    if (a[3] < b[3])
+    {
+        return -1;
+    }
+    if (a[3] > b[3])
+    {
+        return 1;
+    }
+    if (a[2] < b[2])
+    {
+        return -1;
+    }
+    if (a[2] > b[2])
+    {
+        return 1;
+    }
+    if (a[1] < b[1])
+    {
+        return -1;
+    }
+    if (a[1] > b[1])
+    {
+        return 1;
+    }
+    if (a[0] < b[0])
+    {
+        return -1;
+    }
+    if (a[0] > b[0])
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/*
  * Checks if the given packet is of interest.
  */
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
@@ -2817,6 +2858,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     while (ttl-- != 0)
     {
         BOOL result;
+        int cmp;
         UINT32 field[4];
         field[1] = 0;
         field[2] = 0;
@@ -3075,55 +3117,26 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     field[0] = 0;
                     break;
             }
+            cmp = windivert_big_num_compare(field, filter[ip].arg);
             switch (filter[ip].test)
             {
                 case WINDIVERT_FILTER_TEST_EQ:
-                    result = (field[0] == filter[ip].arg[0] &&
-                              field[1] == filter[ip].arg[1] &&
-                              field[2] == filter[ip].arg[2] &&
-                              field[3] == filter[ip].arg[3]);
+                    result = (cmp == 0);
                     break;
                 case WINDIVERT_FILTER_TEST_NEQ:
-                    result = (field[0] != filter[ip].arg[0] ||
-                              field[1] != filter[ip].arg[1] ||
-                              field[2] != filter[ip].arg[2] ||
-                              field[3] != filter[ip].arg[3]);
+                    result = (cmp != 0);
                     break;
                 case WINDIVERT_FILTER_TEST_LT:
-                    result = (field[3] < filter[ip].arg[3] ||
-                             (field[3] == filter[ip].arg[3] &&
-                              field[2] < filter[ip].arg[2] ||
-                             (field[2] == filter[ip].arg[2] && 
-                              field[1] < filter[ip].arg[1] ||
-                             (field[1] == filter[ip].arg[1] &&
-                              field[0] < filter[ip].arg[0]))));
+                    result = (cmp < 0);
                     break;
                 case WINDIVERT_FILTER_TEST_LEQ:
-                    result = (field[3] < filter[ip].arg[3] ||
-                             (field[3] == filter[ip].arg[3] &&
-                              field[2] < filter[ip].arg[2] ||
-                             (field[2] == filter[ip].arg[2] && 
-                              field[1] < filter[ip].arg[1] ||
-                             (field[1] == filter[ip].arg[1] &&
-                              field[0] <= filter[ip].arg[0]))));
+                    result = (cmp <= 0);
                     break;
                 case WINDIVERT_FILTER_TEST_GT:
-                    result = (field[3] > filter[ip].arg[3] ||
-                             (field[3] == filter[ip].arg[3] &&
-                              field[2] > filter[ip].arg[2] ||
-                             (field[2] == filter[ip].arg[2] && 
-                              field[1] > filter[ip].arg[1] ||
-                             (field[1] == filter[ip].arg[1] &&
-                              field[0] > filter[ip].arg[0]))));
+                    result = (cmp > 0);
                     break;
                 case WINDIVERT_FILTER_TEST_GEQ:
-                    result = (field[3] > filter[ip].arg[3] ||
-                             (field[3] == filter[ip].arg[3] &&
-                              field[2] > filter[ip].arg[2] ||
-                             (field[2] == filter[ip].arg[2] && 
-                              field[1] > filter[ip].arg[1] ||
-                             (field[1] == filter[ip].arg[1] &&
-                              field[0] >= filter[ip].arg[0]))));
+                    result = (cmp >= 0);
                     break;
                 default:
                     result = FALSE;

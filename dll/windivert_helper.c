@@ -2060,6 +2060,46 @@ extern BOOL WinDivertHelperCheckFilter(const char *filter_str,
 }
 
 /*
+ * Big number comparison.
+ */
+static int WinDivertBigNumCompare(const UINT32 *a, const UINT32 *b)
+{
+    if (a[3] < b[3])
+    {
+        return -1;
+    }
+    if (a[3] > b[3])
+    {
+        return 1;
+    }
+    if (a[2] < b[2])
+    {
+        return -1;
+    }
+    if (a[2] > b[2])
+    {
+        return 1;
+    }
+    if (a[1] < b[1])
+    {
+        return -1;
+    }
+    if (a[1] > b[1])
+    {
+        return 1;
+    }
+    if (a[0] < b[0])
+    {
+        return -1;
+    }
+    if (a[0] > b[0])
+    {
+        return 1;
+    }
+    return 0;
+}
+
+/*
  * Evaluate the given filter with the given packet as input.
  */
 extern BOOL WinDivertHelperEvalFilter(const char *filter,
@@ -2077,6 +2117,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
     UINT payload_len;
     UINT32 val[4];
     BOOL pass;
+    int cmp;
     struct windivert_ioctl_filter_s object[WINDIVERT_FILTER_MAXLEN];
     UINT obj_len;
 
@@ -2176,8 +2217,8 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 pass = (udphdr != NULL);
                 break;
             default:
-                SetLastError(ERROR_INVALID_PARAMETER);
-                return FALSE;
+                pass = TRUE;
+                break;
         }
         if (!pass)
         {
@@ -2293,7 +2334,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 val[0] = ntohs(icmphdr->Checksum);
                 break;
             case WINDIVERT_FILTER_FIELD_ICMP_BODY:
-                val[0] = ntohs(icmphdr->Body);
+                val[0] = ntohl(icmphdr->Body);
                 break;
             case WINDIVERT_FILTER_FIELD_ICMPV6_TYPE:
                 val[0] = icmpv6hdr->Type;
@@ -2305,7 +2346,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 val[0] = ntohs(icmpv6hdr->Checksum);
                 break;
             case WINDIVERT_FILTER_FIELD_ICMPV6_BODY:
-                val[0] = ntohs(icmpv6hdr->Body);
+                val[0] = ntohl(icmpv6hdr->Body);
                 break;
             case WINDIVERT_FILTER_FIELD_TCP_SRCPORT:
                 val[0] = ntohs(tcphdr->SrcPort);
@@ -2371,55 +2412,26 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
         }
+        cmp = WinDivertBigNumCompare(val, object[pc].arg);
         switch (object[pc].test)
         {
             case WINDIVERT_FILTER_TEST_EQ:
-                pass = (val[0] == object[pc].arg[0] &&
-                        val[1] == object[pc].arg[1] &&
-                        val[2] == object[pc].arg[2] &&
-                        val[3] == object[pc].arg[3]);
+                pass = (cmp == 0);
                 break;
             case WINDIVERT_FILTER_TEST_NEQ:
-                pass = (val[0] != object[pc].arg[0] ||
-                        val[1] != object[pc].arg[1] ||
-                        val[2] != object[pc].arg[2] ||
-                        val[3] != object[pc].arg[3]);
+                pass = (cmp != 0);
                 break;
             case WINDIVERT_FILTER_TEST_LT:
-                pass = (val[3] < object[pc].arg[3] ||
-                       (val[3] == object[pc].arg[3] &&
-                       (val[2] < object[pc].arg[2] ||
-                       (val[2] == object[pc].arg[2] &&
-                       (val[1] < object[pc].arg[1] ||
-                       (val[1] == object[pc].arg[1] &&
-                        val[0] < object[pc].arg[0]))))));
+                pass = (cmp < 0);
                 break;
             case WINDIVERT_FILTER_TEST_LEQ:
-                pass = (val[3] < object[pc].arg[3] ||
-                       (val[3] == object[pc].arg[3] &&
-                       (val[2] < object[pc].arg[2] ||
-                       (val[2] == object[pc].arg[2] &&
-                       (val[1] < object[pc].arg[1] ||
-                       (val[1] == object[pc].arg[1] &&
-                        val[0] <= object[pc].arg[0]))))));
+                pass = (cmp <= 0);
                 break;
             case WINDIVERT_FILTER_TEST_GT:
-                pass = (val[3] > object[pc].arg[3] ||
-                       (val[3] == object[pc].arg[3] &&
-                       (val[2] > object[pc].arg[2] ||
-                       (val[2] == object[pc].arg[2] &&
-                       (val[1] > object[pc].arg[1] ||
-                       (val[1] == object[pc].arg[1] &&
-                        val[0] > object[pc].arg[0]))))));
+                pass = (cmp > 0);
                 break;
             case WINDIVERT_FILTER_TEST_GEQ:
-                pass = (val[3] > object[pc].arg[3] ||
-                       (val[3] == object[pc].arg[3] &&
-                       (val[2] > object[pc].arg[2] ||
-                       (val[2] == object[pc].arg[2] &&
-                       (val[1] > object[pc].arg[1] ||
-                       (val[1] == object[pc].arg[1] &&
-                        val[0] >= object[pc].arg[0]))))));
+                pass = (cmp >= 0);
                 break;
             default:
                 SetLastError(ERROR_INVALID_PARAMETER);
