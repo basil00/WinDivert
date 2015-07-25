@@ -610,6 +610,16 @@ The amount of time a packet is queued can be controlled with the
 <a href="#divert_set_param"><tt>WinDivertSetParam()</tt></a> function.
 </p>
 <p>
+WinDivert sometimes captures outbound or loopback packets before the
+IP/TCP/UDP checksum fields have been calculated.
+For outbound packets, this occurs when <i>checksum offloading</i> is enabled,
+which defers checksum calculation to a compatible NIC card.
+If the checksum is absent the corresponding 
+checksum field will be set to zero.
+Correct checksums can be reconstructed using the
+<a href="#divert_helper_calc_checksums"><tt>WinDivertHelperCalcChecksums()</tt></a>
+function.
+</p><p>
 <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> should not be used on any
 WinDivert handle created with the <tt>WINDIVERT_FLAG_DROP</tt> set.
 </p>
@@ -1587,14 +1597,38 @@ There are some limitations to the WinDivert package.
 They are
 <ul>
 <li><i>Injecting inbound ICMP/ICMPv6 messages</i>:
-    For some ICMP/ICMPv6 messages, inbound injection does not work.
-    An error will be returned and the packet will be lost.
-    The work-around is to inject inbound ICMP messages as <tt>outbound</tt>.
+    Calling <a href="#divert_send"><tt>WinDivertSend()</tt></a> will fail with
+    an error for certain types of inbound ICMP/ICMPv6 messages.
+    This is probably because the Windows TCP/IP stack does not handle
+    such messages.
+    Such errors are harmless and can be ignored.
     </li>
 <li><i>The forward layer does not interact well with the Windows NAT</i>:
     It is not possible to block packets pre-NAT with WinDivert.
     As a general principle, you should not try and mix WinDivert at the
     forward layer with the Windows NAT implementation.
+    </li>
+<li><i>Re-injecting unmodified packets can lead to infinite loops</i>:
+    If two or more Windows Filtering Platform (WFP) callout drivers
+    (including WinDivert applications) block and inject unmodified copies of
+    packets then this can lead to an infinite loop.
+    This appears to be caused by a design flaw of WFP.
+    See <a href="https://github.com/basil00/Divert/issues/41">
+    GitHub issue #41</a> for more information.
+    </li>
+<li><i>WinDivert can cause the MSVC x86_64 debugger to hang</i>:
+    See <a href="https://github.com/basil00/Divert/issues/26">
+    GitHub issue #26</a> for more information.
+    </li>
+<li><i>WinDivert can cause packets to be out-of-order</i>:
+    Simply running the <tt>passthru.exe</tt> sample program can cause
+    packets to become out-of-order.
+    This is not a bug, since there is no requirement for packets to
+    remain in-order.
+    However, this may affect other buggy software
+    (e.g. some buggy NAT implementations)
+    that incorrectly assume packets to be in-order.
+    </li>
 </ul>
 </p>
 
