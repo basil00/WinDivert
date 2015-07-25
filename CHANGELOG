@@ -60,12 +60,17 @@ WinDivert 1.1.7
      * Fixed WinDivertHelperParseIPv6Address().
 WinDivert 1.2.0-rc
     - The WinDivert filter language now supports C-style "(F1? F2: F3)"
-      expressions, where {F1,F2,F3} are filters.
+      expressions, where {F1,F2,F3} are themselves filter expressions.
     - New WinDivert helper functions:
       * WinDivertHelperCheckFilter() checks if a filter string is valid.
       * WinDivertHelperEvalFilter() evaluates a filter on a packet.
-    - Packets (specifically "outbound" packets) returned by WinDivertRecv() or
-      WinDivertRecvEx() are no longer required to have correct checksums.  If
-      need be the checksums can be recovered by WinDivertHelperCalcChecksums().
+    - Some packets (specifically outbound or loopback packets) returned by
+      WinDivertRecv() or WinDivertRecvEx() are no longer required to have
+      correct checksums.  Absent checksum fields will be set to zero.  If need
+      be the checksums can be recovered by WinDivertHelperCalcChecksums().
     - The WINDIVERT_FLAG_NO_CHECKSUM flag has been deprecated.
+    - The WinDivertHelperCalcChecksums() function now accepts a new
+      WINDIVERT_HELPER_NO_REPLACE flag, which indicates that non-zero checksum
+      fields should not be replaced.
+    - Various bugfixes.
     - Support for the old WinDivert1.0 API has been removed.
