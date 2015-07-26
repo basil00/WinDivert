@@ -58,6 +58,9 @@ WinDivert 1.1.7
      * WinDivert driver now calculates checksums for IPV6 packets.
      * WinDivert can now handle IPV6 extension headers.
      * Fixed WinDivertHelperParseIPv6Address().
+WinDivert 1.1.8
+    - Fix ip.TOS handling bug.
+    - Fix IPv6 comparison bug.
 WinDivert 1.2.0-rc
     - The WinDivert filter language now supports C-style "(F1? F2: F3)"
       expressions, where {F1,F2,F3} are themselves filter expressions.
@@ -72,5 +75,4 @@ WinDivert 1.2.0-rc
     - The WinDivertHelperCalcChecksums() function now accepts a new
       WINDIVERT_HELPER_NO_REPLACE flag, which indicates that non-zero checksum
       fields should not be replaced.
-    - Various bugfixes.
     - Support for the old WinDivert1.0 API has been removed.
