@@ -58,3 +58,6 @@ WinDivert 1.1.7
      * WinDivert driver now calculates checksums for IPV6 packets.
      * WinDivert can now handle IPV6 extension headers.
      * Fixed WinDivertHelperParseIPv6Address().
+WinDivert 1.1.8
+    - Fix ip.TOS handling bug.
+    - Fix IPv6 comparison bug.
