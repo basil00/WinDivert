@@ -76,3 +76,5 @@ WinDivert 1.2.0-rc
       WINDIVERT_HELPER_NO_REPLACE flag, which indicates that non-zero checksum
       fields should not be replaced.
     - Support for the old WinDivert1.0 API has been removed.
+WinDivert 1.2.1
+    - Identical to WinDivert 1.2.0-rc.
