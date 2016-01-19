@@ -79,6 +79,13 @@ copy /Y build\webfilter.exe ..\..\%MSVC_INSTALL%
 rd /s /q build\
 cd ..\..
 
+:: Build streamdump
+cd examples\streamdump
+msbuild /p:Platform=%PLATFORM% /p:OutDir=build\
+copy /Y build\streamdump.exe ..\..\%MSVC_INSTALL%
+rd /s /q build\
+cd ..\..
+
 :: Copy files
 copy /Y %WDDK_INSTALL%\WinDivert%BITS%.sys %MSVC_INSTALL%
 

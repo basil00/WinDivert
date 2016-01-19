@@ -2,4 +2,5 @@ DIRS= \
      netdump \
      netfilter \
      passthru \
-     webfilter
+     webfilter \
+     streamdump

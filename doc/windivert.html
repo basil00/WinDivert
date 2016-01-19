@@ -1561,6 +1561,13 @@ The sample programs are:
     packets from a single handle.
     This example is useful for performance testing, and as a starting point
     for more interesting applications.</li>
+<li><tt>streamdump.exe</tt>: A simple program that demonstrates how to
+    handle streams using WinDivert.
+    The basic idea is to divert outbound TCP connections to a local proxy
+    server which can capture or manipulate the stream.
+    The <tt>streamdump</tt> sample program also demonstrates usage of the
+    <a href="#divert_recv_ex"><tt>WinDivertRecvEx()<tt></a> and
+    <a href="#divert_send_ex"><tt>WinDivertSendEx()</tt></a> functions.</li>
 </ul>
 </p><p>
 The samples are intended for educational purposes only, and are not
