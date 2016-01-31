@@ -141,6 +141,7 @@ int __cdecl main(int argc, char **argv)
     if (argc != 2)
     {
         fprintf(stderr, "usage: %s dest-port\n", argv[0]);
+        exit(EXIT_FAILURE);
     }
     port = (UINT16)atoi(argv[1]);
     if (port < 0 || port > 0xFFFF)
