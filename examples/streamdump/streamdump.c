@@ -47,14 +47,14 @@
  */
 typedef struct
 {
-    int proxy_port;
-    int alt_port;
+    UINT16 proxy_port;
+    UINT16 alt_port;
 } PROXY_CONFIG, *PPROXY_CONFIG;
 
 typedef struct
 {
     SOCKET s;
-    int alt_port;
+    UINT16 alt_port;
     struct in_addr dest;
 } PROXY_CONNECTION_CONFIG, *PPROXY_CONNECTION_CONFIG;
 
@@ -122,7 +122,8 @@ static void cleanup(HANDLE ioport, OVERLAPPED *ignore)
 int __cdecl main(int argc, char **argv)
 {
     HANDLE handle, thread;
-    int port, proxy_port, alt_port, r;
+    UINT16 port, proxy_port, alt_port;
+    int r;
     char filter[256];
     INT16 priority = 123;       // Arbitrary.
     PPROXY_CONFIG config;
@@ -141,7 +142,7 @@ int __cdecl main(int argc, char **argv)
     {
         fprintf(stderr, "usage: %s dest-port\n", argv[0]);
     }
-    port = atoi(argv[1]);
+    port = (UINT16)atoi(argv[1]);
     if (port < 0 || port > 0xFFFF)
     {
         fprintf(stderr, "error: invalid port number (%d)\n", port);
@@ -304,13 +305,14 @@ read_failed:
 static DWORD proxy(LPVOID arg)
 {
     PPROXY_CONFIG config = (PPROXY_CONFIG)arg;
-    int proxy_port = config->proxy_port;
-    int alt_port = config->alt_port;
+    UINT16 proxy_port = config->proxy_port;
+    UINT16 alt_port = config->alt_port;
     int on = 1;
     WSADATA wsa_data;
     WORD wsa_version = MAKEWORD(2, 2);
     struct sockaddr_in addr;
     SOCKET s;
+    HANDLE thread;
     
     free(config);
 
@@ -366,7 +368,7 @@ static DWORD proxy(LPVOID arg)
         config->s = t;
         config->alt_port = alt_port;
         config->dest = addr.sin_addr;
-        HANDLE thread = CreateThread(NULL, 1,
+        thread = CreateThread(NULL, 1,
             (LPTHREAD_START_ROUTINE)proxy_connection_handler,
             (LPVOID)config, 0, NULL);
         if (thread == NULL)
@@ -389,7 +391,7 @@ static DWORD proxy_connection_handler(LPVOID arg)
     HANDLE thread;
     PPROXY_CONNECTION_CONFIG config = (PPROXY_CONNECTION_CONFIG)arg;
     SOCKET s = config->s, t;
-    int alt_port = config->alt_port;
+    UINT16 alt_port = config->alt_port;
     struct in_addr dest = config->dest;
     struct sockaddr_in addr;
     
