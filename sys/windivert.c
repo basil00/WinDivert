@@ -1133,8 +1133,12 @@ static void windivert_uninstall_callouts(context_t context)
     status = FwpmTransactionBegin0(context->engine_handle, 0);
     if (!NT_SUCCESS(status))
     {
+        // If the userspace app closes without closing the handle to
+        // WinDivert, any actions on engine_handle fail because the
+        // RPC handle was closed first. So, this path is "normal" if
+        // the user's app crashed or never closed the WinDivert handle.
         DEBUG_ERROR("failed to begin WFP transaction", status);
-        return;
+        goto unregister_callouts;
     }
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
@@ -1162,15 +1166,15 @@ static void windivert_uninstall_callouts(context_t context)
     if (!NT_SUCCESS(status))
     {
         FwpmTransactionAbort0(context->engine_handle);
-        return;
+        goto unregister_callouts;
     }
     status = FwpmTransactionCommit0(context->engine_handle);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
-        return;
+        //fallthrough
     }
-
+unregister_callouts:
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
         FwpsCalloutUnregisterByKey0(&context->callout_guid[i]);
