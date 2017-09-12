@@ -2041,11 +2041,8 @@ static void windivert_classify_inbound_network_v4_callout(
             FWPS_FIELD_INBOUND_IPPACKET_V4_FLAGS].value.uint32 &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0,
         data, filter, flow_context, result);
-    if (result->actionType != FWP_ACTION_BLOCK)
-    {
-        NdisAdvanceNetBufferDataStart(buffer, meta_vals->ipHeaderSize,
-            FALSE, NULL);
-    }
+    NdisAdvanceNetBufferDataStart(buffer, meta_vals->ipHeaderSize, FALSE,
+        NULL);
 }
 
 /*
@@ -2084,11 +2081,8 @@ static void windivert_classify_inbound_network_v6_callout(
             FWPS_FIELD_INBOUND_IPPACKET_V6_FLAGS].value.uint32 &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0,
         data, filter, flow_context, result);
-    if (result->actionType != FWP_ACTION_BLOCK)
-    {
-        NdisAdvanceNetBufferDataStart(buffer, sizeof(struct ipv6hdr), FALSE,
-            NULL);
-    }
+    NdisAdvanceNetBufferDataStart(buffer, sizeof(struct ipv6hdr), FALSE,
+        NULL);
 }
 
 /*
