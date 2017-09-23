@@ -1534,25 +1534,29 @@ windivert_write_bad_packet:
     {
         status = FwpsInjectForwardAsync0(handle, (HANDLE)context->priority,
             0, (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
-            addr->IfIdx, buffers, windivert_inject_complete, (HANDLE)request);
+            addr->IfIdx, buffers, windivert_inject_complete, NULL);
     }
     else if (addr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
         status = FwpsInjectNetworkSendAsync0(handle,
             (HANDLE)context->priority, 0, UNSPECIFIED_COMPARTMENT_ID, buffers,
-            windivert_inject_complete, (HANDLE)request);
+            windivert_inject_complete, NULL);
     }
     else
     {
         status = FwpsInjectNetworkReceiveAsync0(handle, 
             (HANDLE)context->priority, 0, UNSPECIFIED_COMPARTMENT_ID,
             addr->IfIdx, addr->SubIfIdx, buffers, windivert_inject_complete,
-            (HANDLE)request);
+            NULL);
     }
 
 windivert_write_exit:
 
-    if (!NT_SUCCESS(status))
+    if (NT_SUCCESS(status))
+    {
+        WdfRequestCompleteWithInformation(request, status, data_len);
+    }
+    else
     {
         DEBUG_ERROR("failed to inject packet", status);
         if (buffers != NULL)
@@ -1578,15 +1582,13 @@ windivert_write_exit:
 static void NTAPI windivert_inject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level)
 {
-    WDFREQUEST request = (WDFREQUEST)context;
     PMDL mdl;
     PVOID data;
     PNET_BUFFER buffer;
     size_t length = 0;
     NTSTATUS status;
+    UNREFERENCED_PARAMETER(context);
     UNREFERENCED_PARAMETER(dispatch_level);
-
-    DEBUG("COMPLETE: write/inject packet complete (request=%p)", request);
 
     buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
     status = NET_BUFFER_LIST_STATUS(buffers);
@@ -1606,7 +1608,6 @@ static void NTAPI windivert_inject_complete(VOID *context,
     }
     IoFreeMdl(mdl);
     FwpsFreeNetBufferList0(buffers);
-    WdfRequestCompleteWithInformation(request, status, length);
 }
 
 /*
