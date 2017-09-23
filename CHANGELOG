@@ -78,3 +78,7 @@ WinDivert 1.2.0-rc
     - Support for the old WinDivert1.0 API has been removed.
 WinDivert 1.2.1
     - Identical to WinDivert 1.2.0-rc.
+WinDivert 1.2.2
+    - Fix BSOD that sometimes occurs after abnormal user application exit.
+    - Fix BSOD that sometimes occurs when WinDivert is combined with other
+      callout drivers.
