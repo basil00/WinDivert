@@ -29,7 +29,7 @@
 #include "windivert.h"
 
 #define WINDIVERT_VERSION                           1
-#define WINDIVERT_VERSION_MINOR                     2
+#define WINDIVERT_VERSION_MINOR                     3
 
 #define WINDIVERT_STR2(s)                           #s
 #define WINDIVERT_STR(s)                            WINDIVERT_STR2(s)
