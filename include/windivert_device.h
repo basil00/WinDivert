@@ -1,6 +1,6 @@
 /*
  * windivert_device.h
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -20,7 +20,7 @@
 #define __WINDIVERT_DEVICE_H
 
 /*
- * NOTE: This is the low-level interface to the divert device driver.
+ * NOTE: This is the low-level interface to the WinDivert device driver.
  *       This interface should not be used directly, instead use the high-level
  *       interface provided by the divert API.
  */
@@ -43,8 +43,8 @@
 #define WINDIVERT_DEVICE_NAME                                               \
     L"WinDivert" WINDIVERT_VERSION_LSTR
 
-#define WINDIVERT_IOCTL_VERSION                     4
-#define WINDIVERT_IOCTL_MAGIC                       0x529B
+#define WINDIVERT_IOCTL_VERSION                     5
+#define WINDIVERT_IOCTL_MAGIC                       0x1E06
 
 #define WINDIVERT_FILTER_FIELD_ZERO                 0
 #define WINDIVERT_FILTER_FIELD_INBOUND              1

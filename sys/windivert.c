@@ -1,6 +1,6 @@
 /*
  * windivert.c
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -104,7 +104,7 @@ typedef struct filter_s *filter_t;
 /*
  * WinDivert context information.
  */
-#define WINDIVERT_CONTEXT_MAGIC                 0x4F55ED0DBA2AD939ull
+#define WINDIVERT_CONTEXT_MAGIC                 0x1C1E48D280D7F487ull
 #define WINDIVERT_CONTEXT_SIZE                  (sizeof(struct context_s))
 #define WINDIVERT_CONTEXT_MAXLAYERS             4
 #define WINDIVERT_CONTEXT_MAXWORKERS            2
@@ -201,7 +201,6 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, windivert_req_context_get);
 struct packet_s
 {
     LIST_ENTRY entry;                       // Entry for queue.
-    PNET_BUFFER_LIST net_buffer_list;       // Clone of the net buffer list.
     size_t data_len;                        // Length of `data'.
     UINT8 checksums;                        // Which checksums are valid.
     UINT8 direction;                        // Packet direction.
@@ -1585,21 +1584,10 @@ static void NTAPI windivert_inject_complete(VOID *context,
     PMDL mdl;
     PVOID data;
     PNET_BUFFER buffer;
-    size_t length = 0;
-    NTSTATUS status;
     UNREFERENCED_PARAMETER(context);
     UNREFERENCED_PARAMETER(dispatch_level);
 
     buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
-    status = NET_BUFFER_LIST_STATUS(buffers);
-    if (NT_SUCCESS(status))
-    {
-        length = NET_BUFFER_DATA_LENGTH(buffer);
-    }
-    else
-    {
-        DEBUG_ERROR("failed to inject packet", status);
-    }
     mdl = NET_BUFFER_FIRST_MDL(buffer);
     data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
     if (data != NULL)
@@ -2347,7 +2335,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     {
         return FALSE;
     }
-    packet->net_buffer_list = NULL;
     packet->data_len = data_len;
     data = NdisGetDataBuffer(buffer, data_len, NULL, 1, 0);
     if (data == NULL)
@@ -2512,10 +2499,6 @@ static void NTAPI windivert_reinject_complete(VOID *context,
  */
 static void windivert_free_packet(packet_t packet)
 {
-    if (packet->net_buffer_list != NULL)
-    {
-        FwpsFreeCloneNetBufferList0(packet->net_buffer_list, 0);
-    }
     ExFreePoolWithTag(packet, WINDIVERT_TAG);
 }
 
