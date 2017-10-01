@@ -598,6 +598,14 @@ extern BOOL WinDivertSetParam(HANDLE handle, WINDIVERT_PARAM param,
                 return FALSE;
             }
             break;
+        case WINDIVERT_PARAM_QUEUE_SIZE:
+            if (value < WINDIVERT_PARAM_QUEUE_SIZE_MIN ||
+                value > WINDIVERT_PARAM_QUEUE_SIZE_MAX)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            break;
         default:
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;

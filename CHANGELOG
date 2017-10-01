@@ -84,3 +84,5 @@ WinDivert 1.3.0
       callout drivers.
     - WinDivertSend() has been optimized.  However, it may not detect as
       many packet injection errors as it could before.
+    - Add a new WINDIVERT_PARAM_QUEUE_SIZE parameter that can be used to
+      control the maximum number of bytes used by the packet queue.

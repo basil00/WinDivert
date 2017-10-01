@@ -157,6 +157,9 @@
 #define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT          512
 #define WINDIVERT_PARAM_QUEUE_TIME_MIN              128
 #define WINDIVERT_PARAM_QUEUE_TIME_MAX              2048
+#define WINDIVERT_PARAM_QUEUE_SIZE_MIN              65535
+#define WINDIVERT_PARAM_QUEUE_SIZE_MAX              33554432
+#define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT          4194304
 
 /*
  * WinDivert message definitions.

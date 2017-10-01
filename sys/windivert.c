@@ -129,6 +129,8 @@ struct context_s
     LIST_ENTRY packet_queue;                    // Packet queue.
     ULONG packet_queue_length;                  // Packet queue length.
     ULONG packet_queue_maxlength;               // Packet queue max length.
+    ULONG packet_queue_size;                    // Packet queue size (in bytes).
+    ULONG packet_queue_maxsize;                 // Packet queue max size.
     WDFTIMER timer;                             // Packet timer.
     UINT timer_timeout;                         // Packet timeout (in ms).
     BOOL timer_ticktock;                        // Packet timer ticktock.
@@ -867,6 +869,8 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->device = device;
     context->packet_queue_length = 0;
     context->packet_queue_maxlength = WINDIVERT_PARAM_QUEUE_LEN_DEFAULT;
+    context->packet_queue_size = 0;
+    context->packet_queue_maxsize = WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT;
     context->timer = NULL;
     context->timer_timeout = WINDIVERT_PARAM_QUEUE_TIME_DEFAULT;
     context->layer_0     = WINDIVERT_LAYER_DEFAULT;
@@ -1212,6 +1216,7 @@ extern VOID windivert_timer(IN WDFTIMER timer)
             break;
         }
         context->packet_queue_length--;
+        context->packet_queue_size -= packet->data_len;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
 
         // Packet is old, dispose of it.
@@ -1358,9 +1363,10 @@ static void windivert_read_service(context_t context)
             break;
         }
         entry = RemoveHeadList(&context->packet_queue);
-        context->packet_queue_length--;
-        KeReleaseInStackQueuedSpinLock(&lock_handle);
         packet = CONTAINING_RECORD(entry, struct packet_s, entry);
+        context->packet_queue_length--;
+        context->packet_queue_size -= packet->data_len;
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
         
         DEBUG("SERVICE: servicing read request (context=%p, request=%p, "
             "packet=%p)", context, request, packet);
@@ -1726,6 +1732,7 @@ windivert_caller_context_error:
 extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     IN size_t out_length, IN size_t in_length, IN ULONG code)
 {
+    KLOCK_QUEUE_HANDLE lock_handle;
     PCHAR inbuf, outbuf;
     size_t inbuflen, outbuflen, filter_len;
     windivert_ioctl_t ioctl;
@@ -1869,12 +1876,20 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
         case IOCTL_WINDIVERT_SET_PARAM:
             ioctl = (windivert_ioctl_t)inbuf;
             value = ioctl->arg;
+            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+            if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+            {
+                KeReleaseInStackQueuedSpinLock(&lock_handle);
+                status = STATUS_INVALID_PARAMETER;
+                goto windivert_ioctl_exit;
+            }
             switch ((WINDIVERT_PARAM)ioctl->arg8)
             {
                 case WINDIVERT_PARAM_QUEUE_LEN:
                     if (value < WINDIVERT_PARAM_QUEUE_LEN_MIN ||
                         value > WINDIVERT_PARAM_QUEUE_LEN_MAX)
                     {
+                        KeReleaseInStackQueuedSpinLock(&lock_handle);
                         status = STATUS_INVALID_PARAMETER;
                         DEBUG_ERROR("failed to set queue length; invalid "
                             "value", status);
@@ -1887,6 +1902,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                     if (value < WINDIVERT_PARAM_QUEUE_TIME_MIN ||
                         value > WINDIVERT_PARAM_QUEUE_TIME_MAX)
                     {
+                        KeReleaseInStackQueuedSpinLock(&lock_handle);
                         status = STATUS_INVALID_PARAMETER;
                         DEBUG_ERROR("failed to set queue time; invalid "
                             "value", status);
@@ -1895,12 +1911,27 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                     context->timer_timeout = (UINT)value;
                     break;
 
+                case WINDIVERT_PARAM_QUEUE_SIZE:
+                    if (value < WINDIVERT_PARAM_QUEUE_SIZE_MIN ||
+                        value > WINDIVERT_PARAM_QUEUE_SIZE_MAX)
+                    {
+                        KeReleaseInStackQueuedSpinLock(&lock_handle);
+                        status = STATUS_INVALID_PARAMETER;
+                        DEBUG_ERROR("failed to set queue size; invalid "
+                            "value", status);
+                        goto windivert_ioctl_exit;
+                    }
+                    context->packet_queue_maxsize = (ULONG)value;
+                    break;
+
                 default:
+                    KeReleaseInStackQueuedSpinLock(&lock_handle);
                     status = STATUS_INVALID_PARAMETER;
                     DEBUG_ERROR("failed to set parameter; invalid parameter",
                         status);
                     goto windivert_ioctl_exit;
             }
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
 
         case IOCTL_WINDIVERT_GET_PARAM:
@@ -1913,6 +1944,13 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 goto windivert_ioctl_exit;
             }
             valptr = (UINT64 *)outbuf;
+            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+            if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+            {
+                KeReleaseInStackQueuedSpinLock(&lock_handle);
+                status = STATUS_INVALID_PARAMETER;
+                goto windivert_ioctl_exit;
+            }
             switch ((WINDIVERT_PARAM)ioctl->arg8)
             {
                 case WINDIVERT_PARAM_QUEUE_LEN:
@@ -1921,12 +1959,17 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 case WINDIVERT_PARAM_QUEUE_TIME:
                     *valptr = context->timer_timeout;
                     break;
+                case WINDIVERT_PARAM_QUEUE_SIZE:
+                    *valptr = context->packet_queue_maxsize;
+                    break;
                 default:
+                    KeReleaseInStackQueuedSpinLock(&lock_handle);
                     status = STATUS_INVALID_PARAMETER;
                     DEBUG_ERROR("failed to get parameter; invalid parameter",
                         status);
                     goto windivert_ioctl_exit;
             }
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
 
         default:
@@ -2323,8 +2366,8 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PVOID data;
-    PLIST_ENTRY entry;
-    packet_t packet;
+    PLIST_ENTRY entry, old_entry;
+    packet_t packet, old_packet;
     UINT data_len;
     NTSTATUS status;
 
@@ -2351,30 +2394,43 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     packet->sub_if_idx = sub_if_idx;
     packet->timer_ticktock = context->timer_ticktock;
     entry = &packet->entry;
+
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    while (TRUE)
     {
-        // We are no longer open
-        KeReleaseInStackQueuedSpinLock(&lock_handle);
-        windivert_free_packet(packet);
-        return FALSE;
-    }
-    InsertTailList(&context->packet_queue, entry);
-    entry = NULL;
-    context->packet_queue_length++;
-    if (context->packet_queue_length > context->packet_queue_maxlength)
-    {
-        entry = RemoveHeadList(&context->packet_queue);
-        context->packet_queue_length--;
+        if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
+            data_len > context->packet_queue_size)
+        {
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
+            windivert_free_packet(packet);
+            return FALSE;
+        }
+        if (context->packet_queue_size + data_len >
+                context->packet_queue_maxsize ||
+            context->packet_queue_length + 1 > context->packet_queue_maxlength)
+        {
+            // The queue is full; drop a packet:
+            old_entry = RemoveHeadList(&context->packet_queue);
+            old_packet = CONTAINING_RECORD(old_entry, struct packet_s, entry);
+            context->packet_queue_length--;
+            context->packet_queue_size -= old_packet->data_len;
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
+            DEBUG("DROP: packet queue is full, dropping packet");
+            windivert_free_packet(old_packet);
+            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+            continue;
+        }
+        else
+        {
+            // Queue the packet:
+            InsertTailList(&context->packet_queue, entry);
+            context->packet_queue_length++;
+            context->packet_queue_size += data_len;
+            break;
+        }
     }
     KeReleaseInStackQueuedSpinLock(&lock_handle);
-    if (entry != NULL)
-    {
-        // Queue is full; 'entry' contains a dropped packet.
-        DEBUG("DROP: packet queue is full, dropping packet");
-        packet = CONTAINING_RECORD(entry, struct packet_s, entry);
-        windivert_free_packet(packet);
-    }
+
     DEBUG("PACKET: diverting packet (packet=%p)", packet);
 
     return TRUE;
