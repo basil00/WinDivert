@@ -214,7 +214,6 @@ typedef struct work_s *work_t;
 /*
  * WinDivert packet structure.
  */
-#define WINDIVERT_PACKET_SIZE               (sizeof(struct packet_s))
 #define WINDIVERT_IP_CHECKSUM               0x01
 #define WINDIVERT_TCP_CHECKSUM              0x02
 #define WINDIVERT_UDP_CHECKSUM              0x04
@@ -223,13 +222,13 @@ typedef struct work_s *work_t;
 struct packet_s
 {
     LIST_ENTRY entry;                       // Entry for queue.
-    size_t data_len;                        // Length of `data'.
     UINT8 checksums;                        // Which checksums are valid.
     UINT8 direction;                        // Packet direction.
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
     ULONGLONG timestamp;                    // Packet timestamp.
-    char data[];                            // Packet data.
+    size_t data_len;                        // Length of `data'.
+    char *data;                             // Packet data.
 };
 typedef struct packet_s *packet_t;
 
@@ -2528,11 +2527,15 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     // SLOW PATH: queue the packet.
     data_len = NET_BUFFER_DATA_LENGTH(buffer);
     packet = (packet_t)ExAllocatePoolWithTag(NonPagedPool,
-        WINDIVERT_PACKET_SIZE + data_len, WINDIVERT_TAG);
+        sizeof(struct packet_s), WINDIVERT_TAG);
     if (packet == NULL)
     {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        DEBUG_ERROR("failed to allocate queued packet", status);
+        return FALSE;
+    }
+    packet->data = ExAllocatePoolWithTag(PagedPool, data_len, WINDIVERT_TAG);
+    if (packet->data == NULL)
+    {
+        windivert_free_packet(packet);
         return FALSE;
     }
     packet->data_len = data_len;
@@ -2718,6 +2721,10 @@ static void NTAPI windivert_reinject_complete(VOID *context,
  */
 static void windivert_free_packet(packet_t packet)
 {
+    if (packet->data != NULL)
+    {
+        ExFreePoolWithTag(packet->data, WINDIVERT_TAG);
+    }
     ExFreePoolWithTag(packet, WINDIVERT_TAG);
 }
 
