@@ -332,11 +332,12 @@ struct udphdr
 /*
  * Global state.
  */
-HANDLE inject_handle = NULL;
-HANDLE injectv6_handle = NULL;
-NDIS_HANDLE pool_handle = NULL;
-HANDLE engine_handle = NULL;
-LONG priority_counter = 0;
+static HANDLE inject_handle = NULL;
+static HANDLE injectv6_handle = NULL;
+static NDIS_HANDLE nbl_pool_handle = NULL;
+static NDIS_HANDLE nb_pool_handle = NULL;
+static HANDLE engine_handle = NULL;
+static LONG priority_counter = 0;
 static ULONGLONG counts_per_ms = 0;
 
 /*
@@ -424,6 +425,8 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL foward,
     UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer);
 static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level);
+static void NTAPI windivert_reinject_clone_complete(VOID *context,
+    NET_BUFFER_LIST *buffers_cpy, BOOLEAN dispatch_level);
 static void windivert_free_packet(packet_t packet);
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len);
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b);
@@ -562,7 +565,8 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     WDF_IO_QUEUE_CONFIG queue_config;
     WDFQUEUE queue;
     WDF_OBJECT_ATTRIBUTES obj_attrs;
-    NET_BUFFER_LIST_POOL_PARAMETERS pool_params;
+    NET_BUFFER_LIST_POOL_PARAMETERS nbl_pool_params;
+    NET_BUFFER_POOL_PARAMETERS nb_pool_params;
     LARGE_INTEGER freq;
     NTSTATUS status;
     DECLARE_CONST_UNICODE_STRING(device_name,
@@ -684,19 +688,36 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         goto driver_entry_exit;
     }
 
-    // Create the packet pool handle.
-    RtlZeroMemory(&pool_params, sizeof(pool_params));
-    pool_params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
-    pool_params.Header.Revision = NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
-    pool_params.Header.Size = sizeof(pool_params);
-    pool_params.fAllocateNetBuffer = TRUE;
-    pool_params.PoolTag = WINDIVERT_TAG;
-    pool_params.DataSize = 0;
-    pool_handle = NdisAllocateNetBufferListPool(NULL, &pool_params);
-    if (pool_handle == NULL)
+    // Create a NET_BUFFER_LIST pool handle.
+    RtlZeroMemory(&nbl_pool_params, sizeof(nbl_pool_params));
+    nbl_pool_params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    nbl_pool_params.Header.Revision =
+        NET_BUFFER_LIST_POOL_PARAMETERS_REVISION_1;
+    nbl_pool_params.Header.Size = sizeof(nbl_pool_params);
+    nbl_pool_params.fAllocateNetBuffer = TRUE;
+    nbl_pool_params.PoolTag = WINDIVERT_TAG;
+    nbl_pool_params.DataSize = 0;
+    nbl_pool_handle = NdisAllocateNetBufferListPool(NULL, &nbl_pool_params);
+    if (nbl_pool_handle == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
         DEBUG_ERROR("failed to allocate net buffer list pool", status);
+        goto driver_entry_exit;
+    }
+
+    // Create a NET_BUFFER pool handle.
+    RtlZeroMemory(&nb_pool_params, sizeof(nb_pool_params));
+    nb_pool_params.Header.Type = NDIS_OBJECT_TYPE_DEFAULT;
+    nb_pool_params.Header.Revision = NET_BUFFER_POOL_PARAMETERS_REVISION_1;
+    nb_pool_params.Header.Size =
+        NDIS_SIZEOF_NET_BUFFER_POOL_PARAMETERS_REVISION_1;
+    nb_pool_params.PoolTag = WINDIVERT_TAG;
+    nb_pool_params.DataSize = 0;
+    nb_pool_handle = NdisAllocateNetBufferPool(NULL, &nb_pool_params);
+    if (nb_pool_handle == NULL)
+    {
+        status = STATUS_INSUFFICIENT_RESOURCES;
+        DEBUG_ERROR("failed to allocate net buffer pool", status);
         goto driver_entry_exit;
     }
 
@@ -791,9 +812,13 @@ static void windivert_driver_unload(void)
     {
         FwpsInjectionHandleDestroy0(injectv6_handle);
     }
-    if (pool_handle != NULL)
+    if (nbl_pool_handle != NULL)
     {
-        NdisFreeNetBufferListPool(pool_handle);
+        NdisFreeNetBufferListPool(nbl_pool_handle);
+    }
+    if (nb_pool_handle != NULL)
+    {
+        NdisFreeNetBufferPool(nb_pool_handle);
     }
     if (engine_handle != NULL)
     {
@@ -1332,7 +1357,6 @@ static void windivert_read_service_request(packet_t packet,
     DEBUG("SERVICE: servicing read request (request=%p)", request);
         
     status = WdfRequestRetrieveOutputWdmMdl(request, &dst_mdl);
-    dst_len = 0;
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to retrieve output MDL", status);
@@ -1554,7 +1578,7 @@ windivert_write_bad_packet:
     }
 
     MmBuildMdlForNonPagedPool(mdl_copy);
-    status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle, 0, 0,
+    status = FwpsAllocateNetBufferAndNetBufferList0(nbl_pool_handle, 0, 0,
         mdl_copy, 0, data_len, &buffers);
     if (!NT_SUCCESS(status))
     {
@@ -2406,6 +2430,14 @@ VOID windivert_worker(IN WDFWORKITEM item)
         }
         else
         {
+            // In SNIFF mode, reinject the entire NET_BUFFER_LIST.
+            ok = windivert_reinject_packet(sniff_mode, forward,
+                work->direction, work->is_ipv4, work->if_idx,
+                work->sub_if_idx, work->priority, work->buffers, NULL);
+            if (!ok)
+            {
+                goto windivert_worker_complete;
+            }
             buffer_itr = buffer_fst;
         }
 
@@ -2443,18 +2475,6 @@ VOID windivert_worker(IN WDFWORKITEM item)
                 goto windivert_worker_complete;
             }
             buffer_itr = NET_BUFFER_NEXT_NB(buffer_itr);
-        }
-
-        if (sniff_mode)
-        {
-            // In SNIFF mode, reinject the entire NET_BUFFER_LIST.
-            ok = windivert_reinject_packet(sniff_mode, forward,
-                work->direction, work->is_ipv4, work->if_idx,
-                work->sub_if_idx, work->priority, work->buffers, NULL);
-            if (!ok)
-            {
-                goto windivert_worker_complete;
-            }
         }
 
 windivert_worker_complete:
@@ -2626,6 +2646,8 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
 {
     PNET_BUFFER_LIST buffers_cpy;
     HANDLE handle;
+    BOOL clone = FALSE;
+    FWPS_INJECT_COMPLETE0 completion = windivert_reinject_complete;
     NTSTATUS status;
 
     if (buffer != NULL)
@@ -2635,7 +2657,7 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
         {
             return TRUE;
         }
-        status = FwpsAllocateNetBufferAndNetBufferList0(pool_handle, 0, 0,
+        status = FwpsAllocateNetBufferAndNetBufferList0(nbl_pool_handle, 0, 0,
             NET_BUFFER_FIRST_MDL(buffer), NET_BUFFER_DATA_OFFSET(buffer),
             NET_BUFFER_DATA_LENGTH(buffer), &buffers_cpy);
         if (!NT_SUCCESS(status))
@@ -2644,55 +2666,63 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
                 status);
             return FALSE;
         }
-        FwpsReferenceNetBufferList(buffers, TRUE);
+        if (forward || direction == WINDIVERT_DIRECTION_OUTBOUND)
+        {
+            NdisCopySendNetBufferListInfo(buffers_cpy, buffers);
+        }
+        else
+        {
+            NdisCopyReceiveNetBufferListInfo(buffers_cpy, buffers);
+        }
     }
     else
     {
         // Re-inject all packets for SNIFF mode.
-        status = FwpsAllocateCloneNetBufferList0(buffers, NULL, pool_handle,
-            0, &buffers_cpy);
+        status = FwpsAllocateCloneNetBufferList0(buffers, nbl_pool_handle,
+            nb_pool_handle, 0, &buffers_cpy);
         if (!NT_SUCCESS(status))
         {
             DEBUG_ERROR("failed to clone NET_BUFFER_LIST for injected packets",
                 status);
             return FALSE;
         }
-        buffers = NULL;     // (buffers == NULL) indicates a clone
+        clone = TRUE;
+        completion = windivert_reinject_clone_complete;
     }
 
     handle = (isipv4? inject_handle: injectv6_handle);
+    FwpsReferenceNetBufferList(buffers, TRUE);
     if (forward)
     {
         status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
             (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
-            if_idx, buffers_cpy, windivert_reinject_complete, (HANDLE)buffers);
+            if_idx, buffers_cpy, completion, (HANDLE)buffers);
     }
     else if (direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
         status = FwpsInjectNetworkSendAsync0(handle,
             (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, buffers_cpy,
-            windivert_reinject_complete, (HANDLE)buffers);
+            completion, (HANDLE)buffers);
     }
     else
     {
         status = FwpsInjectNetworkReceiveAsync0(handle, 
             (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, if_idx,
-            sub_if_idx, buffers_cpy, windivert_reinject_complete,
-            (HANDLE)buffers);
+            sub_if_idx, buffers_cpy, completion, (HANDLE)buffers);
     }
 
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to (re)inject packet(s)", status);
-        if (buffers != NULL)
+        if (clone)
         {
             FwpsFreeNetBufferList0(buffers_cpy);
-            FwpsDereferenceNetBufferList(buffers, FALSE);
         }
         else
         {
             FwpsFreeCloneNetBufferList0(buffers_cpy, 0);
         }
+        FwpsDereferenceNetBufferList(buffers, FALSE);
     }
 
     return TRUE;
@@ -2705,15 +2735,19 @@ static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers_cpy, BOOLEAN dispatch_level)
 {
     PNET_BUFFER_LIST buffers = (PNET_BUFFER_LIST)context;
-    if (buffers != NULL)
-    {
-        FwpsFreeNetBufferList0(buffers_cpy);
-        FwpsDereferenceNetBufferList(buffers, dispatch_level);
-    }
-    else
-    {
-        FwpsFreeCloneNetBufferList0(buffers_cpy, 0);
-    }
+    FwpsFreeNetBufferList0(buffers_cpy);
+    FwpsDereferenceNetBufferList(buffers, dispatch_level);
+}
+
+/*
+ * WinDivert (re)inject complete.
+ */
+static void NTAPI windivert_reinject_clone_complete(VOID *context,
+    NET_BUFFER_LIST *buffers_cpy, BOOLEAN dispatch_level)
+{
+    PNET_BUFFER_LIST buffers = (PNET_BUFFER_LIST)context;
+    FwpsFreeCloneNetBufferList0(buffers_cpy, 0);
+    FwpsDereferenceNetBufferList(buffers, dispatch_level);
 }
 
 /*
