@@ -126,6 +126,7 @@ struct context_s
     WDFDEVICE device;                           // Context's device.
     WDFFILEOBJECT object;                       // Context's parent object.
     LIST_ENTRY work_queue;                      // Work queue.
+    ULONG work_queue_length;                    // Work queue length.
     LIST_ENTRY packet_queue;                    // Packet queue.
     ULONG packet_queue_length;                  // Packet queue length.
     ULONG packet_queue_maxlength;               // Packet queue max length.
@@ -190,6 +191,7 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, windivert_req_context_get);
 /*
  * WinDivert work structure.
  */
+#define WINDIVERT_WORK_QUEUE_LEN_MAX        4096
 struct work_s
 {
     LIST_ENTRY entry;                       // Entry for queue.
@@ -918,6 +920,7 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->state  = WINDIVERT_CONTEXT_STATE_OPENING;
     context->device = device;
     context->object = object;
+    context->work_queue_length = 0;
     context->packet_queue_length = 0;
     context->packet_queue_maxlength = WINDIVERT_PARAM_QUEUE_LEN_DEFAULT;
     context->packet_queue_size = 0;
@@ -1318,6 +1321,7 @@ windivert_cleanup_error:
     while (!IsListEmpty(&context->work_queue))
     {
         entry = RemoveHeadList(&context->work_queue);
+        context->work_queue_length--;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         work = CONTAINING_RECORD(entry, struct work_s, entry);
         FwpsDereferenceNetBufferList(work->buffers, FALSE);
@@ -2306,6 +2310,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     BOOL outbound, hop;
     WDFOBJECT object;
     work_t work;
+    PLIST_ENTRY old_entry;
     filter_t filter;
     ULONGLONG timestamp;
     NTSTATUS status;
@@ -2468,6 +2473,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     work->sub_if_idx = sub_if_idx;
     work->priority = priority;
     work->timestamp = timestamp;
+    old_entry = NULL;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
     {
@@ -2478,11 +2484,24 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
         result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
+    context->work_queue_length++;
+    if (context->work_queue_length > WINDIVERT_WORK_QUEUE_LEN_MAX)
+    {
+        old_entry = RemoveHeadList(&context->work_queue);
+        context->work_queue_length--;
+    }
     InsertTailList(&context->work_queue, &work->entry);
     WdfWorkItemEnqueue(context->workers[context->worker_curr]);
     context->worker_curr =
         (context->worker_curr + 1) % WINDIVERT_CONTEXT_MAXWORKERS;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+    if (old_entry != NULL)
+    {
+        work = CONTAINING_RECORD(old_entry, struct work_s, entry);
+        FwpsDereferenceNetBufferList(work->buffers, FALSE);
+        windivert_free(work);
+    }
 
 windivert_classify_callout_exit:
 
@@ -2520,6 +2539,7 @@ VOID windivert_worker(IN WDFWORKITEM item)
             !IsListEmpty(&context->work_queue))
     {
         entry = RemoveHeadList(&context->work_queue);
+        context->work_queue_length--;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
 
         work = CONTAINING_RECORD(entry, struct work_s, entry);
