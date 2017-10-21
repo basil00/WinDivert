@@ -151,15 +151,15 @@
 /*
  * WinDivert parameters.
  */
-#define WINDIVERT_PARAM_QUEUE_LEN_DEFAULT           1024
-#define WINDIVERT_PARAM_QUEUE_LEN_MIN               1
-#define WINDIVERT_PARAM_QUEUE_LEN_MAX               8192
-#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT          512
-#define WINDIVERT_PARAM_QUEUE_TIME_MIN              128
-#define WINDIVERT_PARAM_QUEUE_TIME_MAX              2048
-#define WINDIVERT_PARAM_QUEUE_SIZE_MIN              65535
-#define WINDIVERT_PARAM_QUEUE_SIZE_MAX              33554432
-#define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT          4194304
+#define WINDIVERT_PARAM_QUEUE_LEN_DEFAULT           2048
+#define WINDIVERT_PARAM_QUEUE_LEN_MIN               16
+#define WINDIVERT_PARAM_QUEUE_LEN_MAX               16384
+#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT          1000        // 1s
+#define WINDIVERT_PARAM_QUEUE_TIME_MIN              20          // 20ms
+#define WINDIVERT_PARAM_QUEUE_TIME_MAX              8000        // 8s
+#define WINDIVERT_PARAM_QUEUE_SIZE_MIN              65535       // 64KB
+#define WINDIVERT_PARAM_QUEUE_SIZE_MAX              33554432    // 32MB
+#define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT          4194304     // 4MB
 
 /*
  * WinDivert message definitions.

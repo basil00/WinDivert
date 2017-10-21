@@ -857,8 +857,8 @@ Description
 <td>
 Sets the maximum length of the packet queue for
 <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
-Currently the default value is 1024, the minimum is 1, and the maximum
-is 8192.
+Currently the default value is 2048, the minimum is 16, and the maximum
+is 16384.
 </td>
 </tr>
 <tr>
@@ -873,8 +873,8 @@ processed by the application as soon as is possible.
 Note that this sets the <i>minimum</i> time a packet can be queued before 
 it can be dropped.
 The actual time may be exceed this value.
-Currently the default value is 512, the minimum is 128, and the maximum is
-2048.
+Currently the default value is 1000 (1s), the minimum is 20 (20ms), and the
+maximum is 8000 (8s).
 </td>
 </tr>
 <tr>
@@ -884,7 +884,7 @@ Currently the default value is 512, the minimum is 128, and the maximum is
 <td>
 Sets the maximum number of bytes that can be stored in the packet queue for
 <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
-Currently the default value is 4194304 (4MB), the minimum is 4096 (4KB),
+Currently the default value is 4194304 (4MB), the minimum is 65535 (64KB),
 and the maximum is 33554432 (32MB).
 </td>
 </tr>
