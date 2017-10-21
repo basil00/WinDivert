@@ -1419,13 +1419,21 @@ extern VOID windivert_destroy(IN WDFOBJECT object)
  */
 static NTSTATUS windivert_read(context_t context, WDFREQUEST request)
 {
+    KLOCK_QUEUE_HANDLE lock_handle;
     NTSTATUS status = STATUS_SUCCESS;
 
     DEBUG("READ: reading diverted packet (context=%p, request=%p)", context,
         request);
 
     // Forward the request to the pending read queue:
+    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        return STATUS_INVALID_DEVICE_STATE;
+    }
     status = WdfRequestForwardToIoQueue(request, context->read_queue);
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to forward I/O request to read queue", status);
