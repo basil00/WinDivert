@@ -222,6 +222,7 @@ struct packet_s
     LIST_ENTRY entry;                       // Entry for queue.
     UINT8 checksums;                        // Which checksums are valid.
     UINT8 direction;                        // Packet direction.
+    BOOL is_ipv4;                           // Is IPv4?
     BOOL hop;                               // Decrement TTL?
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
@@ -417,11 +418,12 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     IN BOOL isloopback, IN UINT advance, IN OUT void *data,
     IN UINT64 flow_context, OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
-    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL hop,
+    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
     UINT8 checksums, ULONGLONG timestamp);
 static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL foward,
     UINT8 direction, BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx,
-    UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer);
+    UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer,
+    packet_t packet);
 static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level);
 static void NTAPI windivert_reinject_clone_complete(VOID *context,
@@ -1304,10 +1306,15 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
     packet_t packet;
     WDFQUEUE read_queue;
     WDFWORKITEM worker;
+    ULONGLONG timestamp;
+    BOOL sniff_mode, timeout, forward, ok;
+    UINT priority;
     NTSTATUS status;
     
     DEBUG("CLEANUP: cleaning up WinDivert context (context=%p)", context);
-    
+
+    ok = TRUE;
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
     {
@@ -1318,20 +1325,9 @@ windivert_cleanup_error:
         return;
     }
     context->state = WINDIVERT_CONTEXT_STATE_CLOSING;
-    while (!IsListEmpty(&context->work_queue))
-    {
-        entry = RemoveHeadList(&context->work_queue);
-        context->work_queue_length--;
-        KeReleaseInStackQueuedSpinLock(&lock_handle);
-        work = CONTAINING_RECORD(entry, struct work_s, entry);
-        FwpsDereferenceNetBufferList(work->buffers, FALSE);
-        windivert_free(work);
-        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-        if (context->state != WINDIVERT_CONTEXT_STATE_CLOSING)
-        {
-            goto windivert_cleanup_error;
-        }
-    }
+    sniff_mode = ((context->flags & WINDIVERT_FLAG_SNIFF) != 0);
+    forward = (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD);
+    priority = context->priority;
     while (!IsListEmpty(&context->packet_queue))
     {
         entry = RemoveHeadList(&context->packet_queue);
@@ -1339,7 +1335,39 @@ windivert_cleanup_error:
         context->packet_queue_length--;
         context->packet_queue_size -= packet->data_len;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
+        timeout = (timestamp - packet->timestamp >
+            context->packet_queue_maxcounts);
+        if (!timeout && ok)
+        {
+            ok = windivert_reinject_packet(sniff_mode, forward,
+                packet->direction, packet->is_ipv4, packet->if_idx,
+                packet->sub_if_idx, priority, NULL, NULL, packet);
+        }
         windivert_free_packet(packet);
+        timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
+        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+        if (context->state != WINDIVERT_CONTEXT_STATE_CLOSING)
+        {
+            goto windivert_cleanup_error;
+        }
+    }
+    while (!IsListEmpty(&context->work_queue))
+    {
+        entry = RemoveHeadList(&context->work_queue);
+        context->work_queue_length--;
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        work = CONTAINING_RECORD(entry, struct work_s, entry);
+        timeout = (timestamp - work->timestamp >
+            context->packet_queue_maxcounts);
+        if (!timeout && ok)
+        {
+            ok = windivert_reinject_packet(sniff_mode, forward,
+                work->direction, work->is_ipv4, work->if_idx,
+                work->sub_if_idx, work->priority, work->buffers, NULL, NULL);
+        }
+        FwpsDereferenceNetBufferList(work->buffers, FALSE);
+        windivert_free(work);
+        timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
         if (context->state != WINDIVERT_CONTEXT_STATE_CLOSING)
         {
@@ -2574,7 +2602,7 @@ VOID windivert_worker(IN WDFWORKITEM item)
                 ok = windivert_reinject_packet(sniff_mode, forward,
                     work->direction, work->is_ipv4, work->if_idx,
                     work->sub_if_idx, work->priority, work->buffers,
-                    buffer_itr);
+                    buffer_itr, NULL);
                 if (!ok)
                 {
                     goto windivert_worker_complete;
@@ -2587,7 +2615,7 @@ VOID windivert_worker(IN WDFWORKITEM item)
             // In SNIFF mode, reinject the entire NET_BUFFER_LIST.
             ok = windivert_reinject_packet(sniff_mode, forward,
                 work->direction, work->is_ipv4, work->if_idx,
-                work->sub_if_idx, work->priority, work->buffers, NULL);
+                work->sub_if_idx, work->priority, work->buffers, NULL, NULL);
             if (!ok)
             {
                 goto windivert_worker_complete;
@@ -2597,8 +2625,8 @@ VOID windivert_worker(IN WDFWORKITEM item)
 
         // Queue the first matching packet.
         ok = windivert_queue_packet(context, buffer_itr, work->direction,
-            work->if_idx, work->sub_if_idx, work->hop, work->checksums,
-            work->timestamp);
+            work->if_idx, work->sub_if_idx, work->is_ipv4, work->hop,
+            work->checksums, work->timestamp);
         if (!ok)
         {
             goto windivert_worker_complete;
@@ -2616,14 +2644,15 @@ VOID windivert_worker(IN WDFWORKITEM item)
             {
                 ok = windivert_queue_packet(context, buffer_itr,
                     work->direction, work->if_idx, work->sub_if_idx,
-                    work->hop, work->checksums, work->timestamp);
+                    work->is_ipv4, work->hop, work->checksums,
+                    work->timestamp);
             }
             else
             {
                 ok = windivert_reinject_packet(sniff_mode, forward,
                     work->direction, work->is_ipv4, work->if_idx,
                     work->sub_if_idx, work->priority, work->buffers,
-                    buffer_itr);
+                    buffer_itr, NULL);
             }
             if (!ok)
             {
@@ -2648,7 +2677,7 @@ windivert_worker_complete:
  * Queue a NET_BUFFER.
  */
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
-    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL hop,
+    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
     UINT8 checksums, ULONGLONG timestamp0)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
@@ -2722,6 +2751,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     {
         RtlCopyMemory(packet->data, data, data_len);
     }
+    packet->is_ipv4 = is_ipv4;
     packet->hop = hop;
     packet->checksums = checksums;
     packet->direction = direction;
@@ -2797,12 +2827,15 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
  */
 static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
     UINT8 direction, BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx,
-    UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer)
+    UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer,
+    packet_t packet)
 {
     PNET_BUFFER_LIST buffers_cpy;
-    HANDLE handle;
-    BOOL clone = FALSE;
-    FWPS_INJECT_COMPLETE0 completion = windivert_reinject_complete;
+    BOOL clone;
+    PMDL mdl = NULL;
+    PVOID data = NULL;
+    FWPS_INJECT_COMPLETE0 completion;
+    HANDLE comp_handle, handle;
     NTSTATUS status;
 
     if (buffer != NULL)
@@ -2829,8 +2862,12 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
         {
             NdisCopyReceiveNetBufferListInfo(buffers_cpy, buffers);
         }
+        clone = FALSE;
+        completion = windivert_reinject_complete;
+        comp_handle = (HANDLE)buffers;
+        FwpsReferenceNetBufferList(buffers, TRUE);
     }
-    else
+    else if (buffers != NULL)
     {
         // Re-inject all packets for SNIFF mode.
         status = FwpsAllocateCloneNetBufferList0(buffers, nbl_pool_handle,
@@ -2843,27 +2880,69 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
         }
         clone = TRUE;
         completion = windivert_reinject_clone_complete;
+        comp_handle = (HANDLE)buffers;
+        FwpsReferenceNetBufferList(buffers, TRUE);
     }
+    else if (packet != NULL)
+    {
+        // Re-inject a packet_t for cleanup.
+        if (sniff_mode)
+        {
+            return TRUE;        // Already re-injected.
+        }
+        data = windivert_malloc(packet->data_len, FALSE);
+        if (data == NULL)
+        {
+            status = STATUS_INSUFFICIENT_RESOURCES;
+            DEBUG_ERROR("failed to allocate memory for injected packet data",
+                status);
+            return FALSE;
+        }
+        RtlCopyMemory(data, packet->data, packet->data_len);
+        mdl = IoAllocateMdl(data, packet->data_len, FALSE, FALSE, NULL);
+        if (mdl == NULL)
+        {
+            status = STATUS_INSUFFICIENT_RESOURCES;
+            DEBUG_ERROR("failed to allocate MDL for injected packet", status);
+            windivert_free(data);
+            return FALSE;
+        }
+        MmBuildMdlForNonPagedPool(mdl);
+        status = FwpsAllocateNetBufferAndNetBufferList0(nbl_pool_handle, 0, 0,
+            mdl, 0, packet->data_len, &buffers_cpy);
+        if (!NT_SUCCESS(status))
+        {
+            DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
+                status);
+            IoFreeMdl(mdl);
+            windivert_free(data);
+            return FALSE;
+        }
+        clone = FALSE;
+        completion = windivert_inject_complete;
+        comp_handle = (HANDLE)NULL;
+    }
+    else
+        return TRUE;
 
     handle = (isipv4? inject_handle: injectv6_handle);
-    FwpsReferenceNetBufferList(buffers, TRUE);
     if (forward)
     {
         status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
             (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
-            if_idx, buffers_cpy, completion, (HANDLE)buffers);
+            if_idx, buffers_cpy, completion, comp_handle);
     }
     else if (direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
         status = FwpsInjectNetworkSendAsync0(handle,
             (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, buffers_cpy,
-            completion, (HANDLE)buffers);
+            completion, comp_handle);
     }
     else
     {
         status = FwpsInjectNetworkReceiveAsync0(handle, 
             (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, if_idx,
-            sub_if_idx, buffers_cpy, completion, (HANDLE)buffers);
+            sub_if_idx, buffers_cpy, completion, comp_handle);
     }
 
     if (!NT_SUCCESS(status))
@@ -2877,7 +2956,18 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
         {
             FwpsFreeCloneNetBufferList0(buffers_cpy, 0);
         }
-        FwpsDereferenceNetBufferList(buffers, FALSE);
+        if (buffers != NULL)
+        {
+            FwpsDereferenceNetBufferList(buffers, FALSE);
+        }
+        if (mdl != NULL)
+        {
+            IoFreeMdl(mdl);
+        }
+        if (data != NULL)
+        {
+            windivert_free(data);
+        }
     }
 
     return TRUE;
