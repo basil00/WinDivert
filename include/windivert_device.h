@@ -29,7 +29,7 @@
 #include "windivert.h"
 
 #define WINDIVERT_VERSION                           1
-#define WINDIVERT_VERSION_MINOR                     3
+#define WINDIVERT_VERSION_MINOR                     4
 
 #define WINDIVERT_STR2(s)                           #s
 #define WINDIVERT_STR(s)                            WINDIVERT_STR2(s)
@@ -43,8 +43,8 @@
 #define WINDIVERT_DEVICE_NAME                                               \
     L"WinDivert" WINDIVERT_VERSION_LSTR
 
-#define WINDIVERT_IOCTL_VERSION                     5
-#define WINDIVERT_IOCTL_MAGIC                       0x1E06
+#define WINDIVERT_IOCTL_VERSION                     6
+#define WINDIVERT_IOCTL_MAGIC                       0xA2BF
 
 #define WINDIVERT_FILTER_FIELD_ZERO                 0
 #define WINDIVERT_FILTER_FIELD_INBOUND              1
