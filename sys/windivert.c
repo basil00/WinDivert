@@ -132,7 +132,7 @@ struct context_s
     ULONG packet_queue_maxlength;               // Packet queue max length.
     ULONG packet_queue_size;                    // Packet queue size (in bytes).
     ULONG packet_queue_maxsize;                 // Packet queue max size.
-    ULONGLONG packet_queue_maxcounts;           // Packet queue max counts.
+    LONGLONG packet_queue_maxcounts;            // Packet queue max counts.
     ULONG packet_queue_maxtime;                 // Packet queue max time.
     WDFQUEUE read_queue;                        // Read queue.
     WDFWORKITEM workers[WINDIVERT_CONTEXT_MAXWORKERS];
@@ -154,6 +154,10 @@ struct context_s
 typedef struct context_s context_s;
 typedef struct context_s *context_t;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(context_s, windivert_context_get);
+
+#define WINDIVERT_TIMEOUT(context, t0, t1)                                  \
+    (((t1) >= (t0)? (t1) - (t0): (t0) - (t1)) >                             \
+        (context)->packet_queue_maxcounts)
 
 /*
  * WinDivert Layer information.
@@ -205,7 +209,7 @@ struct work_s
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
     UINT32 priority;                        // WinDivert priority.
-    ULONGLONG timestamp;                    // Packet timestamp.
+    LONGLONG timestamp;                     // Packet timestamp.
 };
 typedef struct work_s *work_t;
 
@@ -226,7 +230,7 @@ struct packet_s
     BOOL hop;                               // Decrement TTL?
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
-    ULONGLONG timestamp;                    // Packet timestamp.
+    LONGLONG timestamp;                     // Packet timestamp.
     size_t data_len;                        // Length of `data'.
     char *data;                             // Packet data.
 };
@@ -338,7 +342,7 @@ static NDIS_HANDLE nbl_pool_handle = NULL;
 static NDIS_HANDLE nb_pool_handle = NULL;
 static HANDLE engine_handle = NULL;
 static LONG priority_counter = 0;
-static ULONGLONG counts_per_ms = 0;
+static LONGLONG counts_per_ms = 0;
 static POOL_TYPE non_paged_pool = NonPagedPool;
 
 /*
@@ -419,7 +423,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     IN UINT64 flow_context, OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
-    UINT8 checksums, ULONGLONG timestamp);
+    UINT8 checksums, LONGLONG timestamp);
 static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL foward,
     UINT8 direction, BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx,
     UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer,
@@ -607,7 +611,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
 
     // Initialize timer info.
     KeQueryPerformanceCounter(&freq);
-    counts_per_ms = (ULONGLONG)freq.QuadPart / 1000;
+    counts_per_ms = freq.QuadPart / 1000;
     counts_per_ms = (counts_per_ms == 0? 1: counts_per_ms);
 
     // Initialize the layers.
@@ -1306,7 +1310,7 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
     packet_t packet;
     WDFQUEUE read_queue;
     WDFWORKITEM worker;
-    ULONGLONG timestamp;
+    LONGLONG timestamp;
     BOOL sniff_mode, timeout, forward, ok;
     UINT priority;
     NTSTATUS status;
@@ -1335,8 +1339,7 @@ windivert_cleanup_error:
         context->packet_queue_length--;
         context->packet_queue_size -= packet->data_len;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
-        timeout = (timestamp - packet->timestamp >
-            context->packet_queue_maxcounts);
+        timeout = WINDIVERT_TIMEOUT(context, packet->timestamp, timestamp);
         if (!timeout && ok)
         {
             ok = windivert_reinject_packet(sniff_mode, forward,
@@ -1357,8 +1360,7 @@ windivert_cleanup_error:
         context->work_queue_length--;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         work = CONTAINING_RECORD(entry, struct work_s, entry);
-        timeout = (timestamp - work->timestamp >
-            context->packet_queue_maxcounts);
+        timeout = WINDIVERT_TIMEOUT(context, work->timestamp, timestamp);
         if (!timeout && ok)
         {
             ok = windivert_reinject_packet(sniff_mode, forward,
@@ -1562,22 +1564,21 @@ static void windivert_read_service(context_t context)
     PMDL dst_mdl;
     PVOID dst, src;
     ULONG dst_len, src_len;
-    ULONGLONG timestamp;
+    LONGLONG timestamp;
     BOOL timeout;
     NTSTATUS status;
     packet_t packet;
     req_context_t req_context;
     windivert_addr_t addr;
 
-    timestamp = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     while (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
            !IsListEmpty(&context->packet_queue))
     {
         entry = RemoveHeadList(&context->packet_queue);
         packet = CONTAINING_RECORD(entry, struct packet_s, entry);
-        timeout = (timestamp - packet->timestamp >
-            context->packet_queue_maxcounts);
+        timeout = WINDIVERT_TIMEOUT(context, packet->timestamp, timestamp);
         request = NULL;
         if (!timeout)
         {
@@ -1601,7 +1602,7 @@ static void windivert_read_service(context_t context)
         }
 
         windivert_free_packet(packet);
-        timestamp = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
+        timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
     KeReleaseInStackQueuedSpinLock(&lock_handle);
@@ -2117,7 +2118,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                         goto windivert_ioctl_exit;
                     }
                     context->packet_queue_maxcounts =
-                        (ULONGLONG)value * counts_per_ms;
+                        (LONGLONG)value * counts_per_ms;
                     context->packet_queue_maxtime = (ULONG)value;
                     break;
 
@@ -2348,7 +2349,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     work_t work;
     PLIST_ENTRY old_entry;
     filter_t filter;
-    ULONGLONG timestamp;
+    LONGLONG timestamp;
     NTSTATUS status;
 
     // Basic checks:
@@ -2410,8 +2411,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
         hop = TRUE;
     }
 
-    timestamp = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
-    timestamp = (timestamp > 0? timestamp-1: timestamp);
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
 
     // Determine which checksum fields are present or not.
     if (isloopback)
@@ -2678,7 +2678,7 @@ windivert_worker_complete:
  */
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
-    UINT8 checksums, ULONGLONG timestamp0)
+    UINT8 checksums, LONGLONG timestamp0)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PVOID data;
@@ -2686,7 +2686,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     PLIST_ENTRY entry, old_entry;
     packet_t packet, old_packet;
     UINT data_len;
-    ULONGLONG timestamp;
+    LONGLONG timestamp;
     BOOL timeout;
     NTSTATUS status;
 
@@ -2694,7 +2694,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     // queuing the packet.  This helps reduce overhead where possible.
     timeout = FALSE;
     request = NULL;
-    timestamp = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
     {
@@ -2706,7 +2706,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         return TRUE;
     }
-    timeout = (timestamp - timestamp0 > context->packet_queue_maxcounts);
+    timeout = WINDIVERT_TIMEOUT(context, timestamp0, timestamp);
     if (!timeout && IsListEmpty(&context->packet_queue))
     {
         status = WdfIoQueueRetrieveNextRequest(context->read_queue, &request);
@@ -2760,7 +2760,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     packet->timestamp = timestamp0;
     entry = &packet->entry;
 
-    timestamp = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     while (TRUE)
     {
@@ -2777,8 +2777,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
             windivert_free_packet(packet);
             return TRUE;
         }
-        timeout = (timestamp - packet->timestamp >
-            context->packet_queue_maxcounts);
+        timeout = WINDIVERT_TIMEOUT(context, packet->timestamp, timestamp);
         if (timeout)
         {
             // (Corner case) the packet has already expired:
@@ -2799,7 +2798,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             DEBUG("DROP: packet queue is full, dropping packet");
             windivert_free_packet(old_packet);
-            timestamp = (ULONGLONG)KeQueryPerformanceCounter(NULL).QuadPart;
+            timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             continue;
         }
