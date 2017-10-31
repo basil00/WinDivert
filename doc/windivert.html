@@ -548,6 +548,20 @@ This is useful for implementing simple packet filters using the
 WinDivert <a href="#filter_language">filter language</a>.
 </td>
 </tr>
+<tr>
+<td>
+<tt>WINDIVERT_FLAG_DEBUG</tt>
+</td>
+<td>
+This flag causes <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> to block
+until the injected packet <i>exits</i> the Windows TCP/IP stack.
+By default, <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> does not
+block and returns immediately after the packet <i>enters</i> the
+TCP/IP stack.
+The default mode is faster, but will not return an error code if the
+packet is lost or rejected for any reason; making debugging difficult.
+</td>
+</tr>
 </table>
 </center>
 Note that only one of <tt>WINDIVERT_FLAG_SNIFF</tt> or
@@ -584,6 +598,7 @@ BOOL <b>WinDivertRecv</b>(
 <tt>TRUE</tt> if a packet was successfully received, or <tt>FALSE</tt> if
 an error occurred.
 Use <tt>GetLastError()</tt> to get the reason for the error.
+</table>
 </p><p>
 <b>Remarks</b><br>
 Receives a diverted packet that matched the filter passed to
@@ -700,6 +715,12 @@ BOOL <b>WinDivertSend</b>(
 <tt>TRUE</tt> if a packet was successfully injected, or <tt>FALSE</tt> if
 an error occurred.
 Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+Note that a return value of <tt>TRUE</tt> does not necessarily mean the
+packet was accepted by the Windows TCP/IP stack.
+For better error messages (at the cost of performance), pass the
+<tt>WINDIVERT_FLAG_DEBUG</tt> flag to <a
+href="#divert_open"><tt>WinDivertOpen()</tt></a>.
 </p><p>
 <b>Remarks</b><br>
 Injects a packet into the network stack.
@@ -1577,7 +1598,7 @@ The sample programs are:
     The basic idea is to divert outbound TCP connections to a local proxy
     server which can capture or manipulate the stream.
     The <tt>streamdump</tt> sample program also demonstrates usage of the
-    <a href="#divert_recv_ex"><tt>WinDivertRecvEx()<tt></a> and
+    <a href="#divert_recv_ex"><tt>WinDivertRecvEx()</tt></a> and
     <a href="#divert_send_ex"><tt>WinDivertSendEx()</tt></a> functions.</li>
 </ul>
 </p><p>

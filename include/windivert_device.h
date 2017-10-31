@@ -131,7 +131,7 @@
  * WinDivert flags.
  */
 #define WINDIVERT_FLAGS_ALL                                                 \
-    (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP)
+    (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_DEBUG)
 #define WINDIVERT_FLAGS_EXCLUDE(flags, flag1, flag2)                        \
     (((flags) & ((flag1) | (flag2))) != ((flag1) | (flag2)))
 #define WINDIVERT_FLAGS_VALID(flags)                                        \

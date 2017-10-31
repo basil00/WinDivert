@@ -79,6 +79,7 @@ typedef enum
  */
 #define WINDIVERT_FLAG_SNIFF            1
 #define WINDIVERT_FLAG_DROP             2
+#define WINDIVERT_FLAG_DEBUG            4
 
 /*
  * Divert parameters.

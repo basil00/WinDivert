@@ -87,4 +87,7 @@ WinDivert 1.3.0
 WinDivert 1.4.0-rc
     - Add a new WINDIVERT_PARAM_QUEUE_SIZE parameter that can be used to
       control the maximum number of bytes used by the packet queue.
+    - Add a new WINDIVERT_FLAG_DEBUG flag that causes WinDivertSend() to
+      block until the packet exits the Windows TCP/IP stack.  This is slower
+      but provides better error messages, so is useful for debugging.
     - Internally queued packets are now reinjected on WinDivertClose().

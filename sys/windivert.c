@@ -1623,7 +1623,8 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     BOOL isipv4;
     UINT8 layer;
     UINT32 priority;
-    HANDLE handle;
+    UINT64 flags;
+    HANDLE handle, compl_handle;
     PNET_BUFFER_LIST buffers = NULL;
     NTSTATUS status = STATUS_SUCCESS;
 
@@ -1726,33 +1727,38 @@ windivert_write_bad_packet:
     }
     layer = context->layer;
     priority = context->priority;
+    flags = context->flags;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     handle = (isipv4? inject_handle: injectv6_handle);
+    compl_handle = ((flags & WINDIVERT_FLAG_DEBUG) != 0? (HANDLE)request: NULL);
     if (layer == WINDIVERT_LAYER_NETWORK_FORWARD)
     {
         status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
             (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
-            addr->IfIdx, buffers, windivert_inject_complete, NULL);
+            addr->IfIdx, buffers, windivert_inject_complete, compl_handle);
     }
     else if (addr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
         status = FwpsInjectNetworkSendAsync0(handle, (HANDLE)priority, 0,
             UNSPECIFIED_COMPARTMENT_ID, buffers, windivert_inject_complete,
-            NULL);
+            compl_handle);
     }
     else
     {
         status = FwpsInjectNetworkReceiveAsync0(handle, (HANDLE)priority, 0,
             UNSPECIFIED_COMPARTMENT_ID, addr->IfIdx, addr->SubIfIdx, buffers,
-            windivert_inject_complete, NULL);
+            windivert_inject_complete, compl_handle);
     }
 
 windivert_write_exit:
 
     if (NT_SUCCESS(status))
     {
-        WdfRequestCompleteWithInformation(request, status, data_len);
+        if ((flags & WINDIVERT_FLAG_DEBUG) == 0)
+        {
+            WdfRequestCompleteWithInformation(request, status, data_len);
+        }
     }
     else
     {
@@ -1780,10 +1786,23 @@ static void NTAPI windivert_inject_complete(VOID *context,
     PMDL mdl;
     PVOID data;
     PNET_BUFFER buffer;
-    UNREFERENCED_PARAMETER(context);
+    size_t length;
+    WDFREQUEST request;
+    NTSTATUS status;
     UNREFERENCED_PARAMETER(dispatch_level);
 
     buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
+    request = (WDFREQUEST)context;
+    if (request != NULL)
+    {
+        status = NET_BUFFER_LIST_STATUS(buffers);
+        length = 0;
+        if (NT_SUCCESS(status))
+        {
+            length = NET_BUFFER_DATA_LENGTH(buffer);
+        }
+        WdfRequestCompleteWithInformation(request, status, length);
+    }
     mdl = NET_BUFFER_FIRST_MDL(buffer);
     data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
     windivert_free(data);
@@ -2834,7 +2853,7 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
     PMDL mdl = NULL;
     PVOID data = NULL;
     FWPS_INJECT_COMPLETE0 completion;
-    HANDLE comp_handle, handle;
+    HANDLE compl_handle, handle;
     NTSTATUS status;
 
     if (buffer != NULL)
@@ -2863,7 +2882,7 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
         }
         clone = FALSE;
         completion = windivert_reinject_complete;
-        comp_handle = (HANDLE)buffers;
+        compl_handle = (HANDLE)buffers;
         FwpsReferenceNetBufferList(buffers, TRUE);
     }
     else if (buffers != NULL)
@@ -2879,7 +2898,7 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
         }
         clone = TRUE;
         completion = windivert_reinject_clone_complete;
-        comp_handle = (HANDLE)buffers;
+        compl_handle = (HANDLE)buffers;
         FwpsReferenceNetBufferList(buffers, TRUE);
     }
     else if (packet != NULL)
@@ -2919,7 +2938,7 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
         }
         clone = FALSE;
         completion = windivert_inject_complete;
-        comp_handle = (HANDLE)NULL;
+        compl_handle = (HANDLE)NULL;
     }
     else
         return TRUE;
@@ -2929,19 +2948,19 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
     {
         status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
             (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
-            if_idx, buffers_cpy, completion, comp_handle);
+            if_idx, buffers_cpy, completion, compl_handle);
     }
     else if (direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
         status = FwpsInjectNetworkSendAsync0(handle,
             (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, buffers_cpy,
-            completion, comp_handle);
+            completion, compl_handle);
     }
     else
     {
         status = FwpsInjectNetworkReceiveAsync0(handle, 
             (HANDLE)priority, 0, UNSPECIFIED_COMPARTMENT_ID, if_idx,
-            sub_if_idx, buffers_cpy, completion, comp_handle);
+            sub_if_idx, buffers_cpy, completion, compl_handle);
     }
 
     if (!NT_SUCCESS(status))
