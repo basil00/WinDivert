@@ -419,7 +419,7 @@ static void windivert_classify_forward_network_v6_callout(
     OUT FWPS_CLASSIFY_OUT0 *result);
 static void windivert_classify_callout(context_t context, IN UINT8 direction,
     IN UINT32 if_idx, IN UINT32 sub_if_idx, IN BOOL isipv4,
-    IN BOOL isloopback, IN UINT advance, IN OUT void *data,
+    IN BOOL loopback, IN UINT advance, IN OUT void *data,
     IN UINT64 flow_context, OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
@@ -2351,7 +2351,7 @@ static void windivert_classify_forward_network_v6_callout(
  * WinDivert classify callout.
  */
 static void windivert_classify_callout(context_t context, IN UINT8 direction,
-    IN UINT32 if_idx, IN UINT32 sub_if_idx, IN BOOL isipv4, IN BOOL isloopback,
+    IN UINT32 if_idx, IN UINT32 sub_if_idx, IN BOOL isipv4, IN BOOL loopback,
     IN UINT advance, IN OUT void *data, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
@@ -2430,10 +2430,16 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
         hop = TRUE;
     }
 
-    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
+    // Loopback packets are considered outbound only.
+    if (loopback && direction == WINDIVERT_DIRECTION_INBOUND)
+    {
+        WdfObjectDereference(object);
+        result->actionType = FWP_ACTION_CONTINUE;
+        return;
+    }
 
     // Determine which checksum fields are present or not.
-    if (isloopback)
+    if (loopback)
     {
         // Loopback packets appear to have bogus checksums, so do not trust.
         checksums = 0;
@@ -2455,6 +2461,8 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     {
         checksums &= ~WINDIVERT_IP_CHECKSUM;
     }
+
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
 
     // Retreat the NET_BUFFER to the IP header, if necessary.
     // If (advance != 0) then this must be in the inbound path, and the
