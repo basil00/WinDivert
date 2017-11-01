@@ -598,7 +598,45 @@ BOOL <b>WinDivertRecv</b>(
 <tt>TRUE</tt> if a packet was successfully received, or <tt>FALSE</tt> if
 an error occurred.
 Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+Common errors include:
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Name
+</th>
+<th>
+Code
+</th>
+<th>
+Description
+</th>
+</tr>
+<tr>
+<td>
+<tt>ERROR_HOST_UNREACHABLE</tt>
+</td>
+<td>
+1232
+</td>
+<td>
+This error occurs when a packet enters into a mutual infinite loop
+between WinDivert and another network packet capture driver, possibly
+an alternative version of WinDivert.
+Infinite loops can occur when another driver copies and reinjects a packet
+sent by <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
+The copied packet will be considered <q>new</q> again, and will be diverted
+back to <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>, completing the
+loop.
+To stop packets looping indefinitely, WinDivert automatically decrements the
+<tt>ip.TTL</tt> or <tt>ipv6.HopLimit</tt> fields of potentially affected
+packets, eventually returning <tt>ERROR_HOST_UNREACHABLE</tt> when the value
+reaches zero.
+</td>
+</tr>
 </table>
+</center>
 </p><p>
 <b>Remarks</b><br>
 Receives a diverted packet that matched the filter passed to
@@ -1669,11 +1707,23 @@ They are
     If two or more Windows Filtering Platform (WFP) callout drivers
     (including WinDivert applications) block and inject unmodified copies of
     packets then this can lead to an infinite loop.
-    This appears to be caused by a design flaw of WFP.
+    If such a loop occurs, 
+    <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> will eventually fail
+    with error <tt>ERROR_HOST_UNREACHABLE</tt>.
+    Unfortunately, such errors are not easy to fix.
+    Some crude solutions include: (1) removing the incompatible driver, or
+    (2) ignoring all packets with <tt>ip.TTL</tt> or
+    <tt>ipv6.HopLimit</tt> less than the Windows <tt>DefaultTTL</tt>
+    registry value.
     See <a href="https://github.com/basil00/Divert/issues/41">
     GitHub issue #41</a> for more information.
     </li>
-<li><i>WinDivert can cause the MSVC x86_64 debugger to hang</i>:
+<li><i>WinDivert can cause the MSVC x86_64 debugger to deadlock</i>:
+    The deadlock occurs because the debugger uses local sockets.
+    Thus: the debugger pauses the WinDivert
+    application, which stops packets from being processed, which 
+    causes the debugger wait forever on input from a socket.
+    The deadlock can be avoided by ignoring loopback traffic.
     See <a href="https://github.com/basil00/Divert/issues/26">
     GitHub issue #26</a> for more information.
     </li>

@@ -91,3 +91,5 @@ WinDivert 1.4.0-rc
       block until the packet exits the Windows TCP/IP stack.  This is slower
       but provides better error messages, so is useful for debugging.
     - Internally queued packets are now reinjected on WinDivertClose().
+    - WinDivertRecv() will eventually fail with ERROR_HOST_UNREACHABLE
+      if a packet loops indefinitely between WinDivert and another driver.
