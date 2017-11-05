@@ -93,3 +93,10 @@ WinDivert 1.4.0-rc
     - Internally queued packets are now reinjected on WinDivertClose().
     - WinDivertRecv() will eventually fail with ERROR_HOST_UNREACHABLE
       if a packet loops indefinitely between WinDivert and another driver.
+    - WINDIVERT_ADDRESS now includes a Timestamp field that indicates when
+      the packet was first captured by WinDivert.  The timestamp uses the
+      same clock as QueryPerformanceCounter().
+    - WINDIVERT_ADDRESS now includes a Loopback field that indicates whether
+      the packet is a loopback packet or not.
+    - The filter language has been extended to include a loopback field that
+      matches loopback packets.

@@ -98,6 +98,7 @@ typedef enum
     TOKEN_OUTBOUND,
     TOKEN_IF_IDX,
     TOKEN_SUB_IF_IDX,
+    TOKEN_LOOPBACK,
     TOKEN_OPEN,
     TOKEN_CLOSE,
     TOKEN_EQ,
@@ -824,6 +825,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"ipv6.NextHdr",        TOKEN_IPV6_NEXT_HDR},
         {"ipv6.SrcAddr",        TOKEN_IPV6_SRC_ADDR},
         {"ipv6.TrafficClass",   TOKEN_IPV6_TRAFFIC_CLASS},
+        {"loopback",            TOKEN_LOOPBACK},
         {"not",                 TOKEN_NOT},
         {"or",                  TOKEN_OR},
         {"outbound",            TOKEN_OUTBOUND},
@@ -1132,7 +1134,8 @@ static PEXPR WinDivertMakeVar(PPOOL pool, KIND kind)
         {{{0}}, TOKEN_INBOUND},
         {{{0}}, TOKEN_OUTBOUND},
         {{{0}}, TOKEN_IF_IDX},
-        {{{0}}, TOKEN_SUB_IF_IDX}
+        {{{0}}, TOKEN_SUB_IF_IDX},
+        {{{0}}, TOKEN_LOOPBACK}
     };
 
     // Binary search:
@@ -1252,6 +1255,7 @@ static PEXPR WinDivertParseTest(PPOOL pool, TOKEN *toks, UINT *i)
         case TOKEN_INBOUND:
         case TOKEN_IF_IDX:
         case TOKEN_SUB_IF_IDX:
+        case TOKEN_LOOPBACK:
         case TOKEN_IP:
         case TOKEN_IPV6:
         case TOKEN_ICMP:
@@ -1718,6 +1722,9 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_SUB_IF_IDX:
             object->field = WINDIVERT_FILTER_FIELD_SUBIFIDX;
+            break;
+        case TOKEN_LOOPBACK:
+            object->field = WINDIVERT_FILTER_FIELD_LOOPBACK;
             break;
         case TOKEN_IP:
             object->field = WINDIVERT_FILTER_FIELD_IP;
@@ -2242,6 +2249,9 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 break;
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
                 val[0] = addr->SubIfIdx;
+                break;
+            case WINDIVERT_FILTER_FIELD_LOOPBACK:
+                val[0] = addr->Loopback;
                 break;
             case WINDIVERT_FILTER_FIELD_IP:
                 val[0] = (iphdr != NULL);

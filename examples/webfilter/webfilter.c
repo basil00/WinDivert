@@ -1,6 +1,6 @@
 /*
  * webfilter.c
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -160,6 +160,7 @@ int __cdecl main(int argc, char **argv)
     // Open the Divert device:
     handle = WinDivertOpen(
             "outbound && "              // Outbound traffic only
+            "!loopback && "             // No loopback traffic
             "ip && "                    // Only IPv4 supported
             "tcp.DstPort == 80 && "     // HTTP (port 80) only
             "tcp.PayloadLength > 0",    // TCP data packets only

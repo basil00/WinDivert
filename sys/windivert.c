@@ -186,7 +186,7 @@ typedef struct layer_s *layer_t;
  */
 struct req_context_s
 {
-    struct windivert_addr_s *addr;          // Pointer to address structure.
+    PWINDIVERT_ADDRESS addr;                // Pointer to address structure.
 };
 typedef struct req_context_s req_context_s;
 typedef struct req_context_s *req_context_t;
@@ -202,8 +202,9 @@ struct work_s
     PNET_BUFFER_LIST buffers;               // Packet list.
     PNET_BUFFER buffer;                     // First matching packet.
     UINT advance;                           // Bytes to retreat/advance.
-    BOOL is_ipv4;                           // Is IPv4?
-    BOOL hop;                               // Decrement TTL?
+    BOOL is_ipv4:1;                         // Is IPv4?
+    BOOL hop:1;                             // Decrement TTL?
+    BOOL loopback:1;                        // Is loopback?
     UINT8 checksums;                        // Which checksums are valid.
     UINT8 direction;                        // Packet direction.
     UINT32 if_idx;                          // Interface index.
@@ -226,8 +227,9 @@ struct packet_s
     LIST_ENTRY entry;                       // Entry for queue.
     UINT8 checksums;                        // Which checksums are valid.
     UINT8 direction;                        // Packet direction.
-    BOOL is_ipv4;                           // Is IPv4?
-    BOOL hop;                               // Decrement TTL?
+    BOOL is_ipv4:1;                         // Is IPv4?
+    BOOL hop:1;                             // Decrement TTL?
+    BOOL loopback:1;                        // Is loopback?
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
     LONGLONG timestamp;                     // Packet timestamp.
@@ -236,6 +238,7 @@ struct packet_s
 };
 typedef struct packet_s *packet_t;
 
+#if 0
 /*
  * WinDivert address definition.
  */
@@ -246,6 +249,7 @@ struct windivert_addr_s
     UINT8  Direction;
 };
 typedef struct windivert_addr_s *windivert_addr_t;
+#endif
 
 /*
  * Header definitions.
@@ -382,7 +386,7 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object);
 extern VOID windivert_close(IN WDFFILEOBJECT object);
 extern VOID windivert_destroy(IN WDFOBJECT object);
 extern NTSTATUS windivert_write(context_t context, WDFREQUEST request,
-    windivert_addr_t addr);
+    PWINDIVERT_ADDRESS addr);
 extern void NTAPI windivert_inject_complete(VOID *context,
     NET_BUFFER_LIST *packets, BOOLEAN dispatch_level);
 static NTSTATUS windivert_notify_callout(IN FWPS_CALLOUT_NOTIFY_TYPE type,
@@ -423,7 +427,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     IN UINT64 flow_context, OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
-    UINT8 checksums, LONGLONG timestamp);
+    BOOL loopback, UINT8 checksums, LONGLONG timestamp);
 static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL foward,
     UINT8 direction, BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx,
     UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer,
@@ -436,8 +440,8 @@ static void windivert_free_packet(packet_t packet);
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len);
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b);
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
-    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, BOOL hop, UINT8 checksums,
-    filter_t filter);
+    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, BOOL hop, BOOL loopback,
+    UINT8 checksums, filter_t filter);
 static NTSTATUS windivert_finalize_packet(void *header, size_t len,
     BOOL hop, UINT8 checksums);
 static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
@@ -1481,14 +1485,15 @@ static NTSTATUS windivert_read(context_t context, WDFREQUEST request)
  */
 static void windivert_read_service_request(packet_t packet,
     PNET_BUFFER buffer, UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx,
-    BOOL hop, UINT8 checksums, WDFREQUEST request)
+    BOOL hop, BOOL loopback, LONGLONG timestamp, UINT8 checksums,
+    WDFREQUEST request)
 {
     PMDL dst_mdl;
     PVOID dst, src;
     ULONG dst_len, src_len;
     NTSTATUS status;
     req_context_t req_context;
-    windivert_addr_t addr;
+    PWINDIVERT_ADDRESS addr;
 
     DEBUG("SERVICE: servicing read request (request=%p)", request);
         
@@ -1534,9 +1539,12 @@ static void windivert_read_service_request(packet_t packet,
     addr = req_context->addr;
     if (addr != NULL)
     {
+        addr->Timestamp = (INT64)timestamp;
         addr->IfIdx = if_idx;
         addr->SubIfIdx = sub_if_idx;
         addr->Direction = direction;
+        addr->Loopback = (loopback? 1: 0);
+        addr->Reserved = 0;
     }
 
     // Zero the IP/TCP/UDP checksums and/or decrement the TTL (if required).
@@ -1569,7 +1577,7 @@ static void windivert_read_service(context_t context)
     NTSTATUS status;
     packet_t packet;
     req_context_t req_context;
-    windivert_addr_t addr;
+    PWINDIVERT_ADDRESS addr;
 
     timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -1596,9 +1604,10 @@ static void windivert_read_service(context_t context)
 
         if (!timeout)
         {
-            windivert_read_service_request(packet, NULL,
-                packet->direction, packet->if_idx, packet->sub_if_idx,
-                packet->hop, packet->checksums, request);
+            windivert_read_service_request(packet, NULL, packet->direction,
+                packet->if_idx, packet->sub_if_idx, packet->hop,
+                packet->loopback, packet->timestamp, packet->checksums,
+                request);
         }
 
         windivert_free_packet(packet);
@@ -1612,7 +1621,7 @@ static void windivert_read_service(context_t context)
  * WinDivert write routine.
  */
 static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
-    windivert_addr_t addr)
+    PWINDIVERT_ADDRESS addr)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PMDL mdl = NULL, mdl_copy = NULL;
@@ -1626,6 +1635,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     UINT64 flags;
     HANDLE handle, compl_handle;
     PNET_BUFFER_LIST buffers = NULL;
+    NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums_info;
     NTSTATUS status = STATUS_SUCCESS;
 
     DEBUG("WRITE: writing/injecting a packet (context=%p, request=%p)",
@@ -1819,7 +1829,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     size_t inbuflen;
     WDF_REQUEST_PARAMETERS params;
     WDFMEMORY memobj;
-    windivert_addr_t addr = NULL;
+    PWINDIVERT_ADDRESS addr = NULL;
     windivert_ioctl_t ioctl;
     WDF_OBJECT_ATTRIBUTES attributes;
     req_context_t req_context = NULL;
@@ -1876,13 +1886,13 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
                 goto windivert_caller_context_error;
             }
             status = WdfRequestProbeAndLockUserBufferForWrite(request,
-                (PVOID)ioctl->arg, sizeof(struct windivert_addr_s), &memobj);
+                (PVOID)ioctl->arg, sizeof(WINDIVERT_ADDRESS), &memobj);
             if (!NT_SUCCESS(status))
             {
                 DEBUG_ERROR("invalid arg pointer for RECV ioctl", status);
                 goto windivert_caller_context_error;
             }
-            addr = (windivert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+            addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
             break;
 
         case IOCTL_WINDIVERT_SEND:
@@ -1893,13 +1903,13 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
                 goto windivert_caller_context_error;
             }
             status = WdfRequestProbeAndLockUserBufferForRead(request,
-                (PVOID)ioctl->arg, sizeof(struct windivert_addr_s), &memobj);
+                (PVOID)ioctl->arg, sizeof(WINDIVERT_ADDRESS), &memobj);
             if (!NT_SUCCESS(status))
             {
                 DEBUG_ERROR("invalid arg pointer for SEND ioctl", status);
                 goto windivert_caller_context_error;
             }
-            addr = (windivert_addr_t)WdfMemoryGetBuffer(memobj, NULL);
+            addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
             break;
 
         case IOCTL_WINDIVERT_START_FILTER:
@@ -1947,7 +1957,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     UINT8 layer;
     UINT32 priority;
     UINT64 flags;
-    windivert_addr_t addr;
+    PWINDIVERT_ADDRESS addr;
     req_context_t req_context;
     NTSTATUS status = STATUS_SUCCESS;
     context_t context =
@@ -2495,7 +2505,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     do
     {
         BOOL match = windivert_filter(buffer_fst, if_idx, sub_if_idx, outbound,
-            isipv4, hop, checksums, filter);
+            isipv4, hop, loopback, checksums, filter);
         if (match)
         {
             break;
@@ -2530,6 +2540,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     work->advance = advance;
     work->is_ipv4 = isipv4;
     work->hop = hop;
+    work->loopback = loopback;
     work->checksums = checksums;
     work->direction = direction;
     work->if_idx = if_idx;
@@ -2653,7 +2664,7 @@ VOID windivert_worker(IN WDFWORKITEM item)
         // Queue the first matching packet.
         ok = windivert_queue_packet(context, buffer_itr, work->direction,
             work->if_idx, work->sub_if_idx, work->is_ipv4, work->hop,
-            work->checksums, work->timestamp);
+            work->loopback, work->checksums, work->timestamp);
         if (!ok)
         {
             goto windivert_worker_complete;
@@ -2666,12 +2677,12 @@ VOID windivert_worker(IN WDFWORKITEM item)
         {
             match = windivert_filter(buffer_itr, work->if_idx,
                 work->sub_if_idx, outbound, work->is_ipv4, work->hop,
-                work->checksums, filter);
+                work->loopback, work->checksums, filter);
             if (match)
             {
                 ok = windivert_queue_packet(context, buffer_itr,
                     work->direction, work->if_idx, work->sub_if_idx,
-                    work->is_ipv4, work->hop, work->checksums,
+                    work->is_ipv4, work->hop, work->loopback, work->checksums,
                     work->timestamp);
             }
             else
@@ -2705,7 +2716,7 @@ windivert_worker_complete:
  */
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
-    UINT8 checksums, LONGLONG timestamp0)
+    BOOL loopback, UINT8 checksums, LONGLONG timestamp0)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PVOID data;
@@ -2751,7 +2762,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     {
         // FAST PATH: Service an I/O request without queueing the packet.
         windivert_read_service_request(NULL, buffer, direction, if_idx,
-            sub_if_idx, hop, checksums, request);
+            sub_if_idx, hop, loopback, timestamp0, checksums, request);
         return TRUE;
     }
 
@@ -2780,6 +2791,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     }
     packet->is_ipv4 = is_ipv4;
     packet->hop = hop;
+    packet->loopback = loopback;
     packet->checksums = checksums;
     packet->direction = direction;
     packet->if_idx = if_idx;
@@ -3237,8 +3249,8 @@ static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b)
  * Checks if the given packet is of interest.
  */
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
-    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, BOOL hop, UINT8 checksums,
-    filter_t filter)
+    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, BOOL hop, BOOL loopback,
+    UINT8 checksums, filter_t filter)
 {
     size_t tot_len, ip_header_len;
     struct iphdr *ip_header = NULL;
@@ -3446,6 +3458,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     break;
                 case WINDIVERT_FILTER_FIELD_SUBIFIDX:
                     field[0] = (UINT32)sub_if_idx;
+                    break;
+                case WINDIVERT_FILTER_FIELD_LOOPBACK:
+                    field[0] = (UINT32)loopback;
                     break;
                 case WINDIVERT_FILTER_FIELD_IP:
                     field[0] = (UINT32)(ip_header != NULL);
@@ -4008,6 +4023,7 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
             case WINDIVERT_FILTER_FIELD_OUTBOUND:
             case WINDIVERT_FILTER_FIELD_IFIDX:
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
+            case WINDIVERT_FILTER_FIELD_LOOPBACK:
             case WINDIVERT_FILTER_FIELD_IP:
             case WINDIVERT_FILTER_FIELD_IPV6:
             case WINDIVERT_FILTER_FIELD_ICMP:

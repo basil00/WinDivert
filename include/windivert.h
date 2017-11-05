@@ -1,6 +1,6 @@
 /*
  * windivert.h
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -57,9 +57,12 @@ extern "C" {
  */
 typedef struct
 {
+    INT64  Timestamp;                   /* Packet's timestamp. */
     UINT32 IfIdx;                       /* Packet's interface index. */
     UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
-    UINT8  Direction;                   /* Packet's direction. */
+    UINT8  Direction:1;                 /* Packet's direction. */
+    UINT8  Loopback:1;                  /* Packet is loopback? */
+    UINT8  Reserved:6;
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
 
 #define WINDIVERT_DIRECTION_OUTBOUND    0

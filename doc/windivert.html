@@ -311,9 +311,11 @@ library.</li>
 <pre>
 typedef struct
 {
+    INT64  Timestamp;
     UINT32 IfIdx;
     UINT32 SubIfIdx;
-    UINT8  Direction;
+    UINT8  Direction:1;
+    UINT8  Loopback:1;
 } <b>WINDIVERT_ADDRESS</b>, *<b>PWINDIVERT_ADDRESS</b>;
 </pre>
 </td></tr></table>
@@ -321,6 +323,11 @@ typedef struct
 <p>
 <b>Fields</b>
 <ul>
+<li> <tt>Timestamp</tt>: A timestamp indicating when WinDivert first captured
+    the packet.
+    Uses the same clock as <a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms644904(v=vs.85).aspx"><tt>QueryPerformanceCounter()</tt></a>.
+    This value is ignored by <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
+    </li>
 <li> <tt>IfIdx</tt>: The interface index on which the packet arrived
     (for inbound packets), or is to be sent (for outbound packets).</li>
 <li> <tt>SubIfIdx</tt>: The sub-interface index for <tt>IfIdx</tt>.</li>
@@ -332,6 +339,8 @@ packets.</li>
 <li> <tt>WINDIVERT_DIRECTION_INBOUND</tt> with value 1 for <i>inbound</i>
 packets.</li>
 </ul></li>
+<li> <tt>Loopback</tt>: Set to <tt>1</tt> for loopback packets, <tt>0</tt>
+otherwise</li>
 </ul>
 </p><p>
 <b>Remarks</b><br>
@@ -1508,6 +1517,7 @@ The possible fields are:
 <tr><td><tt>inbound</tt></td><td>Is inbound? (only valid for <tt>WINDIVERT_LAYER_NETWORK</tt>)</td></tr>
 <tr><td><tt>ifIdx</tt></td><td>Interface index</td></tr>
 <tr><td><tt>subIfIdx</tt></td><td>Sub-interface index</td></tr>
+<tr><td><tt>loopback</tt></td><td>Is loopback packet?</td></tr>
 <tr><td><tt>ip</tt></td><td>Is IPv4?</td></tr>
 <tr><td><tt>ipv6</tt></td><td>Is IPv6?</td></tr>
 <tr><td><tt>icmp</tt></td><td>Is ICMP?</td></tr>
@@ -1535,10 +1545,10 @@ contain a TCP header.
 <p>
 <ol>
 <li>
-Divert all outbound web traffic:
+Divert all outbound (non-local) web traffic:
 <pre>
 HANDLE handle = WinDivertOpen(
-        "outbound and "
+        "outbound and !loopback and "
         "(tcp.DstPort == 80 or udp.DstPort == 53)",
         0, 0, 0
     );
@@ -1550,17 +1560,6 @@ Divert all inbound TCP SYNs:
 HANDLE handle = WinDivertOpen(
         "inbound and "
         "tcp.Syn",
-        0, 0, 0
-    );
-</pre>
-</li>
-<li>
-Divert only (inbound) local traffic:
-<pre>
-HANDLE handle = WinDivertOpen(
-        "inbound and ("
-        "(ip.DstAddr &gt;= 127.0.0.1 and ip.DstAddr &lt;= 127.255.255.255) or"
-        "ipv6.DstAddr == ::1)",
         0, 0, 0
     );
 </pre>

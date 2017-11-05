@@ -1,6 +1,6 @@
 /*
  * netdump.c
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -53,6 +53,8 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
     const char *err_str;
+    LARGE_INTEGER base, freq;
+    double time_passed;
 
     // Check arguments.
     switch (argc)
@@ -107,6 +109,10 @@ int __cdecl main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+    // Set up timing:
+    QueryPerformanceFrequency(&freq);
+    QueryPerformanceCounter(&base);
+
     // Main loop:
     while (TRUE)
     {
@@ -134,8 +140,13 @@ int __cdecl main(int argc, char **argv)
         // Dump packet info: 
         putchar('\n');
         SetConsoleTextAttribute(console, FOREGROUND_RED);
-        printf("Packet [Direction=%u IfIdx=%u SubIfIdx=%u]\n",
-            addr.Direction, addr.IfIdx, addr.SubIfIdx);
+        time_passed = (double)(addr.Timestamp - base.QuadPart) /
+            (double)freq.QuadPart;
+        printf("Packet [Timestamp=%.8g, Direction=%s IfIdx=%u SubIfIdx=%u "
+            "Loopback=%u]\n",
+            time_passed, (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND?
+                "outbound": "inbound"), addr.IfIdx, addr.SubIfIdx,
+                addr.Loopback);
         if (ip_header != NULL)
         {
             UINT8 *src_addr = (UINT8 *)&ip_header->SrcAddr;
