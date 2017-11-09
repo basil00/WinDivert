@@ -62,7 +62,10 @@ typedef struct
     UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
     UINT8  Direction:1;                 /* Packet's direction. */
     UINT8  Loopback:1;                  /* Packet is loopback? */
-    UINT8  Reserved:6;
+    UINT8  IPv4Checksum:1;              /* Packet has full IPv4 checksum? */
+    UINT8  TCPChecksum:1;               /* Packet has full TCP checksum? */
+    UINT8  UDPChecksum:1;               /* Packet has full UDP checksum? */
+    UINT8  Reserved:2;
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
 
 #define WINDIVERT_DIRECTION_OUTBOUND    0
@@ -318,7 +321,6 @@ typedef struct
 #define WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM                 4
 #define WINDIVERT_HELPER_NO_TCP_CHECKSUM                    8
 #define WINDIVERT_HELPER_NO_UDP_CHECKSUM                    16
-#define WINDIVERT_HELPER_NO_REPLACE                         2048
 
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
@@ -355,6 +357,7 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
 extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
     __inout     PVOID pPacket, 
     __in        UINT packetLen,
+    __in_opt    PWINDIVERT_ADDRESS pAddr,
     __in        UINT64 flags);
 
 /*
@@ -375,15 +378,6 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
     __in        PVOID pPacket,
     __in        UINT packetLen,
     __in        PWINDIVERT_ADDRESS pAddr);
-
-/****************************************************************************/
-/* WINDIVERT LEGACY API                                                     */
-/****************************************************************************/
-
-/*
- * Deprecated API:
- */
-#define WINDIVERT_FLAG_NO_CHECKSUM      0
 
 #endif      /* WINDIVERT_KERNEL */
 

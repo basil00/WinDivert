@@ -189,8 +189,6 @@ int __cdecl main(int argc, char **argv)
             !BlackListPayloadMatch(blacklist, payload, (UINT16)payload_len))
         {
             // Packet does not match the blacklist; simply reinject it.
-            WinDivertHelperCalcChecksums(packet, packet_len, 
-                WINDIVERT_HELPER_NO_REPLACE);
             if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
             {
                 fprintf(stderr, "warning: failed to reinject packet (%d)\n",
@@ -210,7 +208,7 @@ int __cdecl main(int argc, char **argv)
         reset->tcp.DstPort      = htons(80);
         reset->tcp.SeqNum       = tcp_header->SeqNum;
         reset->tcp.AckNum       = tcp_header->AckNum;
-        WinDivertHelperCalcChecksums((PVOID)reset, sizeof(PACKET), 0);
+        WinDivertHelperCalcChecksums((PVOID)reset, sizeof(PACKET), &addr, 0);
         if (!WinDivertSend(handle, (PVOID)reset, sizeof(PACKET), &addr, NULL))
         {
             fprintf(stderr, "warning: failed to send reset packet (%d)\n",
@@ -224,8 +222,8 @@ int __cdecl main(int argc, char **argv)
         blockpage->header.tcp.SeqNum       = tcp_header->AckNum;
         blockpage->header.tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        WinDivertHelperCalcChecksums((PVOID)blockpage, blockpage_len, 0);
         addr.Direction = !addr.Direction;     // Reverse direction.
+        WinDivertHelperCalcChecksums((PVOID)blockpage, blockpage_len, &addr, 0);
         if (!WinDivertSend(handle, (PVOID)blockpage, blockpage_len, &addr,
                 NULL))
         {
@@ -243,7 +241,7 @@ int __cdecl main(int argc, char **argv)
             htonl(ntohl(tcp_header->AckNum) + sizeof(block_data) - 1); 
         finish->tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        WinDivertHelperCalcChecksums((PVOID)finish, sizeof(PACKET), 0);
+        WinDivertHelperCalcChecksums((PVOID)finish, sizeof(PACKET), &addr, 0);
         if (!WinDivertSend(handle, (PVOID)finish, sizeof(PACKET), &addr, NULL))
         {
             fprintf(stderr, "warning: failed to send finish packet (%d)\n",

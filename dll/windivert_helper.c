@@ -1,6 +1,6 @@
 /*
  * windivert_helper.c
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -173,6 +173,8 @@ typedef UINT64 ERROR;
 #define IS_ERROR(err)                           \
     (GET_CODE(err) != WINDIVERT_ERROR_NONE)
 
+#define MAX(a, b)                               ((a) > (b)? (a): (b))
+                                
 /*
  * Compiler memory pool:
  */
@@ -188,10 +190,9 @@ typedef struct POOL
  */
 static PEXPR WinDivertParseFilter(PPOOL pool, TOKEN *toks, UINT *i, INT depth,
     BOOL and);
-static void WinDivertInitPseudoHeader(PWINDIVERT_IPHDR ip_header,
-    PWINDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len);
-static void WinDivertInitPseudoHeaderV6(PWINDIVERT_IPV6HDR ipv6_header,
-    PWINDIVERT_PSEUDOV6HDR pseudov6_header, UINT8 protocol, UINT len);
+static UINT16 WinDivertInitPseudoHeader(PWINDIVERT_IPHDR ip_header,
+    PWINDIVERT_IPV6HDR ipv6_header, UINT8 protocol, UINT len,
+    void *pseudo_header);
 static UINT16 WinDivertHelperCalcChecksum(PVOID pseudo_header,
     UINT16 pseudo_header_len, PVOID data, UINT len);
 
@@ -412,10 +413,11 @@ WinDivertHelperParsePacketExit:
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
 extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
-    UINT64 flags)
+    PWINDIVERT_ADDRESS pAddr, UINT64 flags)
 {
-    WINDIVERT_PSEUDOHDR pseudo_header;
-    WINDIVERT_PSEUDOV6HDR pseudov6_header;
+    UINT8 pseudo_header[
+        MAX(sizeof(WINDIVERT_PSEUDOHDR), sizeof(WINDIVERT_PSEUDOV6HDR))];
+    UINT16 pseudo_header_len;
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_IPV6HDR ipv6_header;
     PWINDIVERT_ICMPHDR icmp_header;
@@ -424,36 +426,25 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     PWINDIVERT_UDPHDR udp_header;
     UINT payload_len, checksum_len;
     UINT count = 0;
-    UINT64 flags_all =
-        (WINDIVERT_HELPER_NO_IP_CHECKSUM |
-         WINDIVERT_HELPER_NO_ICMP_CHECKSUM |
-         WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM |
-         WINDIVERT_HELPER_NO_TCP_CHECKSUM |
-         WINDIVERT_HELPER_NO_UDP_CHECKSUM);
-
-    if ((flags & flags_all) == flags_all)
-    {
-        return 0;
-    }
 
     WinDivertHelperParsePacket(pPacket, packetLen, &ip_header, &ipv6_header,
         &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
         &payload_len);
 
-    if (ip_header != NULL && !(flags & WINDIVERT_HELPER_NO_IP_CHECKSUM) &&
-        (!(flags & WINDIVERT_HELPER_NO_REPLACE) || ip_header->Checksum == 0))
+    if (ip_header != NULL && !(flags & WINDIVERT_HELPER_NO_IP_CHECKSUM))
     {
         ip_header->Checksum = 0;
-        ip_header->Checksum = WinDivertHelperCalcChecksum(NULL, 0,
-            ip_header, ip_header->HdrLength*sizeof(UINT32));
+        if (pAddr == NULL || pAddr->IPv4Checksum != 0)
+        {
+            ip_header->Checksum = WinDivertHelperCalcChecksum(NULL, 0,
+                ip_header, ip_header->HdrLength*sizeof(UINT32));
+        }
         count++;
     }
 
     if (icmp_header != NULL)
     {
-        if ((flags & WINDIVERT_HELPER_NO_ICMP_CHECKSUM) ||
-            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
-                icmp_header->Checksum != 0))
+        if ((flags & WINDIVERT_HELPER_NO_ICMP_CHECKSUM) != 0)
         {
             return count;
         }
@@ -466,46 +457,49 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (icmpv6_header != NULL)
     {
-        if ((flags & WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM) ||
-            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
-                icmpv6_header->Checksum != 0))
+        if ((flags & WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM) != 0)
         {
             return count;
         }
         checksum_len = payload_len + sizeof(WINDIVERT_ICMPV6HDR);
-        WinDivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
-            IPPROTO_ICMPV6, checksum_len);
+        pseudo_header_len = WinDivertInitPseudoHeader(NULL, ipv6_header, 
+            IPPROTO_ICMPV6, checksum_len, pseudo_header);
         icmpv6_header->Checksum = 0;
-        icmpv6_header->Checksum = WinDivertHelperCalcChecksum(&pseudov6_header,
-            sizeof(pseudov6_header), icmpv6_header, checksum_len);
+        icmpv6_header->Checksum = WinDivertHelperCalcChecksum(pseudo_header,
+            pseudo_header_len, icmpv6_header, checksum_len);
         count++;
         return count;
     }
 
     if (tcp_header != NULL)
     {
-        if ((flags & WINDIVERT_HELPER_NO_TCP_CHECKSUM) ||
-            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
-                tcp_header->Checksum != 0))
+        if ((flags & WINDIVERT_HELPER_NO_TCP_CHECKSUM) != 0)
         {
             return count;
         }
-        checksum_len = payload_len + tcp_header->HdrLength*sizeof(UINT32);
-        if (ip_header != NULL)
+        if (pAddr == NULL || pAddr->TCPChecksum != 0)
         {
-            WinDivertInitPseudoHeader(ip_header, &pseudo_header, IPPROTO_TCP,
-                checksum_len);
+            // Full TCP checksum
+            checksum_len = payload_len + tcp_header->HdrLength*sizeof(UINT32);
+            pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
+                ipv6_header, IPPROTO_TCP, checksum_len, pseudo_header);
             tcp_header->Checksum = 0;
-            tcp_header->Checksum = WinDivertHelperCalcChecksum(&pseudo_header,
-                sizeof(pseudo_header), tcp_header, checksum_len);
+            tcp_header->Checksum = WinDivertHelperCalcChecksum(
+                pseudo_header, pseudo_header_len, tcp_header, checksum_len);
+        }
+        else if (pAddr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
+        {
+            // Pseudo TCP checksum
+            checksum_len = payload_len + tcp_header->HdrLength*sizeof(UINT32);
+            pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
+                ipv6_header, IPPROTO_TCP, checksum_len, pseudo_header);
+            tcp_header->Checksum = ~WinDivertHelperCalcChecksum(
+                pseudo_header, pseudo_header_len, NULL, 0);
         }
         else
         {
-            WinDivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
-                IPPROTO_TCP, checksum_len);
+            // Don't care checksum
             tcp_header->Checksum = 0;
-            tcp_header->Checksum = WinDivertHelperCalcChecksum(&pseudov6_header,
-                sizeof(pseudov6_header), tcp_header, checksum_len);
         }
         count++;
         return count;
@@ -513,32 +507,37 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (udp_header != NULL)
     {
-        if ((flags & WINDIVERT_HELPER_NO_UDP_CHECKSUM) ||
-            ((flags & WINDIVERT_HELPER_NO_REPLACE) &&
-                udp_header->Checksum != 0))
+        if ((flags & WINDIVERT_HELPER_NO_UDP_CHECKSUM) != 0)
         {
             return count;
         }
-        checksum_len = payload_len + sizeof(WINDIVERT_UDPHDR);
-        if (ip_header != NULL)
+        if (pAddr == NULL || pAddr->UDPChecksum != 0)
         {
-            WinDivertInitPseudoHeader(ip_header, &pseudo_header, IPPROTO_UDP,
-                checksum_len);
+            // Full UDP checksum
+            checksum_len = payload_len + sizeof(WINDIVERT_UDPHDR);
+            pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
+                ipv6_header, IPPROTO_UDP, checksum_len, pseudo_header);
             udp_header->Checksum = 0;
-            udp_header->Checksum = WinDivertHelperCalcChecksum(&pseudo_header,
-                sizeof(pseudo_header), udp_header, checksum_len);
+            udp_header->Checksum = WinDivertHelperCalcChecksum(
+                pseudo_header, pseudo_header_len, udp_header, checksum_len);
             if (udp_header->Checksum == 0)
             {
                 udp_header->Checksum = 0xFFFF;
             }
         }
+        else if (pAddr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
+        {
+            // Pseudo UDP checksum
+            checksum_len = payload_len + sizeof(WINDIVERT_UDPHDR);
+            pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
+                ipv6_header, IPPROTO_UDP, checksum_len, pseudo_header);
+            udp_header->Checksum = ~WinDivertHelperCalcChecksum(
+                pseudo_header, pseudo_header_len, NULL, 0);
+        }
         else
         {
-            WinDivertInitPseudoHeaderV6(ipv6_header, &pseudov6_header,
-                IPPROTO_UDP, checksum_len);
+            // Don't care checksum
             udp_header->Checksum = 0;
-            udp_header->Checksum = WinDivertHelperCalcChecksum(&pseudov6_header,
-                sizeof(pseudov6_header), udp_header, checksum_len);
         }
         count++;
     }
@@ -546,31 +545,36 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 }
 
 /*
- * Initialize the IP pseudo header.
+ * Initialize the IP/IPv6 pseudo header.
  */
-static void WinDivertInitPseudoHeader(PWINDIVERT_IPHDR ip_header,
-    PWINDIVERT_PSEUDOHDR pseudo_header, UINT8 protocol, UINT len)
+static UINT16 WinDivertInitPseudoHeader(PWINDIVERT_IPHDR ip_header,
+    PWINDIVERT_IPV6HDR ipv6_header, UINT8 protocol, UINT len,
+    void *pseudo_header)
 {
-    pseudo_header->SrcAddr  = ip_header->SrcAddr;
-    pseudo_header->DstAddr  = ip_header->DstAddr;
-    pseudo_header->Zero     = 0;
-    pseudo_header->Protocol = protocol;
-    pseudo_header->Length   = htons((UINT16)len);
-}
-
-/*
- * Initialize the IPv6 pseudo header.
- */
-static void WinDivertInitPseudoHeaderV6(PWINDIVERT_IPV6HDR ipv6_header,
-    PWINDIVERT_PSEUDOV6HDR pseudov6_header, UINT8 protocol, UINT len)
-{
-    memcpy(pseudov6_header->SrcAddr, ipv6_header->SrcAddr,
-        sizeof(pseudov6_header->SrcAddr));
-    memcpy(pseudov6_header->DstAddr, ipv6_header->DstAddr,
-        sizeof(pseudov6_header->DstAddr));
-    pseudov6_header->Length  = htonl((UINT32)len);
-    pseudov6_header->NextHdr = protocol;
-    pseudov6_header->Zero    = 0;
+    if (ip_header != NULL)
+    {
+        PWINDIVERT_PSEUDOHDR pseudo_header_v4 =
+            (PWINDIVERT_PSEUDOHDR)pseudo_header;
+        pseudo_header_v4->SrcAddr  = ip_header->SrcAddr;
+        pseudo_header_v4->DstAddr  = ip_header->DstAddr;
+        pseudo_header_v4->Zero     = 0;
+        pseudo_header_v4->Protocol = protocol;
+        pseudo_header_v4->Length   = htons((UINT16)len);
+        return sizeof(WINDIVERT_PSEUDOHDR);
+    }
+    else
+    {
+        PWINDIVERT_PSEUDOV6HDR pseudo_header_v6 =
+            (PWINDIVERT_PSEUDOV6HDR)pseudo_header;
+        memcpy(pseudo_header_v6->SrcAddr, ipv6_header->SrcAddr,
+            sizeof(pseudo_header_v6->SrcAddr));
+        memcpy(pseudo_header_v6->DstAddr, ipv6_header->DstAddr,
+            sizeof(pseudo_header_v6->DstAddr));
+        pseudo_header_v6->Length  = htonl((UINT32)len);
+        pseudo_header_v6->NextHdr = protocol;
+        pseudo_header_v6->Zero    = 0;
+        return sizeof(WINDIVERT_PSEUDOV6HDR);
+    }
 }
 
 /*

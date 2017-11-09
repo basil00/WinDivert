@@ -1,6 +1,6 @@
 /*
  * netfilter.c
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -270,11 +270,10 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + 1):
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
-                WinDivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET),
-                    0);
-                
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Direction = !recv_addr.Direction;
+                WinDivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET),
+                    &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)reset, sizeof(TCPPACKET),
                         &send_addr, NULL))
                 {
@@ -298,11 +297,10 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + 1):
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
-                WinDivertHelperCalcChecksums((PVOID)resetv6,
-                    sizeof(TCPV6PACKET), 0);
-                
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Direction = !recv_addr.Direction;
+                WinDivertHelperCalcChecksums((PVOID)resetv6,
+                    sizeof(TCPV6PACKET), &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)resetv6, sizeof(TCPV6PACKET),
                         &send_addr, NULL))
                 {
@@ -325,10 +323,10 @@ int __cdecl main(int argc, char **argv)
                 dnr->ip.SrcAddr = ip_header->DstAddr;
                 dnr->ip.DstAddr = ip_header->SrcAddr;
                 
-                WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length, 0);
-                
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Direction = !recv_addr.Direction;
+                WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length,
+                    &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
                     NULL))
                 {
@@ -348,10 +346,10 @@ int __cdecl main(int argc, char **argv)
                 memcpy(dnrv6->ipv6.DstAddr, ipv6_header->SrcAddr,
                     sizeof(dnrv6->ipv6.DstAddr));
                 
-                WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length, 0);
-
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Direction = !recv_addr.Direction;
+                WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length,
+                    &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnrv6, icmpv6_length,
                         &send_addr, NULL))
                 {

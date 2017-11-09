@@ -124,10 +124,6 @@ int __cdecl main(int argc, char **argv)
             continue;
         }
 
-        // Calculate checksums.
-        WinDivertHelperCalcChecksums(packet, packet_len,
-            WINDIVERT_HELPER_NO_REPLACE);
-       
         // Print info about the matching packet.
         WinDivertHelperParsePacket(packet, packet_len, &ip_header,
             &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,

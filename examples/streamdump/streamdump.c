@@ -1,6 +1,6 @@
 /*
  * streamdump.c
- * (C) 2016 basil, all rights reserved,
+ * (C) 2017 basil, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -278,7 +278,7 @@ read_failed:
                 break;
         }
 
-        WinDivertHelperCalcChecksums(packet, packet_len, 0);
+        WinDivertHelperCalcChecksums(packet, packet_len, &addr, 0);
         poverlapped = (OVERLAPPED *)malloc(sizeof(OVERLAPPED));
         if (poverlapped == NULL)
         {

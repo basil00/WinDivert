@@ -1,6 +1,6 @@
 /*
  * passthru.c
- * (C) 2016, all rights reserved,
+ * (C) 2017, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -108,10 +108,6 @@ static DWORD passthru(LPVOID arg)
         }
 
         // Re-inject the matching packet.
-        // NOTE: Only use the WINDIVERT_HELPER_NO_REPLACE flag if the packet
-        //       was not modified.
-        WinDivertHelperCalcChecksums(packet, packet_len,
-            WINDIVERT_HELPER_NO_REPLACE);
         if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
         {
             fprintf(stderr, "warning: failed to reinject packet (%d)\n",
