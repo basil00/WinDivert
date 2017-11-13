@@ -203,7 +203,7 @@ struct work_s
     PNET_BUFFER buffer;                     // First matching packet.
     UINT advance;                           // Bytes to retreat/advance.
     BOOL is_ipv4:1;                         // Is IPv4?
-    BOOL hop:1;                             // Decrement TTL?
+    BOOL impostor:1;                        // Impostor?
     BOOL loopback:1;                        // Is loopback?
     UINT8 checksums;                        // Which checksums are valid.
     UINT8 direction;                        // Packet direction.
@@ -222,13 +222,14 @@ typedef struct work_s *work_t;
 #define WINDIVERT_UDP_CHECKSUM              0x04
 #define WINDIVERT_ALL_CHECKSUMS                                             \
     (WINDIVERT_IP_CHECKSUM | WINDIVERT_TCP_CHECKSUM | WINDIVERT_UDP_CHECKSUM)
+#define WINDIVERT_FLAG_IMPOSTOR             0x80000000
 struct packet_s
 {
     LIST_ENTRY entry;                       // Entry for queue.
     UINT8 checksums;                        // Which checksums are valid.
     UINT8 direction;                        // Packet direction.
     BOOL is_ipv4:1;                         // Is IPv4?
-    BOOL hop:1;                             // Decrement TTL?
+    BOOL impostor:1;                        // Impostor?
     BOOL loopback:1;                        // Is loopback?
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
@@ -430,28 +431,27 @@ static void windivert_classify_forward_network_v6_callout(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static void windivert_classify_callout(context_t context, IN UINT8 direction,
-    IN UINT32 if_idx, IN UINT32 sub_if_idx, IN BOOL isipv4,
+    IN UINT32 if_idx, IN UINT32 sub_if_idx, IN BOOL is_ipv4,
     IN BOOL loopback, IN UINT advance, IN OUT void *data,
     IN UINT64 flow_context, OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
-    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
-    BOOL loopback, UINT8 checksums, LONGLONG timestamp);
+    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4,
+    BOOL impostor, BOOL loopback, UINT8 checksums, LONGLONG timestamp);
 static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL foward,
-    UINT8 direction, BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx,
-    UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer,
-    packet_t packet);
+    UINT8 direction, BOOL is_ipv4, BOOL impostor, UINT32 if_idx,
+    UINT32 sub_if_idx, UINT32 priority, PNET_BUFFER_LIST buffers,
+    PNET_BUFFER buffer, packet_t packet);
 static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level);
 static void NTAPI windivert_reinject_clone_complete(VOID *context,
     NET_BUFFER_LIST *buffers_cpy, BOOLEAN dispatch_level);
 static void windivert_free_packet(packet_t packet);
+static BOOL windivert_decrement_ttl(PNET_BUFFER_LIST buffers, BOOL is_ipv4);
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len);
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b);
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
-    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, BOOL hop, BOOL loopback,
-    filter_t filter);
-static NTSTATUS windivert_finalize_packet(void *header, size_t len,
-    BOOL hop);
+    UINT32 sub_if_idx, BOOL outbound, BOOL is_ipv4, BOOL impostor,
+    BOOL loopback, filter_t filter);
 static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
     size_t ioctl_filter_len);
 static void windivert_filter_analyze(filter_t filter, BOOL *is_inbound,
@@ -1355,8 +1355,9 @@ windivert_cleanup_error:
         if (!timeout && ok)
         {
             ok = windivert_reinject_packet(sniff_mode, forward,
-                packet->direction, packet->is_ipv4, packet->if_idx,
-                packet->sub_if_idx, priority, NULL, NULL, packet);
+                packet->direction, packet->is_ipv4, packet->impostor,
+                packet->if_idx, packet->sub_if_idx, priority, NULL, NULL,
+                packet);
         }
         windivert_free_packet(packet);
         timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -1376,7 +1377,7 @@ windivert_cleanup_error:
         if (!timeout && ok)
         {
             ok = windivert_reinject_packet(sniff_mode, forward,
-                work->direction, work->is_ipv4, work->if_idx,
+                work->direction, work->is_ipv4, work->impostor, work->if_idx,
                 work->sub_if_idx, work->priority, work->buffers, NULL, NULL);
         }
         FwpsDereferenceNetBufferList(work->buffers, FALSE);
@@ -1493,7 +1494,7 @@ static NTSTATUS windivert_read(context_t context, WDFREQUEST request)
  */
 static void windivert_read_service_request(packet_t packet,
     PNET_BUFFER buffer, UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx,
-    BOOL hop, BOOL loopback, LONGLONG timestamp, UINT8 checksums,
+    BOOL impostor, BOOL loopback, LONGLONG timestamp, UINT8 checksums,
     WDFREQUEST request)
 {
     PMDL dst_mdl;
@@ -1552,14 +1553,12 @@ static void windivert_read_service_request(packet_t packet,
         addr->SubIfIdx = sub_if_idx;
         addr->Direction = direction;
         addr->Loopback = (loopback? 1: 0);
+        addr->Impostor = (impostor? 1: 0);
         addr->IPv4Checksum = ((checksums & WINDIVERT_IP_CHECKSUM) != 0? 1: 0);
         addr->TCPChecksum = ((checksums & WINDIVERT_TCP_CHECKSUM) != 0? 1: 0);
         addr->UDPChecksum = ((checksums & WINDIVERT_UDP_CHECKSUM) != 0? 1: 0);
         addr->Reserved = 0;
     }
-
-    // Zero the IP/TCP/UDP checksums and/or decrement the TTL (if required).
-    status = windivert_finalize_packet(dst, dst_len, hop);
 
 windivert_read_service_request_exit:
     if (NT_SUCCESS(status))
@@ -1616,7 +1615,7 @@ static void windivert_read_service(context_t context)
         if (!timeout)
         {
             windivert_read_service_request(packet, NULL, packet->direction,
-                packet->if_idx, packet->sub_if_idx, packet->hop,
+                packet->if_idx, packet->sub_if_idx, packet->impostor,
                 packet->loopback, packet->timestamp, packet->checksums,
                 request);
         }
@@ -1640,7 +1639,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     UINT data_len;
     struct iphdr *ip_header;
     struct ipv6hdr *ipv6_header;
-    BOOL isipv4;
+    BOOL is_ipv4;
     UINT8 layer, checksums;
     UINT32 priority;
     UINT64 flags;
@@ -1699,17 +1698,23 @@ windivert_write_bad_packet:
     {
         case 4:
             if (data_len != RtlUshortByteSwap(ip_header->Length))
+            {
                 goto windivert_write_bad_packet;
-            isipv4 = TRUE;
+            }
+            is_ipv4 = TRUE;
             break;
         case 6:
             if (data_len < sizeof(struct ipv6hdr))
+            {
                 goto windivert_write_bad_packet;
+            }
             ipv6_header = (struct ipv6hdr *)data_copy;
             if (data_len != RtlUshortByteSwap(ipv6_header->Length) +
                     sizeof(struct ipv6hdr))
+            {
                 goto windivert_write_bad_packet;
-            isipv4 = FALSE;
+            }
+            is_ipv4 = FALSE;
             break;
         default:
             goto windivert_write_bad_packet;
@@ -1777,12 +1782,22 @@ windivert_write_bad_packet:
             checksums_info.Value;
     }
 
-    handle = (isipv4? inject_handle: injectv6_handle);
+    if (addr->Impostor)
+    {
+        if (!windivert_decrement_ttl(buffers, is_ipv4))
+        {
+            status = STATUS_HOPLIMIT_EXCEEDED;
+            goto windivert_write_exit;
+        }
+        priority |= WINDIVERT_FLAG_IMPOSTOR;
+    }
+
+    handle = (is_ipv4? inject_handle: injectv6_handle);
     compl_handle = ((flags & WINDIVERT_FLAG_DEBUG) != 0? (HANDLE)request: NULL);
     if (layer == WINDIVERT_LAYER_NETWORK_FORWARD)
     {
         status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
-            (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
+            (is_ipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
             addr->IfIdx, buffers, windivert_inject_complete, compl_handle);
     }
     else if (addr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
@@ -2398,7 +2413,7 @@ static void windivert_classify_forward_network_v6_callout(
  * WinDivert classify callout.
  */
 static void windivert_classify_callout(context_t context, IN UINT8 direction,
-    IN UINT32 if_idx, IN UINT32 sub_if_idx, IN BOOL isipv4, IN BOOL loopback,
+    IN UINT32 if_idx, IN UINT32 sub_if_idx, IN BOOL is_ipv4, IN BOOL loopback,
     IN UINT advance, IN OUT void *data, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
@@ -2410,7 +2425,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     PNET_BUFFER buffer, buffer_fst, buffer_itr;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums_info;
     UINT8 layer, checksums;
-    BOOL outbound, hop;
+    BOOL outbound, impostor;
     WDFOBJECT object;
     work_t work;
     PLIST_ENTRY old_entry;
@@ -2433,7 +2448,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
         result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
-    if (isipv4)
+    if (is_ipv4)
     {
         packet_state = FwpsQueryPacketInjectionState0(inject_handle, buffers,
             &packet_context);
@@ -2458,11 +2473,16 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     WdfObjectReference(object);
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
-    hop = FALSE;
+    impostor = FALSE;
     if (packet_state == FWPS_PACKET_INJECTED_BY_SELF ||
         packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF)
     {
         packet_priority = (UINT32)packet_context;
+        if ((packet_priority & WINDIVERT_FLAG_IMPOSTOR) != 0)
+        {
+            impostor = TRUE;
+            packet_priority &= ~WINDIVERT_FLAG_IMPOSTOR;
+        }
         if (packet_priority >= priority)
         {
             WdfObjectDereference(object);
@@ -2474,8 +2494,8 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     {
         // This is a packet injected by another driver, possibly an older
         // version of WinDivert.  To prevent block-clone-reinject infinite
-        // loops, we consider this capture to be a "hop".
-        hop = TRUE;
+        // loops, we mark this packet as an "impostor".
+        impostor = TRUE;
     }
 
     // Loopback packets are considered outbound only.
@@ -2485,6 +2505,9 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
         result->actionType = FWP_ACTION_CONTINUE;
         return;
     }
+
+    // Get the timestamp.
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
 
     // Determine which checksum fields are present or not.
     checksums_info.Value = NET_BUFFER_LIST_INFO(buffers,
@@ -2515,8 +2538,6 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
             (checksums_info.Receive.UdpChecksumSucceeded? 0:
                 WINDIVERT_UDP_CHECKSUM);
     }
-
-    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
 
     // Retreat the NET_BUFFER to the IP header, if necessary.
     // If (advance != 0) then this must be in the inbound path, and the
@@ -2549,7 +2570,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     do
     {
         BOOL match = windivert_filter(buffer_fst, if_idx, sub_if_idx, outbound,
-            isipv4, hop, loopback, filter);
+            is_ipv4, impostor, loopback, filter);
         if (match)
         {
             break;
@@ -2582,8 +2603,8 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     work->buffers = buffers;
     work->buffer = buffer_fst;
     work->advance = advance;
-    work->is_ipv4 = isipv4;
-    work->hop = hop;
+    work->is_ipv4 = is_ipv4;
+    work->impostor = impostor;
     work->loopback = loopback;
     work->checksums = checksums;
     work->direction = direction;
@@ -2605,6 +2626,7 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
     context->work_queue_length++;
     if (context->work_queue_length > WINDIVERT_WORK_QUEUE_LEN_MAX)
     {
+        // The work queue is full; as an emergency we drop packets.
         old_entry = RemoveHeadList(&context->work_queue);
         context->work_queue_length--;
     }
@@ -2682,9 +2704,9 @@ VOID windivert_worker(IN WDFWORKITEM item)
             while (buffer_itr != buffer_fst)
             {
                 ok = windivert_reinject_packet(sniff_mode, forward,
-                    work->direction, work->is_ipv4, work->if_idx,
-                    work->sub_if_idx, work->priority, work->buffers,
-                    buffer_itr, NULL);
+                    work->direction, work->is_ipv4, work->impostor,
+                    work->if_idx, work->sub_if_idx, work->priority,
+                    work->buffers, buffer_itr, NULL);
                 if (!ok)
                 {
                     goto windivert_worker_complete;
@@ -2696,7 +2718,7 @@ VOID windivert_worker(IN WDFWORKITEM item)
         {
             // In SNIFF mode, reinject the entire NET_BUFFER_LIST.
             ok = windivert_reinject_packet(sniff_mode, forward,
-                work->direction, work->is_ipv4, work->if_idx,
+                work->direction, work->is_ipv4, work->impostor, work->if_idx,
                 work->sub_if_idx, work->priority, work->buffers, NULL, NULL);
             if (!ok)
             {
@@ -2707,7 +2729,7 @@ VOID windivert_worker(IN WDFWORKITEM item)
 
         // Queue the first matching packet.
         ok = windivert_queue_packet(context, buffer_itr, work->direction,
-            work->if_idx, work->sub_if_idx, work->is_ipv4, work->hop,
+            work->if_idx, work->sub_if_idx, work->is_ipv4, work->impostor,
             work->loopback, work->checksums, work->timestamp);
         if (!ok)
         {
@@ -2720,21 +2742,21 @@ VOID windivert_worker(IN WDFWORKITEM item)
         while (buffer_itr != NULL)
         {
             match = windivert_filter(buffer_itr, work->if_idx,
-                work->sub_if_idx, outbound, work->is_ipv4, work->hop,
+                work->sub_if_idx, outbound, work->is_ipv4, work->impostor,
                 work->loopback, filter);
             if (match)
             {
                 ok = windivert_queue_packet(context, buffer_itr,
                     work->direction, work->if_idx, work->sub_if_idx,
-                    work->is_ipv4, work->hop, work->loopback, work->checksums,
-                    work->timestamp);
+                    work->is_ipv4, work->impostor, work->loopback,
+                    work->checksums, work->timestamp);
             }
             else
             {
                 ok = windivert_reinject_packet(sniff_mode, forward,
-                    work->direction, work->is_ipv4, work->if_idx,
-                    work->sub_if_idx, work->priority, work->buffers,
-                    buffer_itr, NULL);
+                    work->direction, work->is_ipv4, work->impostor,
+                    work->if_idx, work->sub_if_idx, work->priority,
+                    work->buffers, buffer_itr, NULL);
             }
             if (!ok)
             {
@@ -2759,8 +2781,8 @@ windivert_worker_complete:
  * Queue a NET_BUFFER.
  */
 static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
-    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4, BOOL hop,
-    BOOL loopback, UINT8 checksums, LONGLONG timestamp0)
+    UINT8 direction, UINT32 if_idx, UINT32 sub_if_idx, BOOL is_ipv4,
+    BOOL impostor, BOOL loopback, UINT8 checksums, LONGLONG timestamp0)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PVOID data;
@@ -2806,7 +2828,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     {
         // FAST PATH: Service an I/O request without queueing the packet.
         windivert_read_service_request(NULL, buffer, direction, if_idx,
-            sub_if_idx, hop, loopback, timestamp0, checksums, request);
+            sub_if_idx, impostor, loopback, timestamp0, checksums, request);
         return TRUE;
     }
 
@@ -2834,7 +2856,7 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
         RtlCopyMemory(packet->data, data, data_len);
     }
     packet->is_ipv4 = is_ipv4;
-    packet->hop = hop;
+    packet->impostor = impostor;
     packet->loopback = loopback;
     packet->checksums = checksums;
     packet->direction = direction;
@@ -2843,7 +2865,6 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
     packet->timestamp = timestamp0;
     entry = &packet->entry;
 
-    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     while (TRUE)
     {
@@ -2908,9 +2929,9 @@ static BOOL windivert_queue_packet(context_t context, PNET_BUFFER buffer,
  * Re-inject a packet or packets.
  */
 static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
-    UINT8 direction, BOOL isipv4, UINT32 if_idx, UINT32 sub_if_idx,
-    UINT32 priority, PNET_BUFFER_LIST buffers, PNET_BUFFER buffer,
-    packet_t packet)
+    UINT8 direction, BOOL is_ipv4, BOOL impostor, UINT32 if_idx,
+    UINT32 sub_if_idx, UINT32 priority, PNET_BUFFER_LIST buffers,
+    PNET_BUFFER buffer, packet_t packet)
 {
     PNET_BUFFER_LIST buffers_cpy;
     BOOL clone;
@@ -3007,11 +3028,21 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
     else
         return TRUE;
 
-    handle = (isipv4? inject_handle: injectv6_handle);
+    if (impostor)
+    {
+        if (!windivert_decrement_ttl(buffers_cpy, is_ipv4))
+        {
+            status = STATUS_HOPLIMIT_EXCEEDED;
+            goto windivert_reinject_packet_exit;
+        }
+        priority |= WINDIVERT_FLAG_IMPOSTOR;
+    }
+
+    handle = (is_ipv4? inject_handle: injectv6_handle);
     if (forward)
     {
         status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
-            (isipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
+            (is_ipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
             if_idx, buffers_cpy, completion, compl_handle);
     }
     else if (direction == WINDIVERT_DIRECTION_OUTBOUND)
@@ -3027,6 +3058,7 @@ static BOOL windivert_reinject_packet(BOOL sniff_mode, BOOL forward,
             sub_if_idx, buffers_cpy, completion, compl_handle);
     }
 
+windivert_reinject_packet_exit:
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to (re)inject packet(s)", status);
@@ -3087,6 +3119,71 @@ static void windivert_free_packet(packet_t packet)
 }
 
 /*
+ * Decrement the TTL of a packet.
+ */
+static BOOL windivert_decrement_ttl(PNET_BUFFER_LIST buffers, BOOL is_ipv4)
+{
+    PNET_BUFFER buffer;
+    struct iphdr *ip_header;
+    struct ipv6hdr *ipv6_header;
+    NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums_info;
+    BOOL checksum = FALSE;
+
+    if (is_ipv4)
+    {
+        checksums_info.Value = NET_BUFFER_LIST_INFO(buffers,
+            TcpIpChecksumNetBufferListInfo);
+        checksum = (checksums_info.Transmit.IpHeaderChecksum != 0);
+    }
+
+    for (buffer = NET_BUFFER_LIST_FIRST_NB(buffers); buffer != NULL;
+            buffer = NET_BUFFER_NEXT_NB(buffer))
+    {
+        if (is_ipv4)
+        {
+            ip_header = (struct iphdr *)NdisGetDataBuffer(buffer,
+                sizeof(struct iphdr), NULL, 1, 0);
+            if (ip_header == NULL)
+            {
+                continue;
+            }
+            if (ip_header->TTL <= 1)
+            {
+                return FALSE;
+            }
+            ip_header->TTL--;
+            if (checksum)
+            {
+                // Incremental checksum update:
+                if (ip_header->Checksum >= 0xFFFE)
+                {
+                    ip_header->Checksum -= 0xFFFE;
+                }
+                else
+                {
+                    ip_header->Checksum += 1;
+                }
+            }
+        }
+        else
+        {
+            ipv6_header = (struct ipv6hdr *)NdisGetDataBuffer(buffer,
+                sizeof(struct ipv6hdr), NULL, 1, 0);
+            if (ipv6_header == NULL)
+            {
+                continue;
+            }
+            if (ipv6_header->HopLimit <= 1)
+            {
+                return FALSE;
+            }
+            ipv6_header->HopLimit--;
+        }
+    }
+    return TRUE;
+}
+
+/*
  * Skip well-known IPv6 extension headers.
  */
 static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len)
@@ -3134,58 +3231,6 @@ static UINT8 windivert_skip_headers(UINT8 proto, UINT8 **header, size_t *len)
 }
 
 /*
- * Zero the IP/TCP/UDP checksums and/or decrement the TTL (if required)
- */
-static NTSTATUS windivert_finalize_packet(void *header, size_t len, BOOL hop)
-{
-    struct iphdr *ip_header = (struct iphdr *)header;
-    struct ipv6hdr *ipv6_header = (struct ipv6hdr *)header;
-    size_t ip_header_len; 
-    NTSTATUS status = STATUS_SUCCESS;
-
-    if (!hop)
-    {
-        return status;
-    }
-    if (len < sizeof(struct iphdr))
-    {
-        return status;
-    }
-
-    switch (ip_header->Version)
-    {
-        case 4:
-            if (ip_header->TTL <= 1)
-            {
-                status = STATUS_HOPLIMIT_EXCEEDED;
-            }
-            if (ip_header->TTL != 0)
-            {
-                ip_header->TTL--;
-            }
-            return status;
-
-        case 6:
-            if (len < sizeof(struct ipv6hdr))
-            {
-                return status;
-            }
-            if (ipv6_header->HopLimit <= 1)
-            {
-                status = STATUS_HOPLIMIT_EXCEEDED;
-            }
-            if (ipv6_header->HopLimit != 0)
-            {
-                ipv6_header->HopLimit--;
-            }
-            return status;
-
-        default:
-            return status;
-    }
-}
-
-/*
  * Big number comparison.
  */
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b)
@@ -3229,8 +3274,8 @@ static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b)
  * Checks if the given packet is of interest.
  */
 static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
-    UINT32 sub_if_idx, BOOL outbound, BOOL isipv4, BOOL hop, BOOL loopback,
-    filter_t filter)
+    UINT32 sub_if_idx, BOOL outbound, BOOL is_ipv4, BOOL impostor,
+    BOOL loopback, filter_t filter)
 {
     size_t tot_len, ip_header_len;
     struct iphdr *ip_header = NULL;
@@ -3252,7 +3297,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     }
 
     // Get the IP header.
-    if (isipv4)
+    if (is_ipv4)
     {
         // IPv4:
         if (tot_len < sizeof(struct iphdr))
@@ -3442,6 +3487,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                 case WINDIVERT_FILTER_FIELD_LOOPBACK:
                     field[0] = (UINT32)loopback;
                     break;
+                case WINDIVERT_FILTER_FIELD_IMPOSTOR:
+                    field[0] = (UINT32)impostor;
+                    break;
                 case WINDIVERT_FILTER_FIELD_IP:
                     field[0] = (UINT32)(ip_header != NULL);
                     break;
@@ -3484,10 +3532,6 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_TTL:
                     field[0] = (UINT32)ip_header->TTL;
-                    if (hop)
-                    {
-                        field[0] = (field[0] == 0? 0: field[0]-1);
-                    }
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_PROTOCOL:
                     field[0] = (UINT32)ip_header->Protocol;
@@ -3516,10 +3560,6 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT:
                     field[0] = (UINT32)ipv6_header->HopLimit;
-                    if (hop)
-                    {
-                        field[0] = (field[0] == 0? 0: field[0]-1);
-                    }
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
                     field[3] =
@@ -3980,6 +4020,7 @@ static filter_t windivert_filter_compile(windivert_ioctl_filter_t ioctl_filter,
             case WINDIVERT_FILTER_FIELD_IFIDX:
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
             case WINDIVERT_FILTER_FIELD_LOOPBACK:
+            case WINDIVERT_FILTER_FIELD_IMPOSTOR:
             case WINDIVERT_FILTER_FIELD_IP:
             case WINDIVERT_FILTER_FIELD_IPV6:
             case WINDIVERT_FILTER_FIELD_ICMP:

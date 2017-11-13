@@ -99,6 +99,7 @@ typedef enum
     TOKEN_IF_IDX,
     TOKEN_SUB_IF_IDX,
     TOKEN_LOOPBACK,
+    TOKEN_IMPOSTOR,
     TOKEN_OPEN,
     TOKEN_CLOSE,
     TOKEN_EQ,
@@ -807,6 +808,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"icmpv6.Code",         TOKEN_ICMPV6_CODE},
         {"icmpv6.Type",         TOKEN_ICMPV6_TYPE},
         {"ifIdx",               TOKEN_IF_IDX},
+        {"impostor",            TOKEN_IMPOSTOR},
         {"inbound",             TOKEN_INBOUND},
         {"ip",                  TOKEN_IP},
         {"ip.Checksum",         TOKEN_IP_CHECKSUM},
@@ -1139,7 +1141,8 @@ static PEXPR WinDivertMakeVar(PPOOL pool, KIND kind)
         {{{0}}, TOKEN_OUTBOUND},
         {{{0}}, TOKEN_IF_IDX},
         {{{0}}, TOKEN_SUB_IF_IDX},
-        {{{0}}, TOKEN_LOOPBACK}
+        {{{0}}, TOKEN_LOOPBACK},
+        {{{0}}, TOKEN_IMPOSTOR}
     };
 
     // Binary search:
@@ -1260,6 +1263,7 @@ static PEXPR WinDivertParseTest(PPOOL pool, TOKEN *toks, UINT *i)
         case TOKEN_IF_IDX:
         case TOKEN_SUB_IF_IDX:
         case TOKEN_LOOPBACK:
+        case TOKEN_IMPOSTOR:
         case TOKEN_IP:
         case TOKEN_IPV6:
         case TOKEN_ICMP:
@@ -1729,6 +1733,9 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_LOOPBACK:
             object->field = WINDIVERT_FILTER_FIELD_LOOPBACK;
+            break;
+        case TOKEN_IMPOSTOR:
+            object->field = WINDIVERT_FILTER_FIELD_IMPOSTOR;
             break;
         case TOKEN_IP:
             object->field = WINDIVERT_FILTER_FIELD_IP;
@@ -2256,6 +2263,9 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 break;
             case WINDIVERT_FILTER_FIELD_LOOPBACK:
                 val[0] = addr->Loopback;
+                break;
+            case WINDIVERT_FILTER_FIELD_IMPOSTOR:
+                val[0] = addr->Impostor;
                 break;
             case WINDIVERT_FILTER_FIELD_IP:
                 val[0] = (iphdr != NULL);

@@ -62,6 +62,7 @@ typedef struct
     UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
     UINT8  Direction:1;                 /* Packet's direction. */
     UINT8  Loopback:1;                  /* Packet is loopback? */
+    UINT8  Impostor:1;                  /* Packet is impostor? */
     UINT8  IPv4Checksum:1;              /* Packet has full IPv4 checksum? */
     UINT8  TCPChecksum:1;               /* Packet has full TCP checksum? */
     UINT8  UDPChecksum:1;               /* Packet has full UDP checksum? */
