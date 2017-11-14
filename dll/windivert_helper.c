@@ -435,7 +435,7 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     if (ip_header != NULL && !(flags & WINDIVERT_HELPER_NO_IP_CHECKSUM))
     {
         ip_header->Checksum = 0;
-        if (pAddr == NULL || pAddr->IPv4Checksum != 0)
+        if (pAddr == NULL || pAddr->PseudoIPChecksum == 0)
         {
             ip_header->Checksum = WinDivertHelperCalcChecksum(NULL, 0,
                 ip_header, ip_header->HdrLength*sizeof(UINT32));
@@ -478,7 +478,7 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         {
             return count;
         }
-        if (pAddr == NULL || pAddr->TCPChecksum != 0)
+        if (pAddr == NULL || pAddr->PseudoTCPChecksum == 0)
         {
             // Full TCP checksum
             checksum_len = payload_len + tcp_header->HdrLength*sizeof(UINT32);
@@ -512,7 +512,7 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         {
             return count;
         }
-        if (pAddr == NULL || pAddr->UDPChecksum != 0)
+        if (pAddr == NULL || pAddr->PseudoUDPChecksum == 0)
         {
             // Full UDP checksum
             checksum_len = payload_len + sizeof(WINDIVERT_UDPHDR);

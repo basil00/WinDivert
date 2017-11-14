@@ -1554,9 +1554,12 @@ static void windivert_read_service_request(packet_t packet,
         addr->Direction = direction;
         addr->Loopback = (loopback? 1: 0);
         addr->Impostor = (impostor? 1: 0);
-        addr->IPv4Checksum = ((checksums & WINDIVERT_IP_CHECKSUM) != 0? 1: 0);
-        addr->TCPChecksum = ((checksums & WINDIVERT_TCP_CHECKSUM) != 0? 1: 0);
-        addr->UDPChecksum = ((checksums & WINDIVERT_UDP_CHECKSUM) != 0? 1: 0);
+        addr->PseudoIPChecksum =
+            ((checksums & WINDIVERT_IP_CHECKSUM) == 0? 1: 0);
+        addr->PseudoTCPChecksum =
+            ((checksums & WINDIVERT_TCP_CHECKSUM) == 0? 1: 0);
+        addr->PseudoUDPChecksum =
+            ((checksums & WINDIVERT_UDP_CHECKSUM) == 0? 1: 0);
         addr->Reserved = 0;
     }
 
@@ -1763,23 +1766,32 @@ windivert_write_bad_packet:
         if (addr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
         {
             checksums_info.Transmit.TcpChecksum =
-                (addr->TCPChecksum != 0? 0: 1);
+                (addr->PseudoTCPChecksum == 0? 0: 1);
             checksums_info.Transmit.UdpChecksum =
-                (addr->UDPChecksum != 0? 0: 1);
+                (addr->PseudoUDPChecksum == 0? 0: 1);
             checksums_info.Transmit.IpHeaderChecksum =
-                (addr->IPv4Checksum != 0? 0: 1);
+                (addr->PseudoIPChecksum == 0? 0: 1);
         }
         else
         {
             checksums_info.Receive.TcpChecksumSucceeded =
-                (addr->TCPChecksum != 0? 0: 1);
+                (addr->PseudoTCPChecksum == 0? 0: 1);
             checksums_info.Receive.UdpChecksumSucceeded =
-                (addr->UDPChecksum != 0? 0: 1);
+                (addr->PseudoUDPChecksum == 0? 0: 1);
             checksums_info.Receive.IpChecksumSucceeded =
-                (addr->IPv4Checksum != 0? 0: 1);
+                (addr->PseudoIPChecksum == 0? 0: 1);
         }
         NET_BUFFER_LIST_INFO(buffers, TcpIpChecksumNetBufferListInfo) =
             checksums_info.Value;
+    }
+    else
+    {
+        if (addr->PseudoTCPChecksum != 0 || addr->PseudoUDPChecksum != 0 ||
+            addr->PseudoIPChecksum != 0)
+        {
+            status = STATUS_INVALID_PARAMETER;
+            goto windivert_write_exit;
+        }
     }
 
     if (addr->Impostor)

@@ -63,9 +63,9 @@ typedef struct
     UINT8  Direction:1;                 /* Packet's direction. */
     UINT8  Loopback:1;                  /* Packet is loopback? */
     UINT8  Impostor:1;                  /* Packet is impostor? */
-    UINT8  IPv4Checksum:1;              /* Packet has full IPv4 checksum? */
-    UINT8  TCPChecksum:1;               /* Packet has full TCP checksum? */
-    UINT8  UDPChecksum:1;               /* Packet has full UDP checksum? */
+    UINT8  PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
+    UINT8  PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
+    UINT8  PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
     UINT8  Reserved:2;
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
 
