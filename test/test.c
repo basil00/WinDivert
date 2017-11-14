@@ -100,6 +100,8 @@ static struct test tests[] =
     {"outbound and icmp",                      &pkt_echo_request, TRUE},
     {"outbound",                               &pkt_echo_request, TRUE},
     {"outbound and inbound",                   &pkt_echo_request, FALSE},
+    {"loopback",                               &pkt_echo_request, FALSE},
+    {"impostor",                               &pkt_echo_request, FALSE},
     {"icmp",                                   &pkt_echo_request, TRUE},
     {"not icmp",                               &pkt_echo_request, FALSE},
     {"ip or ipv6",                             &pkt_echo_request, TRUE},
@@ -319,7 +321,7 @@ int main(void)
         BOOL match = tests[i].match;
 
         // Ensure the correct checksum:
-        WinDivertHelperCalcChecksums(packet, packet_len, 0);
+        WinDivertHelperCalcChecksums(packet, packet_len, NULL, 0);
 
         // Run the test:
         BOOL res = run_test(upper_handle, filter, packet, packet_len, match);
@@ -464,7 +466,7 @@ read_failed:
     }
     if (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND)
     {
-        WinDivertHelperCalcChecksums(buf, buf_len, 0);
+        WinDivertHelperCalcChecksums(buf, buf_len, NULL, 0);
     }
 
     // (4) Verify that the packet is the same.

@@ -29,6 +29,7 @@
 
 #ifdef __MINGW32__
 #define __in
+#define __in_opt
 #define __out
 #define __out_opt
 #define __inout
