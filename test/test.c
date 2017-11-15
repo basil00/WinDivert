@@ -261,6 +261,7 @@ static struct test tests[] =
     {"ipv6.DstAddr >= 1000",                   &pkt_ipv6_echo_reply, FALSE},
     {"ipv6.DstAddr <= 1",                      &pkt_ipv6_echo_reply, TRUE},
     {"true",                                   &pkt_ipv6_exthdrs_udp, TRUE},
+    {"false",                                  &pkt_ipv6_exthdrs_udp, FALSE},
     {"udp",                                    &pkt_ipv6_exthdrs_udp, TRUE},
     {"tcp",                                    &pkt_ipv6_exthdrs_udp, FALSE},
     {"ipv6.SrcAddr == ::1",                    &pkt_ipv6_exthdrs_udp, TRUE},
