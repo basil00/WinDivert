@@ -316,6 +316,10 @@ typedef struct
     UINT32 SubIfIdx;
     UINT8  Direction:1;
     UINT8  Loopback:1;
+    UINT8  Impostor:1;
+    UINT8  PseudoIPChecksum:1;
+    UINT8  PseudoTCPChecksum:1;
+    UINT8  PseudoUDPChecksum:1;
 } <b>WINDIVERT_ADDRESS</b>, *<b>PWINDIVERT_ADDRESS</b>;
 </pre>
 </td></tr></table>
@@ -324,10 +328,7 @@ typedef struct
 <b>Fields</b>
 <ul>
 <li> <tt>Timestamp</tt>: A timestamp indicating when WinDivert first captured
-    the packet.
-    Uses the same clock as <a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms644904(v=vs.85).aspx"><tt>QueryPerformanceCounter()</tt></a>.
-    This value is ignored by <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
-    </li>
+    the packet.</li>
 <li> <tt>IfIdx</tt>: The interface index on which the packet arrived
     (for inbound packets), or is to be sent (for outbound packets).</li>
 <li> <tt>SubIfIdx</tt>: The sub-interface index for <tt>IfIdx</tt>.</li>
@@ -341,12 +342,68 @@ packets.</li>
 </ul></li>
 <li> <tt>Loopback</tt>: Set to <tt>1</tt> for loopback packets, <tt>0</tt>
 otherwise</li>
+<li> <tt>Impostor</tt>: Set to <tt>1</tt> for <q>impostor</q> packets,
+<tt>0</tt> otherwise.</li>
+<li> <tt>PseudoIPChecksum</tt>: Set to <tt>1</tt> for packets with a
+<i>pseudo</i> IPv4 checksum, <tt>0</tt> otherwise.</li>
+<li> <tt>PseudoTCPChecksum</tt>: Set to <tt>1</tt> for packets with a
+<i>pseudo</i> TCP checksum, <tt>0</tt> otherwise.</li>
+<li> <tt>PseudoTCPChecksum</tt>: Set to <tt>1</tt> for packets with a
+<i>pseudo</i> UDP checksum, <tt>0</tt> otherwise.</li>
 </ul>
 </p><p>
 <b>Remarks</b><br>
-The <tt>WINDIVERT_ADDRESS</tt> structure represents the "address" of a captured
-or injected packet.
-The address includes the packet's network interfaces and the packet direction.
+The <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> structure
+represents the "address" of a captured or injected packet.
+The address includes the packet's timestamp, network interfaces, direction
+and other information.
+</p><p>
+The <tt>Timestamp</tt> indicates when the packet was first
+captured by WinDivert.
+It uses the same clock as
+<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms644904(v=vs.85).aspx"><tt>QueryPerformanceCounter()</tt></a>.
+The <tt>Timestamp</tt> value is ignored by
+<a href="#divert_send"><tt>WinDivertSend()</tt></a>.
+</p><p>
+The <tt>IfIdx</tt>/<tt>SubIfIdx</tt> indicate the packet's network adapter
+(a.k.a. interface) index.
+These values are ignored for <i>outbound</i> packets.
+</p><p>
+The <tt>Direction</tt> field is set to <tt>WINDIVERT_DIRECTION_OUTBOUND</tt>
+(<tt>0</tt>) for outbound packets, and
+<tt>WINDIVERT_DIRECTION_INBOUND</tt> (<tt>1</tt>) for inbound packets.
+This field is ignored for <i>forward</i> packets.
+</p><p>
+The <tt>Loopback</tt> flag is set for <i>loopback</i> packets.
+Note that Windows considers any packet originating from, and destined to, the
+current machine to be a loopback packet, so loopback packets are not
+limited to localhost addresses.
+Note that WinDivert considers loopback packets to be
+<i>outbound only</i>, and will not capture loopback packets on the
+inbound path.
+</p><p>
+The <tt>Impostor</tt> flag is set for <i>impostor</i> packets.
+An impostor packet is any packet injected by another driver rather than
+originating from the network or Windows TCP/IP stack.
+Impostor packets are problematic since they can cause infinite loops,
+where a packet injected by <a href="#divert_send"><tt>WinDivertSend()</tt></a> 
+is captured again by <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
+For more information, see <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
+</p><p>
+The <tt>Pseudo*Checksum</tt> flags indicate whether the packet uses
+<i>full</i> or <i>pseudo</i> checksums.
+Pseudo checksums will typically be used if the network adapter supports
+<i>IP/TCP/UDP checksum offloading</i>, which means that the network
+hardware calculates/validates checksums rather than the Windows TCP/IP stack.
+For outbound IPv4, the pseudo checksum is always <tt>0</tt>, and for
+TCP/UDP the pseudo checksum is the ones compliment sum over the
+corresponding TCP/UDP checksum <i>pseudo header</i>.
+For inbound packets, the pseudo checksums may be arbitrary values.
+Pseudo checksums are generally cheaper to calculate, but will only work
+if the underlying network hardware supports it.
+Typically modified packets should preserve these flags, and newly
+crafted packets should clear these flags unless the application manually
+verifies checksum offloading is enabled.
 </p>
 </dd></dl>
 
@@ -598,7 +655,9 @@ BOOL <b>WinDivertRecv</b>(
      <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 <li> <tt>pPacket</tt>: A buffer for the captured packet.</li>
 <li> <tt>packetLen</tt>: The length of the buffer <tt>pPacket</tt>.</li>
-<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> of the captured packet.</li>
+<li> <tt>pAddr</tt>: The
+    <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> of the captured
+    packet.</li>
 <li> <tt>recvLen</tt>: The total number of bytes written to <tt>pPacket</tt>.
      Can be <tt>NULL</tt> if this information is not required.</li>
 </ul>
@@ -607,45 +666,6 @@ BOOL <b>WinDivertRecv</b>(
 <tt>TRUE</tt> if a packet was successfully received, or <tt>FALSE</tt> if
 an error occurred.
 Use <tt>GetLastError()</tt> to get the reason for the error.
-</p><p>
-Common errors include:
-<center>
-<table border="1" cellpadding="5" width="75%">
-<tr>
-<th>
-Name
-</th>
-<th>
-Code
-</th>
-<th>
-Description
-</th>
-</tr>
-<tr>
-<td>
-<tt>ERROR_HOST_UNREACHABLE</tt>
-</td>
-<td>
-1232
-</td>
-<td>
-This error occurs when a packet enters into a mutual infinite loop
-between WinDivert and another network packet capture driver, possibly
-an alternative version of WinDivert.
-Infinite loops can occur when another driver copies and reinjects a packet
-sent by <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
-The copied packet will be considered <q>new</q> again, and will be diverted
-back to <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>, completing the
-loop.
-To stop packets looping indefinitely, WinDivert automatically decrements the
-<tt>ip.TTL</tt> or <tt>ipv6.HopLimit</tt> fields of potentially affected
-packets, eventually returning <tt>ERROR_HOST_UNREACHABLE</tt> when the value
-reaches zero.
-</td>
-</tr>
-</table>
-</center>
 </p><p>
 <b>Remarks</b><br>
 Receives a diverted packet that matched the filter passed to
@@ -670,17 +690,10 @@ Packets are not queued indefinitely, and if not handled in a timely manner,
 any captured packet may be dropped.
 The amount of time a packet is queued can be controlled with the
 <a href="#divert_set_param"><tt>WinDivertSetParam()</tt></a> function.
-</p>
-<p>
-WinDivert sometimes captures outbound or loopback packets before the
-IP/TCP/UDP checksum fields have been calculated.
-For outbound packets, this occurs when <i>checksum offloading</i> is enabled,
-which defers checksum calculation to a compatible NIC card.
-If the checksum is absent then the corresponding 
-checksum field will be set to zero.
-Correct checksums can be reconstructed using the
-<a href="#divert_helper_calc_checksums"><tt>WinDivertHelperCalcChecksums()</tt></a>
-function.
+</p><p>
+Captured packets are guaranteed to have correct checksums, or
+pseudo checksums, as indicated by the <tt>Pseudo*Checksum</tt> flags
+from the <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a>.
 </p><p>
 <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> should not be used on any
 WinDivert handle created with the <tt>WINDIVERT_FLAG_DROP</tt> set.
@@ -710,7 +723,9 @@ BOOL <b>WinDivertRecvEx</b>(
 <li> <tt>pPacket</tt>: A buffer for the captured packet.</li>
 <li> <tt>packetLen</tt>: The length of the buffer <tt>pPacket</tt>.</li>
 <li> <tt>flags</tt>: Reserved, set to zero.</li>
-<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> of the captured packet.</li>
+<li> <tt>pAddr</tt>: The
+    <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a>  of the captured
+    packet.</li>
 <li> <tt>recvLen</tt>: The total number of bytes written to <tt>pPacket</tt>.
      Can be <tt>NULL</tt> if this information is not required.</li>
 <li> <tt>lpOverlapped</tt>: An optional pointer to a <tt>OVERLAPPED</tt>
@@ -753,7 +768,9 @@ BOOL <b>WinDivertSend</b>(
      <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
 <li> <tt>pPacket</tt>: A buffer containing the packet to be injected.</li>
 <li> <tt>packetLen</tt>: The total length of the buffer <tt>pPacket</tt>.</li> 
-<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> for the injected packet.</li>
+<li> <tt>pAddr</tt>: The
+    <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> for the injected
+    packet.</li>
 <li> <tt>sendLen</tt>: The total number of bytes injected.
      Can be <tt>NULL</tt> if this information is not required.</li>
 </ul>
@@ -762,6 +779,38 @@ BOOL <b>WinDivertSend</b>(
 <tt>TRUE</tt> if a packet was successfully injected, or <tt>FALSE</tt> if
 an error occurred.
 Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+Common errors include:
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Name
+</th>
+<th>
+Code
+</th>
+<th>
+Description
+</th>
+</tr>
+<tr>
+<td>
+<tt>ERROR_HOST_UNREACHABLE</tt>
+</td>
+<td>
+1232
+</td>
+<td>
+This error occurs when an <i>impostor</i> packet (with
+<tt>pAddr-&gt;Impostor</tt> set to <tt>1</tt>) is injected and the
+<tt>ip.TTL</tt> or <tt>ipv6.HopLimit</tt> field goes to zero.
+This is a defense of <q>last resort</q> against infinite loops caused by
+impostor packets.
+</td>
+</tr>
+</table>
+</center>
 </p><p>
 Note that a return value of <tt>TRUE</tt> does not necessarily mean the
 packet was accepted by the Windows TCP/IP stack.
@@ -799,13 +848,20 @@ Injecting an inbound packet on the outbound path <i>may</i> work (for some
 types of packets), however this should be considered "undocumented" behavior,
 and may be changed in the future.
 </p><p>
-Injected packets should have correct checksums.
+For <i>impostor</i> packets (where the <tt>Impostor</tt> field of
+<tt>pAddr</tt> set to <tt>1</tt>) WinDivert will automatically decrement the
+<tt>ip.TTL</tt> or <tt>ipv6.HopLimit</tt> fields for the injected packet.
+This is to mitigate infinite loops since WinDivert cannot prevent
+impostor packets from being captured again by
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
+</p><p>
+Injected packets must have the correct checksums.
 Correct checksums can be calculated using the
 <a
 href="#divert_helper_calc_checksums"><tt>WinDivertHelperCalcChecksums()</tt></a>
 function.
 Note that packets returned by
-<a href="#divert_recv"><tt>WinDivertRecv()</tt></a> are not
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a> are 
 guaranteed to have correct checksums.
 </p>
 </dd></dl>
@@ -833,7 +889,9 @@ BOOL <b>WinDivertSendEx</b>(
 <li> <tt>pPacket</tt>: A buffer containing the packet to be injected.</li>
 <li> <tt>packetLen</tt>: The total length of the buffer <tt>pPacket</tt>.</li>
 <li> <tt>flags</tt>: Reserved, set to zero.</li>
-<li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> for the injected packet.</li>
+<li> <tt>pAddr</tt>: The
+    <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> for the injected
+    packet.</li>
 <li> <tt>sendLen</tt>: The total number of bytes injected.
      Can be <tt>NULL</tt> if this information is not required.</li>
 <li> <tt>lpOverlapped</tt>: An optional pointer to a <tt>OVERLAPPED</tt>
@@ -1312,6 +1370,7 @@ The result can be converted into network-byte-order by setting
 UINT <b>WinDivertHelperCalcChecksums</b>(
     __inout PVOID pPacket,
     __in UINT packetLen,
+    __in_opt PWINDIVERT_ADDRESS pAddr,
     __in UINT64 flags
 );
 </pre>
@@ -1322,6 +1381,8 @@ UINT <b>WinDivertHelperCalcChecksums</b>(
 <ul>
 <li> <tt>pPacket</tt>: The packet to be modified.</li>
 <li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
+<li> <tt>pAddr</tt>: Optional pointer to a
+    <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> structure.</li>
 <li> <tt>flags</tt>: One or more of the following flags:
 <ul>
 <li> <tt>WINDIVERT_HELPER_NO_IP_CHECKSUM</tt>: Do not calculate the IPv4
@@ -1334,8 +1395,6 @@ UINT <b>WinDivertHelperCalcChecksums</b>(
     checksum.</li>
 <li> <tt>WINDIVERT_HELPER_NO_UDP_CHECKSUM</tt>: Do not calculate the UDP
     checksum.</li>
-<li> <tt>WINDIVERT_HELPER_NO_REPLACE</tt>: Do not replace non-zero
-    checksums.</li>
 </ul></li>
 </ul>
 </p><p>
@@ -1355,12 +1414,14 @@ This may be inefficient for some applications.
 For better performance, incremental checksum calculations should be used
 instead (not provided by this API).
 </p><p>
-If the <tt>WINDIVERT_HELPER_NO_REPLACE</tt> flag is used, this function will
-assume that all non-zero checksum fields are already valid and will not
-replace them.
-This is useful for reconstructing checksums for packets returned by
-<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>, where
-non-zero checksum fields do not need to be recalculated.
+If <tt>pAddr</tt> is non-<tt>NULL</tt>, this function will calculate checksums
+based on the <tt>Pseudo*Checksum</tt> flags in the
+<a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> structure.
+This involves calculating pseudo checksums instead of full checksums if
+the corresponding address flag is set.
+The address structure should be the same as
+the one passed to <a href="#divert_send"><tt>WinDivertSend()</tt></a> to
+inject the packet.
 </p>
 </dd></dl>
 
@@ -1518,6 +1579,7 @@ The possible fields are:
 <tr><td><tt>ifIdx</tt></td><td>Interface index</td></tr>
 <tr><td><tt>subIfIdx</tt></td><td>Sub-interface index</td></tr>
 <tr><td><tt>loopback</tt></td><td>Is loopback packet?</td></tr>
+<tr><td><tt>impostor</tt></td><td>Is impostor packet?</td></tr>
 <tr><td><tt>ip</tt></td><td>Is IPv4?</td></tr>
 <tr><td><tt>ipv6</tt></td><td>Is IPv6?</td></tr>
 <tr><td><tt>icmp</tt></td><td>Is ICMP?</td></tr>
@@ -1669,6 +1731,7 @@ capture-modify-reinject loop:
 
         // Modify packet.
 
+        WinDivertHelperCalcChecksums(packet, packetLen, &amp;addr, 0);
         if (!WinDivertSend(handle, packet, packetLen, &amp;addr, NULL))
         {
             // Handle send error
@@ -1707,7 +1770,7 @@ They are
     (including WinDivert applications) block and inject unmodified copies of
     packets then this can lead to an infinite loop.
     If such a loop occurs, 
-    <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> will eventually fail
+    <a href="#divert_send"><tt>WinDivertSend()</tt></a> will eventually fail
     with error <tt>ERROR_HOST_UNREACHABLE</tt>.
     Unfortunately, such errors are not easy to fix.
     Some crude solutions include: (1) removing the incompatible driver, or
