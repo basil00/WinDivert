@@ -90,9 +90,8 @@ WinDivert 1.4.0-rc
     - Add a new WINDIVERT_FLAG_DEBUG flag that causes WinDivertSend() to
       block until the packet exits the Windows TCP/IP stack.  This is slower
       but provides better error messages, so is useful for debugging.
-    - Internally queued packets are now reinjected on WinDivertClose().
-    - WinDivertRecv() will eventually fail with ERROR_HOST_UNREACHABLE
-      if a packet loops indefinitely between WinDivert and another driver.
+    - Internally queued packets are now reinjected when WinDivertClose() is
+      called instead of being dropped.
     - WINDIVERT_ADDRESS now includes a Timestamp field that indicates when
       the packet was first captured by WinDivert.  The timestamp uses the
       same clock as QueryPerformanceCounter().
@@ -100,3 +99,25 @@ WinDivert 1.4.0-rc
       the packet is a loopback packet or not.
     - The filter language has been extended to include a loopback field that
       matches loopback packets.
+    - Loopback packets are now considered to be outbound-only.
+    - WINDIVERT_ADDRESS now includes an Impostor field which indicates that the
+      packet originated from another driver rather than from the network or
+      TCP/IP stack.
+    - WinDivertRecv() will eventually fail with ERROR_HOST_UNREACHABLE if
+      an impostor packet enters an infinite loop (see #41).
+    - The filter language has been extended to include an impostor field that 
+      matches impostor packets.
+    - WINDIVERT_ADDRESS now includes three new flags relating to checksums:
+      * PseudoIPChecksum
+      * PseudoTCPChecksum
+      * PseudoUDPChecksum
+      When set, these flags indicate that the corresponding packet uses
+      "pseudo" IP/TCP/UDP checksums instead of the default full checksums.
+      Pseudo checksums are cheaper to calculate, and can be used when the
+      network hardware supports checksum offloading.
+    - WinDivertHelperCalcChecksums() now takes an optional pointer to a
+      WINDIVERT_ADDRESS structure, and calculates pseudo checksums if the
+      corresponding Pseudo*Checksum flag is set.
+    - The WINDIVERT_HELPER_NO_REPLACE flag for WinDivertHelperCalcChecksums()
+      has been deprecated.  It is no longer necessary to calculate checksums
+      for unmodified packets.
