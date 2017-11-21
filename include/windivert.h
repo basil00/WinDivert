@@ -177,6 +177,8 @@ extern WINDIVERTEXPORT BOOL WinDivertGetParam(
     __in        WINDIVERT_PARAM param,
     __out       UINT64 *pValue);
 
+#endif      /* WINDIVERT_KERNEL */
+
 /****************************************************************************/
 /* WINDIVERT HELPER API                                                     */
 /****************************************************************************/
@@ -314,6 +316,8 @@ typedef struct
     UINT16 Length;
     UINT16 Checksum;
 } WINDIVERT_UDPHDR, *PWINDIVERT_UDPHDR;
+
+#ifndef WINDIVERT_KERNEL
 
 /*
  * Flags for WinDivertHelperCalcChecksums()

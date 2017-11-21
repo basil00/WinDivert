@@ -261,85 +261,6 @@ typedef struct
 } WINDIVERT_PSEUDOV6HDR, *PWINDIVERT_PSEUDOV6HDR;
 
 /*
- * Header definitions.
- */
-struct iphdr
-{
-    UINT8  HdrLength:4;
-    UINT8  Version:4;
-    UINT8  TOS;
-    UINT16 Length;
-    UINT16 Id;
-    UINT16 FragOff0;
-    UINT8  TTL;
-    UINT8  Protocol;
-    UINT16 Checksum;
-    UINT32 SrcAddr;
-    UINT32 DstAddr;
-};
-struct ipv6hdr
-{
-    UINT8  TrafficClass0:4;
-    UINT8  Version:4;
-    UINT8  FlowLabel0:4;
-    UINT8  TrafficClass1:4;
-    UINT16 FlowLabel1;
-    UINT16 Length;
-    UINT8  NextHdr;
-    UINT8  HopLimit;
-    UINT32 SrcAddr[4];
-    UINT32 DstAddr[4];
-};
-struct icmphdr
-{
-    UINT8  Type;
-    UINT8  Code;
-    UINT16 Checksum;
-    UINT32 Body;
-};
-struct icmpv6hdr
-{
-    UINT8  Type;
-    UINT8  Code;
-    UINT16 Checksum;
-    UINT32 Body;
-};
-struct tcphdr
-{
-    UINT16 SrcPort;
-    UINT16 DstPort;
-    UINT32 SeqNum;
-    UINT32 AckNum;
-    UINT16 Reserved1:4;
-    UINT16 HdrLength:4;
-    UINT16 Fin:1;
-    UINT16 Syn:1;
-    UINT16 Rst:1;
-    UINT16 Psh:1;
-    UINT16 Ack:1;
-    UINT16 Urg:1;
-    UINT16 Reserved2:2;
-    UINT16 Window;
-    UINT16 Checksum;
-    UINT16 UrgPtr;
-};
-struct udphdr
-{
-    UINT16 SrcPort;
-    UINT16 DstPort;
-    UINT16 Length;
-    UINT16 Checksum;
-};
-
-#define IPHDR_GET_FRAGOFF(hdr)          (((hdr)->FragOff0) & 0xFF1F)
-#define IPHDR_GET_MF(hdr)               (((hdr)->FragOff0) & 0x0020)
-#define IPHDR_GET_DF(hdr)               (((hdr)->FragOff0) & 0x0040)
-#define IPV6HDR_GET_TRAFFICCLASS(hdr)   \
-    ((((hdr)->TrafficClass0) << 4) | ((hdr)->TrafficClass1))
-#define IPV6HDR_GET_FLOWLABEL(hdr)      \
-    ((((UINT32)(hdr)->FlowLabel0) << 16) | ((UINT32)(hdr)->FlowLabel1))
-
-/*
  * Misc.
  */
 #define UINT8_MAX       0xFF
@@ -1640,8 +1561,8 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     PMDL mdl = NULL, mdl_copy = NULL;
     PVOID data, data_copy = NULL;
     UINT data_len;
-    struct iphdr *ip_header;
-    struct ipv6hdr *ipv6_header;
+    PWINDIVERT_IPHDR ip_header;
+    PWINDIVERT_IPV6HDR ipv6_header;
     BOOL is_ipv4;
     UINT8 layer, checksums;
     UINT32 priority;
@@ -1678,7 +1599,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     }
     
     data_len = MmGetMdlByteCount(mdl);
-    if (data_len > UINT16_MAX || data_len < sizeof(struct iphdr))
+    if (data_len > UINT16_MAX || data_len < sizeof(WINDIVERT_IPHDR))
     {
 windivert_write_bad_packet:
         status = STATUS_INVALID_PARAMETER;
@@ -1695,8 +1616,8 @@ windivert_write_bad_packet:
         goto windivert_write_exit;
     }
 
-    RtlCopyMemory(data_copy, data, sizeof(struct iphdr));
-    ip_header = (struct iphdr *)data_copy;
+    RtlCopyMemory(data_copy, data, sizeof(WINDIVERT_IPHDR));
+    ip_header = (PWINDIVERT_IPHDR)data_copy;
     switch (ip_header->Version)
     {
         case 4:
@@ -1707,13 +1628,13 @@ windivert_write_bad_packet:
             is_ipv4 = TRUE;
             break;
         case 6:
-            if (data_len < sizeof(struct ipv6hdr))
+            if (data_len < sizeof(WINDIVERT_IPV6HDR))
             {
                 goto windivert_write_bad_packet;
             }
-            ipv6_header = (struct ipv6hdr *)data_copy;
+            ipv6_header = (PWINDIVERT_IPV6HDR)data_copy;
             if (data_len != RtlUshortByteSwap(ipv6_header->Length) +
-                    sizeof(struct ipv6hdr))
+                    sizeof(WINDIVERT_IPV6HDR))
             {
                 goto windivert_write_bad_packet;
             }
@@ -1722,11 +1643,11 @@ windivert_write_bad_packet:
         default:
             goto windivert_write_bad_packet;
     }
-    if (data_len > sizeof(struct iphdr))
+    if (data_len > sizeof(WINDIVERT_IPHDR))
     {
-        RtlCopyMemory((char *)data_copy + sizeof(struct iphdr),
-            (char *)data + sizeof(struct iphdr),
-            data_len - sizeof(struct iphdr));
+        RtlCopyMemory((char *)data_copy + sizeof(WINDIVERT_IPHDR),
+            (char *)data + sizeof(WINDIVERT_IPHDR),
+            data_len - sizeof(WINDIVERT_IPHDR));
     }
 
     mdl_copy = IoAllocateMdl(data_copy, data_len, FALSE, FALSE, NULL);
@@ -3136,8 +3057,8 @@ static void windivert_free_packet(packet_t packet)
 static BOOL windivert_decrement_ttl(PNET_BUFFER_LIST buffers, BOOL is_ipv4)
 {
     PNET_BUFFER buffer;
-    struct iphdr *ip_header;
-    struct ipv6hdr *ipv6_header;
+    PWINDIVERT_IPHDR ip_header;
+    PWINDIVERT_IPV6HDR ipv6_header;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums_info;
     BOOL checksum = FALSE;
 
@@ -3153,8 +3074,8 @@ static BOOL windivert_decrement_ttl(PNET_BUFFER_LIST buffers, BOOL is_ipv4)
     {
         if (is_ipv4)
         {
-            ip_header = (struct iphdr *)NdisGetDataBuffer(buffer,
-                sizeof(struct iphdr), NULL, 1, 0);
+            ip_header = (PWINDIVERT_IPHDR)NdisGetDataBuffer(buffer,
+                sizeof(WINDIVERT_IPHDR), NULL, 1, 0);
             if (ip_header == NULL)
             {
                 continue;
@@ -3179,8 +3100,8 @@ static BOOL windivert_decrement_ttl(PNET_BUFFER_LIST buffers, BOOL is_ipv4)
         }
         else
         {
-            ipv6_header = (struct ipv6hdr *)NdisGetDataBuffer(buffer,
-                sizeof(struct ipv6hdr), NULL, 1, 0);
+            ipv6_header = (PWINDIVERT_IPV6HDR)NdisGetDataBuffer(buffer,
+                sizeof(WINDIVERT_IPV6HDR), NULL, 1, 0);
             if (ipv6_header == NULL)
             {
                 continue;
@@ -3290,19 +3211,19 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     BOOL loopback, filter_t filter)
 {
     size_t tot_len, ip_header_len;
-    struct iphdr *ip_header = NULL;
-    struct ipv6hdr *ipv6_header = NULL;
-    struct icmphdr *icmp_header = NULL;
-    struct icmpv6hdr *icmpv6_header = NULL;
-    struct tcphdr *tcp_header = NULL;
-    struct udphdr *udp_header = NULL;
+    PWINDIVERT_IPHDR ip_header = NULL;
+    PWINDIVERT_IPV6HDR ipv6_header = NULL;
+    PWINDIVERT_ICMPHDR icmp_header = NULL;
+    PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
+    PWINDIVERT_TCPHDR tcp_header = NULL;
+    PWINDIVERT_UDPHDR udp_header = NULL;
     UINT16 ip, ttl;
     UINT8 proto;
     NTSTATUS status;
 
     // Parse the headers:
     tot_len = NET_BUFFER_DATA_LENGTH(buffer);
-    if (tot_len < sizeof(struct iphdr))
+    if (tot_len < sizeof(WINDIVERT_IPHDR))
     {
         DEBUG("FILTER: REJECT (packet length too small)");
         return FALSE;
@@ -3312,13 +3233,13 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     if (is_ipv4)
     {
         // IPv4:
-        if (tot_len < sizeof(struct iphdr))
+        if (tot_len < sizeof(WINDIVERT_IPHDR))
         {
             DEBUG("FILTER: REJECT (packet length too small)");
             return FALSE;
         }
-        ip_header = (struct iphdr *)NdisGetDataBuffer(buffer,
-            sizeof(struct iphdr), NULL, 1, 0);
+        ip_header = (PWINDIVERT_IPHDR)NdisGetDataBuffer(buffer,
+            sizeof(WINDIVERT_IPHDR), NULL, 1, 0);
         if (ip_header == NULL)
         {
             DEBUG("FILTER: REJECT (failed to get IPv4 header)");
@@ -3339,23 +3260,23 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     else
     {
         // IPv6:
-        if (tot_len < sizeof(struct ipv6hdr))
+        if (tot_len < sizeof(WINDIVERT_IPV6HDR))
         {
             DEBUG("FILTER: REJECT (packet length too small)");
             return FALSE;
         }
-        ipv6_header = (struct ipv6hdr *)NdisGetDataBuffer(buffer,
-            sizeof(struct ipv6hdr), NULL, 1, 0);
+        ipv6_header = (PWINDIVERT_IPV6HDR)NdisGetDataBuffer(buffer,
+            sizeof(WINDIVERT_IPV6HDR), NULL, 1, 0);
         if (ipv6_header == NULL)
         {
             DEBUG("FILTER: REJECT (failed to get IPv6 header)");
             return FALSE;
         }
-        ip_header_len = sizeof(struct ipv6hdr);
+        ip_header_len = sizeof(WINDIVERT_IPV6HDR);
         if (ipv6_header->Version != 6 ||
             ip_header_len > tot_len ||
             RtlUshortByteSwap(ipv6_header->Length) +
-                sizeof(struct ipv6hdr) != tot_len)
+                sizeof(WINDIVERT_IPV6HDR) != tot_len)
         {
             DEBUG("FILTER: REJECT (bad IPv6 packet)");
             return FALSE;
@@ -3412,20 +3333,20 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
     switch (proto)
     {
         case IPPROTO_ICMP:
-            icmp_header = (struct icmphdr *)NdisGetDataBuffer(buffer,
-                sizeof(struct icmphdr), NULL, 1, 0);
+            icmp_header = (PWINDIVERT_ICMPHDR)NdisGetDataBuffer(buffer,
+                sizeof(WINDIVERT_ICMPHDR), NULL, 1, 0);
             break;
         case IPPROTO_ICMPV6:
-            icmpv6_header = (struct icmpv6hdr *)NdisGetDataBuffer(buffer,
-                sizeof(struct icmpv6hdr), NULL, 1, 0);
+            icmpv6_header = (PWINDIVERT_ICMPV6HDR)NdisGetDataBuffer(buffer,
+                sizeof(WINDIVERT_ICMPV6HDR), NULL, 1, 0);
             break;
         case IPPROTO_TCP:
-            tcp_header = (struct tcphdr *)NdisGetDataBuffer(buffer,
-                sizeof(struct tcphdr), NULL, 1, 0);
+            tcp_header = (PWINDIVERT_TCPHDR)NdisGetDataBuffer(buffer,
+                sizeof(WINDIVERT_TCPHDR), NULL, 1, 0);
             break;
         case IPPROTO_UDP:
-            udp_header = (struct udphdr *)NdisGetDataBuffer(buffer,
-                sizeof(struct udphdr), NULL, 1, 0);
+            udp_header = (PWINDIVERT_UDPHDR)NdisGetDataBuffer(buffer,
+                sizeof(WINDIVERT_UDPHDR), NULL, 1, 0);
             break;
         default:
             break;
@@ -3533,14 +3454,14 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     field[0] = (UINT32)RtlUshortByteSwap(ip_header->Id);
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_DF:
-                    field[0] = (UINT32)IPHDR_GET_DF(ip_header);
+                    field[0] = (UINT32)WINDIVERT_IPHDR_GET_DF(ip_header);
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_MF:
-                    field[0] = (UINT32)IPHDR_GET_MF(ip_header);
+                    field[0] = (UINT32)WINDIVERT_IPHDR_GET_MF(ip_header);
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_FRAGOFF:
                     field[0] = (UINT32)RtlUshortByteSwap(
-                        IPHDR_GET_FRAGOFF(ip_header));
+                        WINDIVERT_IPHDR_GET_FRAGOFF(ip_header));
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_TTL:
                     field[0] = (UINT32)ip_header->TTL;
@@ -3558,11 +3479,12 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     field[0] = (UINT32)RtlUlongByteSwap(ip_header->DstAddr);
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
-                    field[0] = (UINT32)IPV6HDR_GET_TRAFFICCLASS(ipv6_header);
+                    field[0] =
+                        (UINT32)WINDIVERT_IPV6HDR_GET_TRAFFICCLASS(ipv6_header);
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
                     field[0] = (UINT32)RtlUlongByteSwap(
-                        IPV6HDR_GET_FLOWLABEL(ipv6_header));
+                        WINDIVERT_IPV6HDR_GET_FLOWLABEL(ipv6_header));
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_LENGTH:
                     field[0] = (UINT32)RtlUshortByteSwap(ipv6_header->Length);
@@ -3680,7 +3602,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, UINT32 if_idx,
                     break;
                 case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                     field[0] = (UINT32)(tot_len - ip_header_len -
-                        sizeof(struct udphdr));
+                        sizeof(WINDIVERT_UDPHDR));
                     break;
                 default:
                     field[0] = 0;
