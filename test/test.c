@@ -295,7 +295,7 @@ int main(void)
     // (1) stop normal traffic from interacting with the tests; and
     // (2) stop test packets escaping to the Internet or TCP/IP stack.
     upper_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, -510,
-        WINDIVERT_FLAG_DROP);
+        WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_DEBUG);
     lower_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 510,
         WINDIVERT_FLAG_DROP);
     if (upper_handle == INVALID_HANDLE_VALUE ||
