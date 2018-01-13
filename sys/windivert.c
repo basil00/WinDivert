@@ -195,7 +195,6 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, windivert_req_context_get);
 /*
  * WinDivert packet structure.
  */
-#define WINDIVERT_FLAG_IMPOSTOR             0x80000000
 #define WINDIVERT_WORK_QUEUE_LEN_MAX        2048
 struct packet_s
 {
@@ -1693,11 +1692,6 @@ windivert_write_bad_packet:
         }
     }
 
-    if (addr->Impostor)
-    {
-        priority |= WINDIVERT_FLAG_IMPOSTOR;
-    }
-
     handle = (is_ipv4? inject_handle: injectv6_handle);
     compl_handle = ((flags & WINDIVERT_FLAG_DEBUG) != 0? (HANDLE)request: NULL);
     if (layer == WINDIVERT_LAYER_NETWORK_FORWARD)
@@ -2382,11 +2376,6 @@ static void windivert_classify_callout(context_t context, IN UINT8 direction,
         packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF)
     {
         packet_priority = (UINT32)packet_context;
-        if ((packet_priority & WINDIVERT_FLAG_IMPOSTOR) != 0)
-        {
-            impostor = TRUE;
-            packet_priority &= ~WINDIVERT_FLAG_IMPOSTOR;
-        }
         if (packet_priority >= priority)
         {
             WdfObjectDereference(object);
@@ -2747,10 +2736,6 @@ static void windivert_reinject_packet(packet_t packet)
         return;
     }
     priority = packet->priority;
-    if (packet->impostor)
-    {
-        priority |= WINDIVERT_FLAG_IMPOSTOR;
-    }
     NET_BUFFER_LIST_INFO(buffers, TcpIpChecksumNetBufferListInfo) =
         packet->checksums.Value;
     handle = (packet->is_ipv4? inject_handle: injectv6_handle);
