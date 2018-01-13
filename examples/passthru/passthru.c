@@ -1,6 +1,6 @@
 /*
  * passthru.c
- * (C) 2017, all rights reserved,
+ * (C) 2018, all rights reserved,
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License as published by
@@ -40,12 +40,12 @@ static DWORD passthru(LPVOID arg);
  */
 int __cdecl main(int argc, char **argv)
 {
-    int num_threads, i;
+    int num_threads, priority, i;
     HANDLE handle, thread;
 
-    if (argc != 3)
+    if (argc != 3 && argc != 4)
     {
-        fprintf(stderr, "usage: %s filter num-threads\n", argv[0]);
+        fprintf(stderr, "usage: %s filter num-threads [priority]\n", argv[0]);
         exit(EXIT_FAILURE);
     }
     num_threads = atoi(argv[2]);
@@ -54,9 +54,14 @@ int __cdecl main(int argc, char **argv)
         fprintf(stderr, "error: invalid number of threads\n");
         exit(EXIT_FAILURE);
     }
+    if (argc == 4)
+    {
+        priority = atoi(argv[3]);
+    }
 
     // Divert traffic matching the filter:
-    handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, 0, 0);
+    handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, (INT16)priority,
+        0);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
