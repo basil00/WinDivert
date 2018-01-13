@@ -940,7 +940,7 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
 {
     UINT8 i, j;
     layer_t layers[WINDIVERT_CONTEXT_MAXLAYERS];
-    NTSTATUS status;
+    NTSTATUS status = STATUS_SUCCESS;
 
     i = 0;
     switch (layer)
