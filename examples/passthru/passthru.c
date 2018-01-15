@@ -40,7 +40,7 @@ static DWORD passthru(LPVOID arg);
  */
 int __cdecl main(int argc, char **argv)
 {
-    int num_threads, priority, i;
+    int num_threads, priority = 0, i;
     HANDLE handle, thread;
 
     if (argc != 3 && argc != 4)
