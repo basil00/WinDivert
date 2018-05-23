@@ -631,9 +631,9 @@ WinDivert <a href="#filter_language">filter language</a>.
 <tt>WINDIVERT_FLAG_DEBUG</tt>
 </td>
 <td>
-This flag causes <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> to block
+This flag causes <a href="#divert_send"><tt>WinDivertSend()</tt></a> to block
 until the injected packet <i>exits</i> the Windows TCP/IP stack.
-By default, <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> does not
+By default, <a href="#divert_send"><tt>WinDivertSend()</tt></a> does not
 block and returns immediately after the packet <i>enters</i> the
 TCP/IP stack.
 The default mode is faster, but will not return an error code if the
