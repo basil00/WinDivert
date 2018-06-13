@@ -515,6 +515,41 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 }
 
 /*
+ * Workaround for #134
+ */
+static void WinDivertFixChecksums(PVOID pPacket, UINT packetLen,
+    PWINDIVERT_ADDRESS addr)
+{
+    UINT64 flags =
+        WINDIVERT_HELPER_NO_IP_CHECKSUM |
+        WINDIVERT_HELPER_NO_TCP_CHECKSUM |
+        WINDIVERT_HELPER_NO_UDP_CHECKSUM;
+    BOOL calc = FALSE;
+    if (addr->PseudoIPChecksum != 0)
+    {
+        addr->PseudoIPChecksum = 0;
+        flags &= ~WINDIVERT_HELPER_NO_IP_CHECKSUM;
+        calc = TRUE;
+    }
+    if (addr->PseudoTCPChecksum != 0)
+    {
+        addr->PseudoTCPChecksum = 0;
+        flags &= ~WINDIVERT_HELPER_NO_TCP_CHECKSUM;
+        calc = TRUE;
+    }
+    if (addr->PseudoUDPChecksum != 0)
+    {
+        addr->PseudoUDPChecksum = 0;
+        flags &= ~WINDIVERT_HELPER_NO_UDP_CHECKSUM;
+        calc = TRUE;
+    }
+    if (calc)
+    {
+        WinDivertHelperCalcChecksums(pPacket, packetLen, addr, flags);
+    }
+}
+
+/*
  * Receive a WinDivert packet.
  */
 extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
@@ -554,6 +589,12 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
 extern BOOL WinDivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
     PWINDIVERT_ADDRESS addr, UINT *writelen)
 {
+    if (addr == NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    WinDivertFixChecksums(pPacket, packetLen, addr);
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0, (UINT64)addr,
         pPacket, packetLen, writelen);
 }
@@ -565,11 +606,12 @@ extern BOOL WinDivertSendEx(HANDLE handle, PVOID pPacket, UINT packetLen,
     UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *writelen,
     LPOVERLAPPED overlapped)
 {
-    if (flags != 0)
+    if (flags != 0 || addr == NULL)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
+    WinDivertFixChecksums(pPacket, packetLen, addr);
     if (overlapped == NULL)
     {
         return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0,

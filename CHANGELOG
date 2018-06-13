@@ -123,3 +123,5 @@ WinDivert 1.4.0-rc
       for unmodified packets.
 WinDivert 1.4.1
     - Dual license WinDivert under LGPLv3 and GPLv2.
+WinDivert 1.4.2
+    - Add workaround for pseudo checksum issue (see #134).
