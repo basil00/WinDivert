@@ -76,11 +76,8 @@ do
     then
         echo "\t\033[33mWARNING\033[0m: unsigned WinDivert32.sys..."
     fi
-    if [ $TARGET != MINGW ]
-    then
-        echo "\tcopy $INSTALL/x86/WinDivert.lib..."
-        cp install/$TARGET/i386/WinDivert.lib $INSTALL/x86
-    fi
+    echo "\tcopy $INSTALL/x86/WinDivert.lib..."
+    cp install/$TARGET/i386/WinDivert.lib $INSTALL/x86
     echo "\tcopy $INSTALL/x86/WinDivert.dll..."
     cp install/$TARGET/i386/WinDivert.dll $INSTALL/x86
     echo "\tcopy $INSTALL/x86/netdump.exe..."
@@ -104,11 +101,8 @@ do
         then
             echo -e "\t\033[33mWARNING\033[0m: unsigned WinDivert64.sys..."
         fi
-        if [ $TARGET != MINGW ]
-        then
-            echo "\tcopy $INSTALL/amd64/WinDivert.lib..."
-            cp install/$TARGET/amd64/WinDivert.lib $INSTALL/amd64
-        fi
+        echo "\tcopy $INSTALL/amd64/WinDivert.lib..."
+        cp install/$TARGET/amd64/WinDivert.lib $INSTALL/amd64
         echo "\tcopy $INSTALL/amd64/WinDivert.dll..."
         cp install/$TARGET/amd64/WinDivert.dll $INSTALL/amd64
         echo "\tcopy $INSTALL/amd64/netdump.exe..."

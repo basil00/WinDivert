@@ -709,7 +709,7 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
             left = FALSE;
             str++;
         }
-        for (l = 0; l < 4 && isxdigit(*str); l++)
+        for (l = 0; l < 4 && WinDivertIsXDigit(*str); l++)
         {
             part_str[l] = *str;
             str++;
@@ -786,7 +786,7 @@ static PTOKEN_NAME WinDivertTokenLookup(PTOKEN_NAME token_names,
     while (hi >= lo)
     {
         mid = (lo + hi) / 2;
-        cmp = strcmp(token_names[mid].name, name);
+        cmp = WinDivertStrCmp(token_names[mid].name, name);
         if (cmp < 0)
         {
             lo = mid+1;
@@ -889,7 +889,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             return MAKE_ERROR(WINDIVERT_ERROR_TOO_LONG, i);
         }
         memset(tokens[tp].val, 0, sizeof(tokens[tp].val));
-        while (isspace(filter[i]))
+        while (WinDivertIsSpace(filter[i]))
         {
             i++;
         }
@@ -974,11 +974,11 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 break;
         }
         token[0] = c;
-        if (isalnum(c) || c == '.' || c == ':')
+        if (WinDivertIsAlNum(c) || c == '.' || c == ':')
         {
             UINT32 num;
             char *end;
-            for (j = 1; j < TOKEN_MAXLEN && (isalnum(filter[i]) ||
+            for (j = 1; j < TOKEN_MAXLEN && (WinDivertIsAlNum(filter[i]) ||
                     filter[i] == '.' || filter[i] == ':'); j++, i++)
             {
                 token[j] = filter[i];
@@ -1995,7 +1995,7 @@ static ERROR WinDivertCompileFilter(const char *filter,
     }
 
     // Allocate memory pool for the compiler:
-    pool = (PPOOL)malloc(sizeof(POOL));
+    pool = (PPOOL)HeapAlloc(GetProcessHeap(), 0, sizeof(POOL));
     if (pool == NULL)
     {
         return MAKE_ERROR(WINDIVERT_ERROR_NO_MEMORY, 0);
@@ -2010,12 +2010,12 @@ static ERROR WinDivertCompileFilter(const char *filter,
     if (expr == NULL)
     {
         error = pool->error;
-        free(pool);
+        HeapFree(GetProcessHeap(), 0, pool);
         return error;
     }
     if (tokens[i].kind != TOKEN_END)
     {
-        free(pool);
+        HeapFree(GetProcessHeap(), 0, pool);
         return MAKE_ERROR(WINDIVERT_ERROR_UNEXPECTED_TOKEN, tokens[i].pos);
     }
 
@@ -2025,7 +2025,7 @@ static ERROR WinDivertCompileFilter(const char *filter,
         WINDIVERT_FILTER_RESULT_REJECT, stack);
     if (label < 0)
     {
-        free(pool);
+        HeapFree(GetProcessHeap(), 0, pool);
         return MAKE_ERROR(WINDIVERT_ERROR_TOO_LONG, 0);
     }
 
@@ -2034,7 +2034,7 @@ static ERROR WinDivertCompileFilter(const char *filter,
     {
         WinDivertEmitFilter(stack, label, label, object, obj_len);
     }
-    free(pool);
+    HeapFree(GetProcessHeap(), 0, pool);
 
     return MAKE_ERROR(WINDIVERT_ERROR_NONE, 0);
 }

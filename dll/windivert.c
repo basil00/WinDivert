@@ -39,7 +39,7 @@
 #include <winsock2.h>
 #include <windows.h>
 #include <winioctl.h>
-#include <ctype.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -64,10 +64,15 @@
 #define ntohl(x)                        BYTESWAP32(x)
 #define htonl(x)                        BYTESWAP32(x)
 
+static BOOLEAN WinDivertIsXDigit(char c);
+static BOOLEAN WinDivertIsSpace(char c);
+static BOOLEAN WinDivertIsAlNum(char c);
+static char WinDivertToLower(char c);
 static BOOLEAN WinDivertStrLen(const wchar_t *s, size_t maxlen,
     size_t *lenptr);
 static BOOLEAN WinDivertStrCpy(wchar_t *dst, size_t dstlen,
     const wchar_t *src);
+static int WinDivertStrCmp(const char *s, const char *t);
 static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr);
 static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr);
 
@@ -694,6 +699,33 @@ extern BOOL WinDivertGetParam(HANDLE handle, WINDIVERT_PARAM param,
 /* REPLACEMENTS                                                              */
 /*****************************************************************************/
 
+static BOOLEAN WinDivertIsXDigit(char c)
+{
+    return (c >= '0' && c <= '9') ||
+           (c >= 'a' && c <= 'f') ||
+           (c >= 'A' && c <= 'F');
+}
+
+static BOOLEAN WinDivertIsSpace(char c)
+{
+    return (c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' ||
+            c == '\v');
+}
+
+static BOOLEAN WinDivertIsAlNum(char c)
+{
+    return (c >= 'a' && c <= 'z') ||
+           (c >= 'A' && c <= 'Z') ||
+           (c >= '0' && c <= '9');
+}
+
+static char WinDivertToLower(char c)
+{
+    if (c >= 'A' && c <= 'Z')
+        return 'a' + (c - 'A');
+    return c;
+}
+
 static BOOLEAN WinDivertStrLen(const wchar_t *s, size_t maxlen,
     size_t *lenptr)
 {
@@ -726,6 +758,24 @@ static BOOLEAN WinDivertStrCpy(wchar_t *dst, size_t dstlen, const wchar_t *src)
     }
     dst[i] = src[i];
     return TRUE;
+}
+
+static int WinDivertStrCmp(const char *s, const char *t)
+{
+    int cmp;
+    size_t i;
+    for (i = 0; ; i++)
+    {
+        cmp = s[i] - t[i];
+        if (cmp != 0)
+        {
+            return cmp;
+        }
+        if (s[i] == '\0')
+        {
+            return 0;
+        }
+    }
 }
 
 static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr)
@@ -766,7 +816,7 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
     {
         i += 2;
     }
-    for (; str[i] && isxdigit(str[i]); i++)
+    for (; str[i] && WinDivertIsXDigit(str[i]); i++)
     {
         num0 = num;
         num *= 16;
@@ -776,7 +826,7 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
         }
         else
         {
-            num += (UINT32)(tolower(str[i]) - 'a') + 0x0A;
+            num += (UINT32)(WinDivertToLower(str[i]) - 'a') + 0x0A;
         }
         if (num0 > num)
         {
