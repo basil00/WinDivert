@@ -40,15 +40,15 @@ set -e
 VERSION=`cat ./VERSION`
 NAME=WinDivert-$VERSION
 
-for TARGET in WDDK MSVC MINGW
+for TARGET in MINGW
 do
     if [ ! -d "install/$TARGET" ]
     then
         echo "SKIP $NAME-$TARGET"
         continue
     fi
-    echo "BUILD $NAME-$TARGET"
-    INSTALL=install/$NAME-$TARGET
+    echo "BUILD $NAME"
+    INSTALL=install/$NAME
     echo "\tmake $INSTALL..."
     mkdir -p $INSTALL
     echo "\tcopy $INSTALL/README..."
@@ -118,17 +118,11 @@ do
     else
         echo "\tWARNING: skipping missing AMD64 build..."
     fi
-    PACKAGE=$NAME-$TARGET.tar.gz
+    PACKAGE=$NAME.zip
     echo "\tbuilding $PACKAGE..."
     (
         cd install;
-        tar cvz --owner root --group root -f $PACKAGE $NAME-$TARGET > /dev/null
-    )
-    PACKAGE=$NAME-$TARGET.zip
-    echo "\tbuilding $PACKAGE..."
-    (
-        cd install;
-        zip -r $PACKAGE $NAME-$TARGET > /dev/null
+        zip -r $PACKAGE $NAME > /dev/null
     )
     echo -n "\tclean $INSTALL..."
     rm -rf $INSTALL

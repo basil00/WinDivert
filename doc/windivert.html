@@ -11,8 +11,6 @@
 <li><a href="#building">2. Building</a></li>
 <ul>
 <li><a href="#driver_signing">2.1 Driver Signing</a></li>
-<li><a href="#visual_studio_2012_support">2.2 Visual Studio 2012 Support</a></li>
-<li><a href="#mingw_support">2.3 MinGW Support</a></li>
 </ul>
 <li><a href="#installing">3. Installing</a></li>
 <li><a href="#uninstalling">4. Uninstalling</a></li>
@@ -87,76 +85,63 @@ WinDivert also supports passive packet sniffing similar to <tt>Winpcap</tt>.
 <hr>
 <a name="building"><h2>2. Building</h2></a>
 <p>
+Note that pre-built WinDivert binary distributions are available from the
+<a href="https://reqrypt.org/windivert.html">WinDivert website</a>.
+Most users do not need to build their own version of WinDivert from source.
+</p>
+<p>
 The source code for WinDivert is available for download at
 <blockquote>
 <a href="https://github.com/basil00/Divert">
     https://github.com/basil00/Divert</a>
 </blockquote>
-To build the WinDivert package from source:
+To build the WinDivert drivers from source:
 <ol>
 <li> Download and install <a href="http://www.microsoft.com/whdc/devtools/wdk/default.mspx">
 Windows Driver Kit 7.1.0</a>.</li>
-<li> Open a <i>Free Build Environment</i> console (or
-    <i>Checked Build Environment</i> for debugging).</li>
+<li> Open a <i>x86 Free Build Environment</i> console.</li>
 <li> In the WinDivert package root directory, run the command:
 <pre>
 wddk-build.bat
 </pre>
-This will build the following files and place them in the
-<tt>install\WDDK</tt> subdirectory:
-<ul>
-<li> <tt>WinDivert.dll</tt>: User-mode library.</li>
-<li> <tt>WinDivert32.sys</tt> or <tt>WinDivert64.sys</tt>:
-    Kernel-mode WDF/WFP call-out driver.</li>
-<li> <tt>*.exe</tt>: Sample applications from the <tt>divert\examples</tt>
-    directory.</li>
-</ul></li>
-</ol>
-<i>NOTE:</i> The <tt>WinDivert.dll</tt> and <tt>WinDivert.lib</tt> files
-are only compatible with programs compiled with the WDDK compiler.
-See below for Visual Studio 2012 and MinGW support.
-</p>
-
-<a name="driver_signing"><h3>2.1 Driver Signing</h3></a>
-<p>
-Before the WinDivert package can be used, the
-<tt>WinDivert32.sys</tt>/<tt>WinDivert64.sys</tt> driver
-must be digitally signed.
-See <a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487317.aspx">Driver Signing Requirements for Windows</a>
-for more information.
-</p>
-
-<a name="visual_studio_2012_support"><h3>2.2 Visual Studio 2012 Support</h3></a>
-<p>
-To build the WinDivert package for Visual Studio 2012:
-<ol>
-<li> First build the driver by running <tt>wddk-build.bat</tt> as per the
-instructions above.</li>
-<li> Open a <i>Visual Studio Command Prompt</i> environment.</li>
-<li> In the WinDivert package root directory, run the command:
-<pre>
-msvc-build.bat
-</pre>
-This will build Visual Studio 2012 compatible files and place them in the
-<tt>install\MSVC</tt> subdirectory.</li>
+This will build the <tt>install\WDDK\i386\WinDivert32.sys</tt> driver.</li>
+<li> Next, open a <i>x64 Free Build Environment</i> console.</li>
+<li> Re-run the <tt>wddk-build.bat</tt> command to build the
+<tt>install\WDDK\amd64\WinDivert64.sys</tt> driver.</li>
 </ol>
 </p>
-
-<a name="mingw_support"><h3>2.3 MinGW Support</h3></a>
 <p>
-To build the WinDivert package for MinGW:
+To build the WinDivert user-mode library (<tt>WinDivert.dll</tt>) and sample
+programs:
 <ol>
-<li> First build the driver by running <tt>wddk-build.bat</tt> as per
-the instructions above.</li>
+<li> First, build the WinDivert drivers by running the
+<tt>wddk-build.bat</tt> command described above.</li>
 <li> In Linux (with the MinGW cross-compilers installed) and in the
 WinDivert package root directory, run the command:
 <pre>
 sh mingw-build.sh
 </pre>
-This will build MinGW compatible files and place them in the
-<tt>install\MINGW</tt> subdirectory.</li>
+This will the user-mode library and sample programs which will be placed
+in the <tt>install\MINGW</tt> subdirectory.</li>
 </ol>
+</p>
+<p>
+The generated <tt>WinDivert.dll</tt>/<tt>WinDivert.lib</tt> files
+should be compatible with all major compilers, including both MinGW and
+Visual Studio.
+</p>
 
+<a name="driver_signing"><h3>2.1 Driver Signing</h3></a>
+<p>
+If you built your own 
+<tt>WinDivert32.sys</tt>/<tt>WinDivert64.sys</tt> drivers,
+they must be digitally signed before they can be used.
+See <a href="http://msdn.microsoft.com/en-us/windows/hardware/gg487317.aspx">Driver Signing Requirements for Windows</a>
+for more information.
+</p>
+<p>
+Note that the pre-built <tt>WinDivert32.sys</tt>/<tt>WinDivert64.sys</tt>
+drivers from the official WinDivert distribution are already digitally signed.
 </p>
 
 <hr>
@@ -221,60 +206,6 @@ whenever your application calls
 <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
 The calling application must have Administrator privileges.
 </p>
-<p>
-The <tt>WinDivert.dll</tt> also depends on a C run-time library.
-This is not distributed with the WinDivert binaries, and must be 
-installed/distributed separately if required.
-</p>
-<center>
-<table border="1" cellpadding="5" width="75%">
-<tr>
-<th>
-Build/Compiler
-</th>
-<th>
-C-Runtime Dependency
-</th>
-<th>
-Installed on Windows by Default?
-</th>
-</tr>
-<tr>
-<td>
-WDDK (Windows Driver Kit 7.1)
-</td>
-<td>
-<tt>MSVCRT.dll</tt>
-</td>
-<td>
-Yes
-</td>
-</tr>
-<tr>
-<td>
-MSVC (Visual Studio 2012)
-</td>
-<td>
-<tt>MSVCRT110.dll</tt>
-</td>
-<td>
-No.
-Must be installed separately or included with your application.
-</td>
-</tr>
-<tr>
-<td>
-MINGW
-</td>
-<td>
-<tt>MSVCRT.dll</tt>
-</td>
-<td>
-Yes
-</td>
-</tr>
-</table>
-</center>
 
 <hr>
 <a name="uninstalling"><h2>4. Uninstalling</h2></a>

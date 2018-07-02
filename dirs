@@ -1,4 +1,2 @@
 DIRS= \
-     dll \
-     examples \
      sys

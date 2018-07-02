@@ -1,6 +1,0 @@
-DIRS= \
-     netdump \
-     netfilter \
-     passthru \
-     webfilter \
-     streamdump
