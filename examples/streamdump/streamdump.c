@@ -186,7 +186,7 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Divert all traffic to/from `port', `proxy_port' and `alt_port'.
-    r = sprintf_s(filter, sizeof(filter),
+    r = snprintf(filter, sizeof(filter),
         "tcp and "
         "(tcp.DstPort == %d or tcp.DstPort == %d or tcp.DstPort == %d or "
          "tcp.SrcPort == %d or tcp.SrcPort == %d or tcp.SrcPort == %d)",
