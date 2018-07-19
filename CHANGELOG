@@ -127,3 +127,5 @@ WinDivert 1.4.2
     - Add workaround for pseudo checksum issue (see #134).
 WinDivert 1.4.3
     - WinDivert.dll no longer depends on MSVCRT*.dll.
+WinDivert 1.4.4
+    - Optimize pseudo checksum calculation.

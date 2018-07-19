@@ -507,15 +507,6 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         else if (pAddr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
         {
             // Pseudo TCP checksum
-            checksum_len = payload_len + tcp_header->HdrLength*sizeof(UINT32);
-            pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
-                ipv6_header, IPPROTO_TCP, checksum_len, pseudo_header);
-            tcp_header->Checksum = ~WinDivertHelperCalcChecksum(
-                pseudo_header, pseudo_header_len, NULL, 0);
-        }
-        else
-        {
-            // Don't care checksum
             tcp_header->Checksum = 0;
         }
         count++;
@@ -545,15 +536,6 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         else if (pAddr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
         {
             // Pseudo UDP checksum
-            checksum_len = payload_len + sizeof(WINDIVERT_UDPHDR);
-            pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
-                ipv6_header, IPPROTO_UDP, checksum_len, pseudo_header);
-            udp_header->Checksum = ~WinDivertHelperCalcChecksum(
-                pseudo_header, pseudo_header_len, NULL, 0);
-        }
-        else
-        {
-            // Don't care checksum
             udp_header->Checksum = 0;
         }
         count++;

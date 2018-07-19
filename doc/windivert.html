@@ -323,18 +323,11 @@ For more information, see <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
 </p><p>
 The <tt>Pseudo*Checksum</tt> flags indicate whether the packet uses
 <i>full</i> or <i>pseudo</i> checksums.
-Pseudo checksums will typically be used if the network adapter supports
-<i>IP/TCP/UDP checksum offloading</i>, which means that the network
+Pseudo checksums are used when 
+<i>IP/TCP/UDP checksum offloading</i> is enabled, meaning that the network
 hardware calculates/validates checksums rather than the Windows TCP/IP stack.
-For outbound IPv4, the pseudo checksum is always <tt>0</tt>, and for
-TCP/UDP the pseudo checksum is the ones compliment sum over the
-corresponding TCP/UDP checksum <i>pseudo header</i>.
-For inbound packets, the pseudo checksums may be arbitrary values.
-Pseudo checksums are generally cheaper to calculate, but will only work
-if the underlying network hardware supports it.
-Typically modified packets should preserve these flags, and newly
-crafted packets should clear these flags unless the application manually
-verifies checksum offloading is enabled.
+Pseudo checksums may be arbitrary values.
+Typically, modified packets should preserve the <tt>Pseudo*Checksum</tt> flags.
 </p>
 </dd></dl>
 
@@ -806,6 +799,13 @@ function.
 Note that packets returned by
 <a href="#divert_recv"><tt>WinDivertRecv()</tt></a> are 
 guaranteed to have correct checksums.
+</p>
+<p>
+When pseudo checksums are used,
+the <a href="#divert_send"><tt>WinDivertSend()</tt></a> function may
+modify the contents of the memory pointed to by the <tt>pPacket</tt> and
+<tt>pAddr</tt> parameters.
+Thus, it is important that this memory is not read-only.
 </p>
 </dd></dl>
 
@@ -1357,14 +1357,13 @@ This may be inefficient for some applications.
 For better performance, incremental checksum calculations should be used
 instead (not provided by this API).
 </p><p>
-If <tt>pAddr</tt> is non-<tt>NULL</tt>, this function will calculate checksums
-based on the <tt>Pseudo*Checksum</tt> flags in the
+If <tt>pAddr</tt> is non-<tt>NULL</tt>, this function will avoid calculating
+the full checksum if the <tt>Pseudo*Checksum</tt> flag is
+set in the corresponding
 <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> structure.
-This involves calculating pseudo checksums instead of full checksums if
-the corresponding address flag is set.
 The address structure should be the same as
-the one passed to <a href="#divert_send"><tt>WinDivertSend()</tt></a> to
-inject the packet.
+the one passed to <a href="#divert_send"><tt>WinDivertSend()</tt></a> in
+order to (re)inject the packet.
 </p>
 </dd></dl>
 
