@@ -411,11 +411,26 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     UINT32 priority32;
 
     // Parameter checking.
-    if (!WINDIVERT_FLAGS_VALID(flags) || layer > WINDIVERT_LAYER_MAX)
+    if (layer == 0)
+    {
+        layer = WINDIVERT_LAYER_NETWORK;
+    }
+    switch (layer)
+    {
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+        case WINDIVERT_LAYER_FLOW:
+            break;
+        default:
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return INVALID_HANDLE_VALUE;
+    }
+    if (!WINDIVERT_FLAGS_VALID(flags))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
+
     priority32 = WINDIVERT_PRIORITY(priority);
     if (priority32 < WINDIVERT_PRIORITY_MIN ||
         priority32 > WINDIVERT_PRIORITY_MAX)

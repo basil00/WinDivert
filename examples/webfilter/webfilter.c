@@ -238,7 +238,7 @@ int __cdecl main(int argc, char **argv)
         blockpage->header.tcp.SeqNum       = tcp_header->AckNum;
         blockpage->header.tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        addr.Direction = !addr.Direction;     // Reverse direction.
+        addr.Outbound = !addr.Outbound;     // Reverse direction.
         WinDivertHelperCalcChecksums((PVOID)blockpage, blockpage_len, &addr, 0);
         if (!WinDivertSend(handle, (PVOID)blockpage, blockpage_len, &addr,
                 NULL))

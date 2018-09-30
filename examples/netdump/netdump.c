@@ -156,9 +156,8 @@ int __cdecl main(int argc, char **argv)
             (double)freq.QuadPart;
         printf("Packet [Timestamp=%.8g, Direction=%s IfIdx=%u SubIfIdx=%u "
             "Loopback=%u]\n",
-            time_passed, (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND?
-                "outbound": "inbound"), addr.IfIdx, addr.SubIfIdx,
-                addr.Loopback);
+            time_passed, (addr.Outbound?  "outbound": "inbound"),
+            addr.Network.IfIdx, addr.Network.SubIfIdx, addr.Loopback);
         if (ip_header != NULL)
         {
             UINT8 *src_addr = (UINT8 *)&ip_header->SrcAddr;

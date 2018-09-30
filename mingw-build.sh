@@ -97,6 +97,10 @@ do
         $CC -s -O2 -Iinclude/ examples/streamdump/streamdump.c \
             -o "install/MINGW/$CPU/streamdump.exe" -lWinDivert -lws2_32 \
             -L"install/MINGW/$CPU/"
+        echo "\tcopy install/MINGW/$CPU/flowtrack.exe..."
+        $CC -s -O2 -Iinclude/ examples/flowtrack/flowtrack.c \
+            -o "install/MINGW/$CPU/flowtrack.exe" -lWinDivert -lws2_32 -lpsapi \
+            -lshlwapi -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
         cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU
     else

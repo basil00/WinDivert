@@ -116,6 +116,12 @@ typedef enum
     TOKEN_SUB_IF_IDX,
     TOKEN_LOOPBACK,
     TOKEN_IMPOSTOR,
+    TOKEN_PROCESS_ID,
+    TOKEN_LOCAL_ADDR,
+    TOKEN_REMOTE_ADDR,
+    TOKEN_LOCAL_PORT,
+    TOKEN_REMOTE_PORT,
+    TOKEN_PROTOCOL,
     TOKEN_OPEN,
     TOKEN_CLOSE,
     TOKEN_EQ,
@@ -504,7 +510,7 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
             tcp_header->Checksum = WinDivertHelperCalcChecksum(
                 pseudo_header, pseudo_header_len, tcp_header, checksum_len);
         }
-        else if (pAddr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
+        else if (pAddr->Outbound)
         {
             // Pseudo TCP checksum
             tcp_header->Checksum = 0;
@@ -533,7 +539,7 @@ extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
                 udp_header->Checksum = 0xFFFF;
             }
         }
-        else if (pAddr->Direction == WINDIVERT_DIRECTION_OUTBOUND)
+        else if (pAddr->Outbound)
         {
             // Pseudo UDP checksum
             udp_header->Checksum = 0;
@@ -748,7 +754,7 @@ extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
         l = k + 1;
         k = (k >= 8? k - 8: k);
         l = (l >= 8? l - 8: l);
-        addr_ptr[i] =
+        addr_ptr[3 - i] =
             (UINT32)laddr[2 * i + 1] |
             (UINT32)laddr[2 * i] << 16 |
             (UINT32)raddr[l] |
@@ -783,6 +789,91 @@ static PTOKEN_NAME WinDivertTokenLookup(PTOKEN_NAME token_names,
         }
     }
     return NULL;
+}
+
+/*
+ * Validate token for layer.
+ */
+static BOOL WinDivertCheckTokenKindForLayer(WINDIVERT_LAYER layer, KIND kind)
+{
+    switch (layer)
+    {
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+            switch (kind)
+            {
+                case TOKEN_INBOUND:
+                case TOKEN_OUTBOUND:
+                    return (layer != WINDIVERT_LAYER_NETWORK_FORWARD);
+                case TOKEN_PROCESS_ID:
+                case TOKEN_LOCAL_ADDR:
+                case TOKEN_REMOTE_ADDR:
+                case TOKEN_LOCAL_PORT:
+                case TOKEN_REMOTE_PORT:
+                    return FALSE;
+                default:
+                    return TRUE;
+            }
+        case WINDIVERT_LAYER_FLOW:
+            switch (kind)
+            {
+                case TOKEN_ICMP_BODY:
+                case TOKEN_ICMP_CHECKSUM:
+                case TOKEN_ICMP_CODE:
+                case TOKEN_ICMP_TYPE:
+                case TOKEN_ICMPV6_BODY:
+                case TOKEN_ICMPV6_CHECKSUM:
+                case TOKEN_ICMPV6_CODE:
+                case TOKEN_ICMPV6_TYPE:
+                case TOKEN_IP_CHECKSUM:
+                case TOKEN_IP_DF:
+                case TOKEN_IP_DST_ADDR:
+                case TOKEN_IP_FRAG_OFF:
+                case TOKEN_IP_HDR_LENGTH:
+                case TOKEN_IP_ID:
+                case TOKEN_IP_LENGTH:
+                case TOKEN_IP_MF:
+                case TOKEN_IP_PROTOCOL:
+                case TOKEN_IP_SRC_ADDR:
+                case TOKEN_IP_TOS:
+                case TOKEN_IP_TTL:
+                case TOKEN_IPV6_DST_ADDR:
+                case TOKEN_IPV6_FLOW_LABEL:
+                case TOKEN_IPV6_HOP_LIMIT:
+                case TOKEN_IPV6_LENGTH:
+                case TOKEN_IPV6_NEXT_HDR:
+                case TOKEN_IPV6_SRC_ADDR:
+                case TOKEN_IPV6_TRAFFIC_CLASS:
+                case TOKEN_TCP_ACK:
+                case TOKEN_TCP_ACK_NUM:
+                case TOKEN_TCP_CHECKSUM:
+                case TOKEN_TCP_DST_PORT:
+                case TOKEN_TCP_FIN:
+                case TOKEN_TCP_HDR_LENGTH:
+                case TOKEN_TCP_PAYLOAD_LENGTH:
+                case TOKEN_TCP_PSH:
+                case TOKEN_TCP_RST:
+                case TOKEN_TCP_SEQ_NUM:
+                case TOKEN_TCP_SRC_PORT:
+                case TOKEN_TCP_SYN:
+                case TOKEN_TCP_URG:
+                case TOKEN_TCP_URG_PTR:
+                case TOKEN_TCP_WINDOW:
+                case TOKEN_UDP_CHECKSUM:
+                case TOKEN_UDP_DST_PORT:
+                case TOKEN_UDP_LENGTH:
+                case TOKEN_UDP_PAYLOAD_LENGTH:
+                case TOKEN_UDP_SRC_PORT:
+                case TOKEN_IF_IDX:
+                case TOKEN_SUB_IF_IDX:
+                case TOKEN_IMPOSTOR:
+                    return FALSE;
+                default:
+                    return TRUE;
+            }
+        default:
+            return FALSE;
+    }
 }
 
 /*
@@ -829,10 +920,16 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"ipv6.NextHdr",        TOKEN_IPV6_NEXT_HDR},
         {"ipv6.SrcAddr",        TOKEN_IPV6_SRC_ADDR},
         {"ipv6.TrafficClass",   TOKEN_IPV6_TRAFFIC_CLASS},
+        {"localAddr",           TOKEN_LOCAL_ADDR},
+        {"localPort",           TOKEN_LOCAL_PORT},
         {"loopback",            TOKEN_LOOPBACK},
         {"not",                 TOKEN_NOT},
         {"or",                  TOKEN_OR},
         {"outbound",            TOKEN_OUTBOUND},
+        {"processId",           TOKEN_PROCESS_ID},
+        {"protocol",            TOKEN_PROTOCOL},
+        {"remoteAddr",          TOKEN_REMOTE_ADDR},
+        {"remotePort",          TOKEN_REMOTE_PORT},
         {"subIfIdx",            TOKEN_SUB_IF_IDX},
         {"tcp",                 TOKEN_TCP},
         {"tcp.Ack",             TOKEN_TCP_ACK},
@@ -986,18 +1083,9 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 sizeof(token_names) / sizeof(TOKEN_NAME), token);
             if (result != NULL)
             {
-                switch (layer)
+                if (!WinDivertCheckTokenKindForLayer(layer, result->kind))
                 {
-                    case WINDIVERT_LAYER_NETWORK_FORWARD:
-                        if (result->kind == TOKEN_INBOUND ||
-                            result->kind == TOKEN_OUTBOUND)
-                        {
-                            return MAKE_ERROR(
-                                WINDIVERT_ERROR_BAD_TOKEN_FOR_LAYER, i-j);
-                        }
-                        break;
-                    default:
-                        break;
+                    return MAKE_ERROR(WINDIVERT_ERROR_BAD_TOKEN_FOR_LAYER, i-j);
                 }
                 tokens[tp++].kind = result->kind;
                 continue;
@@ -1023,6 +1111,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             // Check for IPv4 address:
             if (WinDivertHelperParseIPv4Address(token, tokens[tp].val))
             {
+                tokens[tp].val[1] = 0x0000FFFF;
                 tokens[tp].kind = TOKEN_NUMBER;
                 tp++;
                 continue;
@@ -1032,16 +1121,6 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             SetLastError(0);
             if (WinDivertHelperParseIPv6Address(token, tokens[tp].val))
             {
-                // Work-around the different word orderings between the
-                // DLL vs SYS.
-                UINT32 tmp;
-                tmp = tokens[tp].val[0];
-                tokens[tp].val[0] = tokens[tp].val[3];
-                tokens[tp].val[3] = tmp;
-                tmp = tokens[tp].val[1];
-                tokens[tp].val[1] = tokens[tp].val[2];
-                tokens[tp].val[2] = tmp;
-
                 tokens[tp].kind = TOKEN_NUMBER;
                 tp++;
                 continue;
@@ -1140,7 +1219,13 @@ static PEXPR WinDivertMakeVar(PPOOL pool, KIND kind)
         {{{0}}, TOKEN_IF_IDX},
         {{{0}}, TOKEN_SUB_IF_IDX},
         {{{0}}, TOKEN_LOOPBACK},
-        {{{0}}, TOKEN_IMPOSTOR}
+        {{{0}}, TOKEN_IMPOSTOR},
+        {{{0}}, TOKEN_PROCESS_ID},
+        {{{0}}, TOKEN_LOCAL_ADDR},
+        {{{0}}, TOKEN_REMOTE_ADDR},
+        {{{0}}, TOKEN_LOCAL_PORT},
+        {{{0}}, TOKEN_REMOTE_PORT},
+        {{{0}}, TOKEN_PROTOCOL},
     };
 
     // Binary search:
@@ -1268,6 +1353,12 @@ static PEXPR WinDivertParseTest(PPOOL pool, TOKEN *toks, UINT *i)
         case TOKEN_ICMPV6:
         case TOKEN_TCP:
         case TOKEN_UDP:
+        case TOKEN_PROCESS_ID:
+        case TOKEN_LOCAL_ADDR:
+        case TOKEN_REMOTE_ADDR:
+        case TOKEN_LOCAL_PORT:
+        case TOKEN_REMOTE_PORT:
+        case TOKEN_PROTOCOL:
         case TOKEN_IP_HDR_LENGTH:
         case TOKEN_IP_TOS:
         case TOKEN_IP_LENGTH:
@@ -1524,6 +1615,7 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_ICMP_CODE:
         case TOKEN_ICMPV6_TYPE:
         case TOKEN_ICMPV6_CODE:
+        case TOKEN_PROCESS_ID:
             lb = 0; ub = 0xFF;
             break;
         case TOKEN_IP_FRAG_OFF:
@@ -1547,13 +1639,19 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_UDP_LENGTH:
         case TOKEN_UDP_CHECKSUM:
         case TOKEN_UDP_PAYLOAD_LENGTH:
+        case TOKEN_LOCAL_PORT:
+        case TOKEN_REMOTE_PORT:
             lb = 0; ub = 0xFFFF;
             break;
         case TOKEN_IPV6_FLOW_LABEL:
             lb = 0; ub = 0x000FFFFF;
             break;
+        case TOKEN_IP_SRC_ADDR:
+        case TOKEN_IP_DST_ADDR:
         case TOKEN_IPV6_SRC_ADDR:
         case TOKEN_IPV6_DST_ADDR:
+        case TOKEN_LOCAL_ADDR:
+        case TOKEN_REMOTE_ADDR:
             return FALSE;
         default:
             lb = 0; ub = 0xFFFFFFFF;
@@ -1734,6 +1832,21 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_IMPOSTOR:
             object->field = WINDIVERT_FILTER_FIELD_IMPOSTOR;
+            break;
+        case TOKEN_PROCESS_ID:
+            object->field = WINDIVERT_FILTER_FIELD_PROCESSID;
+            break;
+        case TOKEN_LOCAL_ADDR:
+            object->field = WINDIVERT_FILTER_FIELD_LOCALADDR;
+            break;
+        case TOKEN_REMOTE_ADDR:
+            object->field = WINDIVERT_FILTER_FIELD_REMOTEADDR;
+            break;
+        case TOKEN_LOCAL_PORT:
+            object->field = WINDIVERT_FILTER_FIELD_LOCALPORT;
+            break;
+        case TOKEN_REMOTE_PORT:
+            object->field = WINDIVERT_FILTER_FIELD_REMOTEPORT;
             break;
         case TOKEN_IP:
             object->field = WINDIVERT_FILTER_FIELD_IP;
@@ -2118,18 +2231,17 @@ static int WinDivertBigNumCompare(const UINT32 *a, const UINT32 *b)
 /*
  * Evaluate the given filter with the given packet as input.
  */
-extern BOOL WinDivertHelperEvalFilter(const char *filter,
-    WINDIVERT_LAYER layer, PVOID packet, UINT packet_len,
-    PWINDIVERT_ADDRESS addr)
+extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
+    UINT packet_len, PWINDIVERT_ADDRESS addr)
 {
     UINT16 pc;
     ERROR err;
-    PWINDIVERT_IPHDR iphdr;
-    PWINDIVERT_IPV6HDR ipv6hdr;
-    PWINDIVERT_ICMPHDR icmphdr;
-    PWINDIVERT_ICMPV6HDR icmpv6hdr;
-    PWINDIVERT_TCPHDR tcphdr;
-    PWINDIVERT_UDPHDR udphdr;
+    PWINDIVERT_IPHDR iphdr = NULL;
+    PWINDIVERT_IPV6HDR ipv6hdr = NULL;
+    PWINDIVERT_ICMPHDR icmphdr = NULL;
+    PWINDIVERT_ICMPV6HDR icmpv6hdr = NULL;
+    PWINDIVERT_TCPHDR tcphdr = NULL;
+    PWINDIVERT_UDPHDR udphdr = NULL;
     UINT payload_len;
     UINT32 val[4];
     BOOL pass;
@@ -2137,22 +2249,48 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
     struct windivert_ioctl_filter_s object[WINDIVERT_FILTER_MAXLEN];
     UINT obj_len;
 
-    if (filter == NULL || packet == NULL || addr == NULL)
+    if (filter == NULL || addr == NULL)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
+    switch (addr->Layer)
+    {
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+            if (packet == NULL)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            WinDivertHelperParsePacket(packet, packet_len, &iphdr, &ipv6hdr,
+                &icmphdr, &icmpv6hdr, &tcphdr, &udphdr, NULL, &payload_len);
+            if ((addr->IPv6 && ipv6hdr == NULL) ||
+                (!addr->IPv6 && iphdr == NULL))
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            break;
+        case WINDIVERT_LAYER_FLOW:
+            if (packet != NULL)
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+            break;
+        default:
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+    }
 
-    err = WinDivertCompileFilter(filter, layer, object, &obj_len);
+    err = WinDivertCompileFilter(filter, addr->Layer, object, &obj_len);
     if (IS_ERROR(err))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
 
-    WinDivertHelperParsePacket(packet, packet_len, &iphdr, &ipv6hdr, &icmphdr,
-        &icmpv6hdr, &tcphdr, &udphdr, NULL, &payload_len);
-    
     pc = 0;
     while (TRUE)
     {
@@ -2232,6 +2370,23 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                 pass = (udphdr != NULL);
                 break;
+            case WINDIVERT_FILTER_FIELD_INBOUND:
+            case WINDIVERT_FILTER_FIELD_OUTBOUND:
+                pass = (addr->Layer != WINDIVERT_LAYER_NETWORK_FORWARD);
+                break;
+            case WINDIVERT_FILTER_FIELD_IFIDX:
+            case WINDIVERT_FILTER_FIELD_SUBIFIDX:
+                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
+                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
+                break;
+            case WINDIVERT_FILTER_FIELD_PROCESSID:
+            case WINDIVERT_FILTER_FIELD_LOCALADDR:
+            case WINDIVERT_FILTER_FIELD_REMOTEADDR:
+            case WINDIVERT_FILTER_FIELD_LOCALPORT:
+            case WINDIVERT_FILTER_FIELD_REMOTEPORT:
+            case WINDIVERT_FILTER_FIELD_PROTOCOL:
+                pass = (addr->Layer == WINDIVERT_LAYER_FLOW);
+                break;
             default:
                 pass = TRUE;
                 break;
@@ -2248,16 +2403,16 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 val[0] = 0;
                 break;
             case WINDIVERT_FILTER_FIELD_INBOUND:
-                val[0] = (addr->Direction == WINDIVERT_DIRECTION_INBOUND);
+                val[0] = !addr->Outbound;
                 break;
             case WINDIVERT_FILTER_FIELD_OUTBOUND:
-                val[0] = (addr->Direction == WINDIVERT_DIRECTION_OUTBOUND);
+                val[0] = addr->Outbound;
                 break;
             case WINDIVERT_FILTER_FIELD_IFIDX:
-                val[0] = addr->IfIdx;
+                val[0] = addr->Network.IfIdx;
                 break;
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
-                val[0] = addr->SubIfIdx;
+                val[0] = addr->Network.SubIfIdx;
                 break;
             case WINDIVERT_FILTER_FIELD_LOOPBACK:
                 val[0] = addr->Loopback;
@@ -2266,22 +2421,26 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 val[0] = addr->Impostor;
                 break;
             case WINDIVERT_FILTER_FIELD_IP:
-                val[0] = (iphdr != NULL);
+                val[0] = !addr->IPv6;
                 break;
             case WINDIVERT_FILTER_FIELD_IPV6:
-                val[0] = (ipv6hdr != NULL);
+                val[0] = addr->IPv6;
                 break;
             case WINDIVERT_FILTER_FIELD_ICMP:
-                val[0] = (icmphdr != NULL);
+                val[0] = (addr->Layer == WINDIVERT_LAYER_FLOW?
+                    addr->Flow.Protocol == IPPROTO_ICMP: icmphdr != NULL);
                 break;
             case WINDIVERT_FILTER_FIELD_ICMPV6:
-                val[0] = (icmpv6hdr != NULL);
+                val[0] = (addr->Layer == WINDIVERT_LAYER_FLOW?
+                    addr->Flow.Protocol == IPPROTO_ICMPV6: icmpv6hdr != NULL);
                 break;
             case WINDIVERT_FILTER_FIELD_TCP:
-                val[0] = (tcphdr != NULL);
+                val[0] = (addr->Layer == WINDIVERT_LAYER_FLOW?
+                    addr->Flow.Protocol == IPPROTO_TCP: tcphdr != NULL);
                 break;
             case WINDIVERT_FILTER_FIELD_UDP:
-                val[0] = (udphdr != NULL);
+                val[0] = (addr->Layer == WINDIVERT_LAYER_FLOW?
+                    addr->Flow.Protocol == IPPROTO_UDP: udphdr != NULL);
                 break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
                 val[0] = iphdr->HdrLength;
@@ -2314,9 +2473,11 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 val[0] = ntohs(iphdr->Checksum);
                 break;
             case WINDIVERT_FILTER_FIELD_IP_SRCADDR:
+                val[1] = 0x0000FFFF;
                 val[0] = ntohl(iphdr->SrcAddr);
                 break;
             case WINDIVERT_FILTER_FIELD_IP_DSTADDR:
+                val[1] = 0x0000FFFF;
                 val[0] = ntohl(iphdr->DstAddr);
                 break;
             case WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
@@ -2429,6 +2590,30 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter,
                 break;
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                 val[0] = payload_len;
+                break;
+            case WINDIVERT_FILTER_FIELD_PROCESSID:
+                val[0] = addr->Flow.ProcessId;
+                break;
+            case WINDIVERT_FILTER_FIELD_LOCALADDR:
+                val[0] = addr->Flow.LocalAddr[0];
+                val[1] = addr->Flow.LocalAddr[1];
+                val[2] = addr->Flow.LocalAddr[2];
+                val[3] = addr->Flow.LocalAddr[3];
+                break;
+            case WINDIVERT_FILTER_FIELD_REMOTEADDR:
+                val[0] = addr->Flow.RemoteAddr[0];
+                val[1] = addr->Flow.RemoteAddr[1];
+                val[2] = addr->Flow.RemoteAddr[2];
+                val[3] = addr->Flow.RemoteAddr[3];
+                break;
+            case WINDIVERT_FILTER_FIELD_LOCALPORT:
+                val[0] = addr->Flow.LocalPort;
+                break;
+            case WINDIVERT_FILTER_FIELD_REMOTEPORT:
+                val[0] = addr->Flow.RemotePort;
+                break;
+            case WINDIVERT_FILTER_FIELD_PROTOCOL:
+                val[0] = addr->Flow.Protocol;
                 break;
             default:
                 SetLastError(ERROR_INVALID_PARAMETER);

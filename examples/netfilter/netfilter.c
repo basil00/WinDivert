@@ -287,7 +287,7 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET),
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)reset, sizeof(TCPPACKET),
@@ -314,7 +314,7 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)resetv6,
                     sizeof(TCPV6PACKET), &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)resetv6, sizeof(TCPV6PACKET),
@@ -340,7 +340,7 @@ int __cdecl main(int argc, char **argv)
                 dnr->ip.DstAddr = ip_header->SrcAddr;
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length,
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
@@ -363,7 +363,7 @@ int __cdecl main(int argc, char **argv)
                     sizeof(dnrv6->ipv6.DstAddr));
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length,
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnrv6, icmpv6_length,
