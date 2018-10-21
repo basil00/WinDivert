@@ -59,7 +59,7 @@ do
     fi
     echo "BUILD MINGW-$CPU"
     CC="$ENV-gcc"
-    COPTS="-shared -Wall -Wno-pointer-to-int-cast -O2 -Iinclude/ 
+    COPTS="-shared -Wall -Wno-pointer-to-int-cast -Os -Iinclude/ 
         -Wl,--enable-stdcall-fixup -Wl,--entry=${MANGLE}WinDivertDllEntry"
     CLIBS="-lgcc -lkernel32 -ladvapi32"
     STRIP="$ENV-strip"
@@ -101,6 +101,10 @@ do
         $CC -s -O2 -Iinclude/ examples/flowtrack/flowtrack.c \
             -o "install/MINGW/$CPU/flowtrack.exe" -lWinDivert -lws2_32 -lpsapi \
             -lshlwapi -L"install/MINGW/$CPU/"
+        echo "\tcopy install/MINGW/$CPU/windivertctl.exe..."
+        $CC -s -O2 -Iinclude/ examples/windivertctl/windivertctl.c \
+            -o "install/MINGW/$CPU/windivertctl.exe" -lWinDivert -lws2_32 \
+            -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
         cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU
     else

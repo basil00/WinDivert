@@ -13,5 +13,6 @@ EXPORTS
     WinDivertHelperParsePacket
     WinDivertHelperParseIPv4Address
     WinDivertHelperParseIPv6Address
-    WinDivertHelperCheckFilter
+    WinDivertHelperCompileFilter
     WinDivertHelperEvalFilter
+    WinDivertHelperFormatFilter

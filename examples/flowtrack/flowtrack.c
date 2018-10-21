@@ -69,7 +69,7 @@ static void print_address(const UINT32 *addr)
     if (addr[3] == 0 && addr[2] == 0 && addr[1] == 0x0000FFFF)
     {
         // IPv4 address:
-    	UINT32 a, b, c, d;
+        UINT32 a, b, c, d;
         a = (addr[0] >> 24) & 0xFF;
         b = (addr[0] >> 16) & 0xFF;
         c = (addr[0] >> 8) & 0xFF;
@@ -82,9 +82,9 @@ static void print_address(const UINT32 *addr)
         int i;
         for (i = 3; i >= 0; i--)
         {
-			UINT32 a, b;
-			a = (addr[i] >> 16) & 0xFFFF;
-			b = (addr[i] >> 0) & 0xFFFF;
+            UINT32 a, b;
+            a = (addr[i] >> 16) & 0xFFFF;
+            b = (addr[i] >> 0) & 0xFFFF;
             printf("%x:%x", a, b);
             if (i != 0)
             {
@@ -114,8 +114,8 @@ static DWORD draw(LPVOID arg)
 
     while (TRUE)
     {
-    	GetConsoleScreenBufferInfo(console, &screen);
-    	SetConsoleCursorPosition(console, top_left); 
+        GetConsoleScreenBufferInfo(console, &screen);
+        SetConsoleCursorPosition(console, top_left); 
 
         rows = screen.srWindow.Bottom - screen.srWindow.Top + 1;
         columns = screen.srWindow.Right - screen.srWindow.Left + 1;
@@ -132,7 +132,7 @@ static DWORD draw(LPVOID arg)
         }
         ReleaseMutex(lock);
 
-		// Print the flows:
+        // Print the flows:
         SetConsoleTextAttribute(console, BACKGROUND_RED | BACKGROUND_GREEN |
             BACKGROUND_BLUE);
         WriteConsole(console, header, sizeof(header)-1, &written, NULL);
@@ -142,21 +142,21 @@ static DWORD draw(LPVOID arg)
             COORD pos = {sizeof(header)-1, 0};
             FillConsoleOutputCharacterA(console, ' ', fill_len, pos,
                 &written);
-    	    FillConsoleOutputAttribute(console,
+            FillConsoleOutputAttribute(console,
                 BACKGROUND_RED | BACKGROUND_GREEN | BACKGROUND_BLUE,
-        	    fill_len, pos, &written);
+                fill_len, pos, &written);
         }
         putchar('\n');
         SetConsoleTextAttribute(console,
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-		for (i = 0; i < num_addrs && i < rows-1; i++)
+        for (i = 0; i < num_addrs && i < rows-1; i++)
         {
             COORD pos = {0, i+1};
             addr = &addrs[i];
             FillConsoleOutputCharacterA(console, ' ', columns, pos, &written);
-    	    FillConsoleOutputAttribute(console,
-			    FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
-        	    columns, pos, &written);
+            FillConsoleOutputAttribute(console,
+                FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+                columns, pos, &written);
             SetConsoleCursorPosition(console, pos);
             if (i == rows-2 && (i+1) < num_addrs)
             {
@@ -191,7 +191,7 @@ static DWORD draw(LPVOID arg)
             }
             SetConsoleTextAttribute(console,
                 FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-	        switch (addr->Flow.Protocol)
+            switch (addr->Flow.Protocol)
             {
                 case IPPROTO_TCP:
                     SetConsoleTextAttribute(console, FOREGROUND_GREEN);
@@ -227,9 +227,9 @@ static DWORD draw(LPVOID arg)
         {
             COORD pos = {0, i+1};
             FillConsoleOutputCharacterA(console, ' ', columns, pos, &written);
-    	    FillConsoleOutputAttribute(console,
-			    FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
-        	    columns, pos, &written);
+            FillConsoleOutputAttribute(console,
+                FOREGROUND_GREEN | FOREGROUND_RED | FOREGROUND_BLUE,
+                columns, pos, &written);
         }
 
         Sleep(1000);
@@ -260,7 +260,24 @@ int __cdecl main(int argc, char **argv)
             exit(EXIT_FAILURE);
     }
 
-	// Spawn the draw() thread.
+    // Open WinDivert FLOW handle:
+    handle = WinDivertOpen(filter, WINDIVERT_LAYER_FLOW, priority, 
+        WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        if (GetLastError() == ERROR_INVALID_PARAMETER &&
+            !WinDivertHelperCompileFilter(filter, WINDIVERT_LAYER_FLOW,
+                NULL, 0, &err_str, NULL))
+        {
+            fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
+            exit(EXIT_FAILURE);
+        }
+        fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
+            GetLastError());
+        return EXIT_FAILURE;
+    }
+
+    // Spawn the draw() thread.
     lock = CreateMutex(NULL, FALSE, NULL);
     thread = CreateThread(NULL, 1, (LPTHREAD_START_ROUTINE)draw, NULL, 0,
         NULL);
@@ -271,23 +288,6 @@ int __cdecl main(int argc, char **argv)
         return EXIT_FAILURE;
     }
     CloseHandle(thread);
-
-    // Open WinDivert FLOW handle:
-    handle = WinDivertOpen(filter, WINDIVERT_LAYER_FLOW, priority, 
-        WINDIVERT_FLAGS_LAYER_FLOW);
-    if (handle == INVALID_HANDLE_VALUE)
-    {
-        if (GetLastError() == ERROR_INVALID_PARAMETER &&
-            !WinDivertHelperCheckFilter(filter, WINDIVERT_LAYER_FLOW,
-                &err_str, NULL))
-        {
-            fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
-            exit(EXIT_FAILURE);
-        }
-        fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
-            GetLastError());
-        return EXIT_FAILURE;
-    }
 
     // Main loop:
     while (TRUE)
@@ -302,7 +302,7 @@ int __cdecl main(int argc, char **argv)
         {
             case WINDIVERT_EVENT_FLOW_ESTABLISHED:
 
-				// Flow established:
+                // Flow established:
                 flow = (PFLOW)malloc(sizeof(FLOW));
                 if (flow == NULL)
                 {
@@ -318,7 +318,7 @@ int __cdecl main(int argc, char **argv)
 
             case WINDIVERT_EVENT_FLOW_DELETED:
 
-				// Flow deleted:
+                // Flow deleted:
                 prev = NULL;
                 WaitForSingleObject(lock, INFINITE);
                 flow = flows;

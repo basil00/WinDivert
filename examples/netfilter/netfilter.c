@@ -170,8 +170,8 @@ int __cdecl main(int argc, char **argv)
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER &&
-            !WinDivertHelperCheckFilter(argv[1], WINDIVERT_LAYER_NETWORK,
-                &err_str, NULL))
+            !WinDivertHelperCompileFilter(argv[1], WINDIVERT_LAYER_NETWORK,
+                NULL, 0, &err_str, NULL))
         {
             fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
             exit(EXIT_FAILURE);

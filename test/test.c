@@ -241,6 +241,9 @@ static struct test tests[] =
         "false): false): false): false)",      &pkt_http_request, TRUE},
     {"(outbound? (ip? (tcp.DstPort == 80? (tcp.PayloadLength == 0? true: "
         "false): false): false): false)",      &pkt_http_request, FALSE},
+    {"(ipv6? tcp and tcp.DstPort = 1234 and (tcp.SrcPort = 999? !tcp.UrgPtr: "
+     "tcp.Syn) or udp: ip and tcp.DstPort == 80)",
+                                               &pkt_http_request, TRUE},
     {"udp",                                    &pkt_dns_request, TRUE},
     {"udp && udp.SrcPort > 1 && ipv6",         &pkt_dns_request, FALSE},
     {"udp.DstPort == 53",                      &pkt_dns_request, TRUE},
@@ -388,21 +391,26 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     OVERLAPPED overlapped;
     const char *err_str;
     UINT err_pos;
+    PWINDIVERT_IPHDR iphdr = NULL;
     HANDLE handle = INVALID_HANDLE_VALUE, handle0 = INVALID_HANDLE_VALUE,
         event = NULL;
 
     // (0) Verify the test data:
-    if (!WinDivertHelperCheckFilter(filter, WINDIVERT_LAYER_NETWORK, &err_str,
-            &err_pos))
+    if (!WinDivertHelperCompileFilter(filter, WINDIVERT_LAYER_NETWORK,
+            NULL, 0, &err_str, &err_pos))
     {
         fprintf(stderr, "error: filter string \"%s\" is invalid with error "
             "\"%s\" (position=%u)\n", filter, err_str, err_pos);
         goto failed;
     }
+    WinDivertHelperParsePacket((PVOID)packet, packet_len, &iphdr, NULL,
+        NULL, NULL, NULL, NULL, NULL, NULL);
     memset(&addr, 0, sizeof(addr));
-    addr.Direction = WINDIVERT_DIRECTION_OUTBOUND;
-    if (WinDivertHelperEvalFilter(filter, WINDIVERT_LAYER_NETWORK,
-            (PVOID)packet, packet_len, &addr) != match)
+    addr.Outbound = TRUE;
+    addr.Layer    = WINDIVERT_LAYER_NETWORK;
+    addr.IPv6     = (iphdr == NULL);
+    if (WinDivertHelperEvalFilter(filter, (PVOID)packet, packet_len, &addr)
+            != match)
     {
         fprintf(stderr, "error: filter \"%s\" does not match the given "
             "packet\n", filter);
@@ -481,7 +489,7 @@ read_failed:
         }
         buf_len = (UINT)iolen;
     }
-    if (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND)
+    if (addr.Outbound)
     {
         WinDivertHelperCalcChecksums(buf, buf_len, NULL, 0);
     }

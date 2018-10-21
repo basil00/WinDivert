@@ -128,8 +128,9 @@
 #define WINDIVERT_FILTER_FIELD_LOCALPORT            63
 #define WINDIVERT_FILTER_FIELD_REMOTEPORT           64
 #define WINDIVERT_FILTER_FIELD_PROTOCOL             65
+#define WINDIVERT_FILTER_FIELD_LAYER                66
 #define WINDIVERT_FILTER_FIELD_MAX                  \
-    WINDIVERT_FILTER_FIELD_PROTOCOL
+    WINDIVERT_FILTER_FIELD_LAYER
 
 #define WINDIVERT_FILTER_TEST_EQ                    0
 #define WINDIVERT_FILTER_TEST_NEQ                   1
@@ -139,7 +140,7 @@
 #define WINDIVERT_FILTER_TEST_GEQ                   5
 #define WINDIVERT_FILTER_TEST_MAX                   WINDIVERT_FILTER_TEST_GEQ
 
-#define WINDIVERT_FILTER_MAXLEN                     128
+#define WINDIVERT_FILTER_MAXLEN                     (0xFF-2)
 
 #define WINDIVERT_FILTER_RESULT_ACCEPT              (WINDIVERT_FILTER_MAXLEN+1)
 #define WINDIVERT_FILTER_RESULT_REJECT              (WINDIVERT_FILTER_MAXLEN+2)
@@ -148,13 +149,15 @@
  * WinDivert layers.
  */
 #define WINDIVERT_LAYER_DEFAULT                     WINDIVERT_LAYER_NETWORK
+#define WINDIVERT_LAYER_MAX                         WINDIVERT_LAYER_REFLECT
 
 /*
  * WinDivert flags.
  */
 #define WINDIVERT_FLAGS_ALL                                                 \
     (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_RECV_ONLY |\
-        WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_DEBUG)
+        WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_DEBUG |                   \
+        WINDIVERT_FLAG_NO_INSTALL)
 #define WINDIVERT_FLAGS_EXCLUDE(flags, flag1, flag2)                        \
     (((flags) & ((flag1) | (flag2))) != ((flag1) | (flag2)))
 #define WINDIVERT_FLAGS_VALID(flags)                                        \
@@ -165,13 +168,23 @@
         WINDIVERT_FLAG_SEND_ONLY))
 
 /*
+ * WinDivert filter flags.
+ */
+#define WINDIVERT_FILTER_FLAG_INBOUND               0x0000000000000001ull
+#define WINDIVERT_FILTER_FLAG_OUTBOUND              0x0000000000000002ull
+#define WINDIVERT_FILTER_FLAG_IP                    0x0000000000000004ull
+#define WINDIVERT_FILTER_FLAG_IPV6                  0x0000000000000008ull
+
+#define WINDIVERT_FILTER_FLAGS_ALL                                          \
+    (WINDIVERT_FILTER_FLAG_INBOUND | WINDIVERT_FILTER_FLAG_OUTBOUND |       \
+        WINDIVERT_FILTER_FLAG_IP | WINDIVERT_FILTER_FLAG_IPV6)
+
+/*
  * WinDivert priorities.
  */
-#define WINDIVERT_PRIORITY(priority16)                                      \
-    ((UINT32)((INT32)(priority16) + 0x7FFF + 1))
-#define WINDIVERT_PRIORITY_DEFAULT                  WINDIVERT_PRIORITY(0)
-#define WINDIVERT_PRIORITY_MAX                      WINDIVERT_PRIORITY(1000)
-#define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY(-1000)
+#define WINDIVERT_PRIORITY_DEFAULT                  0
+#define WINDIVERT_PRIORITY_MAX                      30000
+#define WINDIVERT_PRIORITY_MIN                      -WINDIVERT_PRIORITY_MAX
 
 /*
  * WinDivert parameters.
@@ -190,27 +203,25 @@
  * WinDivert message definitions.
  */
 #pragma pack(push, 1)
-struct windivert_ioctl_s
+typedef struct
 {
     UINT16 magic;                   // WINDIVERT_IOCTL_MAGIC
     UINT8  version;                 // WINDIVERT_IOCTL_VERSION
     UINT8  arg8;                    // 8-bit argument
     UINT64 arg;                     // 64-bit argument
-};
-typedef struct windivert_ioctl_s *windivert_ioctl_t;
+} WINDIVERT_IOCTL, *PWINDIVERT_IOCTL;
 
 /*
  * WinDivert IOCTL structures.
  */
-struct windivert_ioctl_filter_s
+typedef struct
 {
     UINT8  field;                   // WINDIVERT_FILTER_FIELD_*
     UINT8  test;                    // WINDIVERT_FILTER_TEST_*
-    UINT16 success;                 // Success continuation.
-    UINT16 failure;                 // Fail continuation.
+    UINT8  success;                 // Success continuation.
+    UINT8  failure;                 // Fail continuation.
     UINT32 arg[4];                  // Argument.
-};
-typedef struct windivert_ioctl_filter_s *windivert_ioctl_filter_t;
+} WINDIVERT_FILTER, *PWINDIVERT_FILTER;
 #pragma pack(pop)
 
 /*

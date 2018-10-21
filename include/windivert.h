@@ -70,6 +70,17 @@ extern "C" {
 /****************************************************************************/
 
 /*
+ * WinDivert layers.
+ */
+typedef enum
+{
+    WINDIVERT_LAYER_NETWORK = 0,        /* Network layer. */
+    WINDIVERT_LAYER_NETWORK_FORWARD = 1,/* Network layer (forwarded packets) */
+    WINDIVERT_LAYER_FLOW = 2,           /* Flow layer. */
+    WINDIVERT_LAYER_REFLECT = 3,        /* Reflect layer. */
+} WINDIVERT_LAYER, *PWINDIVERT_LAYER;
+
+/*
  * WinDivert NETWORK and NETWORK_FORWARD layer data.
  */
 typedef struct
@@ -92,6 +103,18 @@ typedef struct
 } WINDIVERT_FLOW_DATA, *PWINDIVERT_FLOW_DATA;
 
 /*
+ * WinDivert REFLECTION layer data.
+ */
+typedef struct
+{
+    INT64  Timestamp;                   /* Handle open time. */
+    UINT32 ProcessId;                   /* Handle process ID. */
+    WINDIVERT_LAYER Layer;              /* Handle layer. */
+    UINT64 Flags;                       /* Handle flags. */
+    INT16  Priority;                    /* Handle priority. */
+} WINDIVERT_REFLECT_DATA, *PWINDIVERT_REFLECT_DATA;
+
+/*
  * WinDivert address.
  */
 typedef struct
@@ -106,23 +129,15 @@ typedef struct
     UINT32 PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
     UINT32 PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
     UINT32 PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
-    UINT32 Reserved:9;
+    UINT32 Final:1;                     /* Packet is final event? */
+    UINT32 Reserved:8;
     union
     {
         WINDIVERT_NETWORK_DATA Network; /* Network layer data. */
         WINDIVERT_FLOW_DATA Flow;       /* Flow layer data. */
+        WINDIVERT_REFLECT_DATA Reflect; /* Reflect layer data. */
     };
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
-
-/*
- * WinDivert layers.
- */
-typedef enum
-{
-    WINDIVERT_LAYER_NETWORK = 1,        /* Network layer. */
-    WINDIVERT_LAYER_NETWORK_FORWARD = 2,/* Network layer (forwarded packets) */
-    WINDIVERT_LAYER_FLOW = 3            /* Flow layer. */
-} WINDIVERT_LAYER, *PWINDIVERT_LAYER;
 
 /*
  * WinDivert events.
@@ -133,24 +148,23 @@ typedef enum
     WINDIVERT_EVENT_FLOW_ESTABLISHED = 1,
                                         /* Flow established. */
     WINDIVERT_EVENT_FLOW_DELETED = 2,   /* Flow deleted. */
+    WINDIVERT_EVENT_REFLECT_ESTABLISHED = 3,
+                                        /* Previously open WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 4,   /* Open new WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 5,  /* Close existing WinDivert handle. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*
  * WinDivert flags.
  */
-#define WINDIVERT_FLAG_SNIFF            1
-#define WINDIVERT_FLAG_DROP             2
-#define WINDIVERT_FLAG_RECV_ONLY        4
+#define WINDIVERT_FLAG_SNIFF            0x01
+#define WINDIVERT_FLAG_DROP             0x02
+#define WINDIVERT_FLAG_RECV_ONLY        0x04
 #define WINDIVERT_FLAG_READ_ONLY        WINDIVERT_FLAG_RECV_ONLY
-#define WINDIVERT_FLAG_SEND_ONLY        8
+#define WINDIVERT_FLAG_SEND_ONLY        0x08
 #define WINDIVERT_FLAG_WRITE_ONLY       WINDIVERT_FLAG_SEND_ONLY
-#define WINDIVERT_FLAG_DEBUG            16
-
-#define WINDIVERT_FLAGS_LAYER_NETWORK   0
-#define WINDIVERT_FLAGS_LAYER_NETWORK_FORWARD               \
-    0
-#define WINDIVERT_FLAGS_LAYER_FLOW                          \
-    (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY)
+#define WINDIVERT_FLAG_DEBUG            0x10
+#define WINDIVERT_FLAG_NO_INSTALL       0x20
 
 /*
  * WinDivert parameters.
@@ -430,11 +444,13 @@ extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
     __in        UINT64 flags);
 
 /*
- * Check the given filter string.
+ * Compile the given filter string.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperCheckFilter(
+extern WINDIVERTEXPORT BOOL WinDivertHelperCompileFilter(
     __in        const char *filter,
     __in        WINDIVERT_LAYER layer,
+    __out_opt   char *object,
+    __in        UINT objLen,
     __out_opt   const char **errorStr,
     __out_opt   UINT *errorPos);
 
@@ -446,6 +462,15 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
     __in        PVOID pPacket,
     __in        UINT packetLen,
     __in        PWINDIVERT_ADDRESS pAddr);
+
+/*
+ * Format the given filter string.
+ */
+extern BOOL WinDivertHelperFormatFilter(
+    __in        const char *filter,
+    __in        WINDIVERT_LAYER layer,
+    __out       char *buffer,
+    __in        UINT bufLen);
 
 #endif      /* WINDIVERT_KERNEL */
 
