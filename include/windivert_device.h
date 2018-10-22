@@ -129,8 +129,9 @@
 #define WINDIVERT_FILTER_FIELD_REMOTEPORT           64
 #define WINDIVERT_FILTER_FIELD_PROTOCOL             65
 #define WINDIVERT_FILTER_FIELD_LAYER                66
+#define WINDIVERT_FILTER_FIELD_EVENT                67
 #define WINDIVERT_FILTER_FIELD_MAX                  \
-    WINDIVERT_FILTER_FIELD_LAYER
+    WINDIVERT_FILTER_FIELD_EVENT
 
 #define WINDIVERT_FILTER_TEST_EQ                    0
 #define WINDIVERT_FILTER_TEST_NEQ                   1
@@ -150,6 +151,12 @@
  */
 #define WINDIVERT_LAYER_DEFAULT                     WINDIVERT_LAYER_NETWORK
 #define WINDIVERT_LAYER_MAX                         WINDIVERT_LAYER_REFLECT
+
+/*
+ * WinDivert events.
+ */
+#define WINDIVERT_EVENT_MAX                         \
+    WINDIVERT_EVENT_REFLECT_CLOSE
 
 /*
  * WinDivert flags.

@@ -109,6 +109,7 @@ typedef enum
     TOKEN_UDP_PAYLOAD_LENGTH,
     TOKEN_UDP_SRC_PORT,
     TOKEN_ZERO,
+    TOKEN_EVENT,
     TOKEN_TRUE,
     TOKEN_FALSE,
     TOKEN_INBOUND,
@@ -128,6 +129,12 @@ typedef enum
     TOKEN_NETWORK,
     TOKEN_NETWORK_FORWARD,
     TOKEN_REFLECT,
+    TOKEN_NETWORK_PACKET,
+    TOKEN_FLOW_ESTABLISHED,
+    TOKEN_FLOW_DELETED,
+    TOKEN_REFLECT_ESTABLISHED,
+    TOKEN_REFLECT_OPEN,
+    TOKEN_REFLECT_CLOSE,
     TOKEN_OPEN,
     TOKEN_CLOSE,
     TOKEN_EQ,
@@ -820,6 +827,11 @@ static BOOL WinDivertCheckTokenKindForLayer(WINDIVERT_LAYER layer, KIND kind)
                 case TOKEN_NETWORK:
                 case TOKEN_NETWORK_FORWARD:
                 case TOKEN_REFLECT:
+                case TOKEN_FLOW_ESTABLISHED:
+                case TOKEN_FLOW_DELETED:
+                case TOKEN_REFLECT_ESTABLISHED:
+                case TOKEN_REFLECT_OPEN:
+                case TOKEN_REFLECT_CLOSE:
                     return FALSE;
                 default:
                     return TRUE;
@@ -882,6 +894,10 @@ static BOOL WinDivertCheckTokenKindForLayer(WINDIVERT_LAYER layer, KIND kind)
                 case TOKEN_NETWORK:
                 case TOKEN_NETWORK_FORWARD:
                 case TOKEN_REFLECT:
+                case TOKEN_NETWORK_PACKET:
+                case TOKEN_REFLECT_ESTABLISHED:
+                case TOKEN_REFLECT_OPEN:
+                case TOKEN_REFLECT_CLOSE:
                     return FALSE;
                 default:
                     return TRUE;
@@ -953,6 +969,9 @@ static BOOL WinDivertCheckTokenKindForLayer(WINDIVERT_LAYER layer, KIND kind)
                 case TOKEN_LOCAL_PORT:
                 case TOKEN_REMOTE_PORT:
                 case TOKEN_PROTOCOL:
+                case TOKEN_NETWORK_PACKET:
+                case TOKEN_FLOW_ESTABLISHED:
+                case TOKEN_FLOW_DELETED:
                     return FALSE;
                 default:
                     return TRUE;
@@ -981,6 +1000,24 @@ static BOOL WinDivertExpandMacro(KIND kind, UINT32 *val)
         case TOKEN_REFLECT:
             *val = WINDIVERT_LAYER_REFLECT;
             return TRUE;
+        case TOKEN_NETWORK_PACKET:
+            *val = WINDIVERT_EVENT_NETWORK_PACKET;
+            return TRUE;
+        case TOKEN_FLOW_ESTABLISHED:
+            *val = WINDIVERT_EVENT_FLOW_ESTABLISHED;
+            return TRUE;
+        case TOKEN_FLOW_DELETED:
+            *val = WINDIVERT_EVENT_FLOW_DELETED;
+            return TRUE;
+        case TOKEN_REFLECT_ESTABLISHED:
+            *val = WINDIVERT_EVENT_REFLECT_ESTABLISHED;
+            return TRUE;
+        case TOKEN_REFLECT_OPEN:
+            *val = WINDIVERT_EVENT_REFLECT_OPEN;
+            return TRUE;
+        case TOKEN_REFLECT_CLOSE:
+            *val = WINDIVERT_EVENT_REFLECT_CLOSE;
+            return TRUE;
         default:
             return FALSE;
     }
@@ -995,10 +1032,17 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
     static const TOKEN_NAME token_names[] =
     {
         {"FLOW",                TOKEN_FLOW},
+        {"FLOW_DELETED",        TOKEN_FLOW_DELETED},
+        {"FLOW_ESTABLISHED",    TOKEN_FLOW_ESTABLISHED},
         {"NETWORK",             TOKEN_NETWORK},
         {"NETWORK_FORWARD",     TOKEN_NETWORK_FORWARD},
+        {"NETWORK_PACKET",      TOKEN_NETWORK_PACKET},
         {"REFLECT",             TOKEN_REFLECT},
+        {"REFLECT_CLOSE",       TOKEN_REFLECT_CLOSE},
+        {"REFLECT_ESTABLISHED", TOKEN_REFLECT_ESTABLISHED},
+        {"REFLECT_OPEN",        TOKEN_REFLECT_OPEN},
         {"and",                 TOKEN_AND},
+        {"event",               TOKEN_EVENT},
         {"false",               TOKEN_FALSE},
         {"icmp",                TOKEN_ICMP},
         {"icmp.Body",           TOKEN_ICMP_BODY},
@@ -1322,6 +1366,7 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
         {{{0}}, TOKEN_UDP_PAYLOAD_LENGTH},
         {{{0}}, TOKEN_UDP_SRC_PORT},
         {{{0}}, TOKEN_ZERO},
+        {{{0}}, TOKEN_EVENT},
         {{{0}}, TOKEN_TRUE},
         {{{0}}, TOKEN_FALSE},
         {{{0}}, TOKEN_INBOUND},
@@ -1446,6 +1491,7 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
     switch (toks[*i].kind)
     {
         case TOKEN_ZERO:
+        case TOKEN_EVENT:
         case TOKEN_TRUE:
         case TOKEN_FALSE:
         case TOKEN_OUTBOUND:
@@ -1696,6 +1742,9 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_LAYER:
             lb = 0; ub = WINDIVERT_LAYER_MAX;
             break;
+        case TOKEN_EVENT:
+            lb = 0; ub = WINDIVERT_EVENT_MAX;
+            break;
         case TOKEN_INBOUND:
         case TOKEN_OUTBOUND:
         case TOKEN_IP:
@@ -1929,6 +1978,9 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
     {
         case TOKEN_ZERO:
             object->field = WINDIVERT_FILTER_FIELD_ZERO;
+            break;
+        case TOKEN_EVENT:
+            object->field = WINDIVERT_FILTER_FIELD_EVENT;
             break;
         case TOKEN_OUTBOUND:
             object->field = WINDIVERT_FILTER_FIELD_OUTBOUND;
@@ -2728,6 +2780,9 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
             case WINDIVERT_FILTER_FIELD_ZERO:
                 val[0] = 0;
                 break;
+            case WINDIVERT_FILTER_FIELD_EVENT:
+                val[0] = addr->Event;
+                break;
             case WINDIVERT_FILTER_FIELD_INBOUND:
                 val[0] = !addr->Outbound;
                 break;
@@ -3173,6 +3228,8 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
     {
         case WINDIVERT_FILTER_FIELD_ZERO:
             kind = TOKEN_ZERO; break;
+        case WINDIVERT_FILTER_FIELD_EVENT:
+            kind = TOKEN_EVENT; break;
         case WINDIVERT_FILTER_FIELD_INBOUND:
             kind = TOKEN_INBOUND; break;
         case WINDIVERT_FILTER_FIELD_OUTBOUND:
@@ -3685,7 +3742,7 @@ static void WinDivertFormatIPv6Addr(PWINDIVERT_STREAM stream,
 static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
 {
     PEXPR field = expr->arg[0], val = expr->arg[1];
-    BOOL ipv4_addr = FALSE, ipv6_addr = FALSE, layer = FALSE;
+    BOOL ipv4_addr = FALSE, ipv6_addr = FALSE, layer = FALSE, event = FALSE;
 
     switch (field->kind)
     {
@@ -3742,6 +3799,9 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
         case TOKEN_LAYER:
             layer = TRUE;
             break;
+        case TOKEN_EVENT:
+            event = TRUE;
+            break;
         default:
             break;
     }
@@ -3782,6 +3842,26 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
                 WinDivertPutString(stream, "FLOW"); break;
             case WINDIVERT_LAYER_REFLECT:
                 WinDivertPutString(stream, "REFLECT"); break;
+            default:
+                WinDivertFormatNumber(stream, val->val[0]); break;
+        }
+    }
+    else if (event)
+    {
+        switch (val->val[0])
+        {
+            case WINDIVERT_EVENT_NETWORK_PACKET:
+                WinDivertPutString(stream, "NETWORK_PACKET"); break;
+            case WINDIVERT_EVENT_FLOW_ESTABLISHED:
+                WinDivertPutString(stream, "FLOW_ESTABLISHED"); break;
+            case WINDIVERT_EVENT_FLOW_DELETED:
+                WinDivertPutString(stream, "FLOW_DELETED"); break;
+            case WINDIVERT_EVENT_REFLECT_ESTABLISHED:
+                WinDivertPutString(stream, "REFLECT_ESTABLISHED"); break;
+            case WINDIVERT_EVENT_REFLECT_OPEN:
+                WinDivertPutString(stream, "REFLECT_OPEN"); break;
+            case WINDIVERT_EVENT_REFLECT_CLOSE:
+                WinDivertPutString(stream, "REFLECT_CLOSE"); break;
             default:
                 WinDivertFormatNumber(stream, val->val[0]); break;
         }
@@ -3863,6 +3943,8 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             return;
         case TOKEN_ZERO:
             WinDivertPutString(stream, "zero"); return;
+        case TOKEN_EVENT:
+            WinDivertPutString(stream, "event"); return;
         case TOKEN_INBOUND:
             WinDivertPutString(stream, "inbound"); return;
         case TOKEN_OUTBOUND:

@@ -1,5 +1,5 @@
 /*
- * streamdump.c
+ * windivertctl.c
  * (C) 2018, all rights reserved,
  *
  * This file is part of WinDivert.
@@ -72,15 +72,6 @@ typedef enum
     WATCH,
     KILLALL
 } MODE;
-
-/*
- * Months.
- */
-static const char *months[12] =
-{
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-    "Nov", "Dec"
-};
 
 /*
  * Add a new process.
@@ -387,7 +378,7 @@ usage:
         if (WinDivertHelperFormatFilter((char *)object, addr.Reflect.Layer,
             filter_str, sizeof(filter_str)))
         {
-            printf("\"%s\" \"%s\"", filter_str, (char *)object);    // XXX
+            printf("\"%s\"", filter_str);
         }
         SetConsoleTextAttribute(console,
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);

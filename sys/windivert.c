@@ -432,8 +432,8 @@ static void windivert_free_packet(packet_t packet);
 static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4, BOOL checksum);
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b);
 static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
-    PVOID layer_data, BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor,
-    PWINDIVERT_FILTER filter);
+    PVOID layer_data, WINDIVERT_EVENT event, BOOL ipv4, BOOL outbound,
+    BOOL loopback, BOOL impostor, PWINDIVERT_FILTER filter);
 static PWINDIVERT_FILTER windivert_filter_compile(
     PWINDIVERT_FILTER ioctl_filter, size_t ioctl_filter_len);
 static NTSTATUS windivert_reflect_init(WDFOBJECT parent);
@@ -1834,7 +1834,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
         case WINDIVERT_LAYER_FLOW:
         case WINDIVERT_LAYER_REFLECT:
             status = STATUS_INVALID_PARAMETER;
-            DEBUG_ERROR("failed to inject at FLOW layer", status);
+            DEBUG_ERROR("failed to inject at layer", status);
             goto windivert_write_exit;
         default:
             break;
@@ -2796,7 +2796,8 @@ static void windivert_network_classify(context_t context,
     do
     {
         BOOL match = windivert_filter(buffer_fst, layer, (PVOID)network_data,
-            ipv4, outbound, loopback, impostor, filter);
+            /*event=*/WINDIVERT_EVENT_NETWORK_PACKET, ipv4, outbound, loopback,
+            impostor, filter);
         if (match)
         {
             break;
@@ -2860,7 +2861,8 @@ static void windivert_network_classify(context_t context,
     while (buffer_itr != NULL)
     {
         BOOL match = windivert_filter(buffer_itr, layer, (PVOID)network_data,
-            ipv4, outbound, loopback, impostor, filter);
+            /*event=*/WINDIVERT_EVENT_NETWORK_PACKET, ipv4, outbound,
+            loopback, impostor, filter);
         ok = windivert_queue_work(context, (PVOID)buffer_itr,
             NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
             (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
@@ -3024,7 +3026,8 @@ static void windivert_flow_established_classify(context_t context,
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     match = windivert_filter(/*buffer=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
-        (PVOID)flow_data, ipv4, outbound, loopback, /*impostor=*/FALSE, filter);
+        (PVOID)flow_data, /*event=*/WINDIVERT_EVENT_FLOW_ESTABLISHED, ipv4,
+        outbound, loopback, /*impostor=*/FALSE, filter);
     if (match)
     {
         ok = windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
@@ -3135,8 +3138,9 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     match = windivert_filter(/*buffer=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
-        (PVOID)&flow->data, !flow->ipv6, flow->outbound, flow->loopback,
-        /*impostor=*/FALSE, filter);
+        (PVOID)&flow->data, /*event=*/WINDIVERT_EVENT_FLOW_DELETED,
+        !flow->ipv6, flow->outbound, flow->loopback, /*impostor=*/FALSE,
+        filter);
     if (match)
     {
         (VOID)windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
@@ -3772,8 +3776,8 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
  * Checks if the given network packet is of interest.
  */
 static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
-    PVOID layer_data, BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor,
-    PWINDIVERT_FILTER filter)
+    PVOID layer_data, WINDIVERT_EVENT event, BOOL ipv4, BOOL outbound,
+    BOOL loopback, BOOL impostor, PWINDIVERT_FILTER filter)
 {
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
@@ -3827,6 +3831,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
         switch (filter[ip].field)
         {
             case WINDIVERT_FILTER_FIELD_ZERO:
+            case WINDIVERT_FILTER_FIELD_EVENT:
                 result = TRUE;
                 break;
             case WINDIVERT_FILTER_FIELD_INBOUND:
@@ -3947,6 +3952,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
             {
                 case WINDIVERT_FILTER_FIELD_ZERO:
                     field[0] = 0;
+                    break;
+                case WINDIVERT_FILTER_FIELD_EVENT:
+                    field[0] = (UINT32)event;
                     break;
                 case WINDIVERT_FILTER_FIELD_INBOUND:
                     field[0] = (UINT32)!outbound;
@@ -4354,6 +4362,12 @@ static PWINDIVERT_FILTER windivert_filter_compile(
                     goto windivert_filter_compile_error;
                 }
                 break;
+            case WINDIVERT_FILTER_FIELD_EVENT:
+                if (ioctl_filter[i].arg[0] > WINDIVERT_EVENT_MAX)
+                {
+                    goto windivert_filter_compile_error;
+                }
+                break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
             case WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH:
                 if (ioctl_filter[i].arg[0] > 0x0F)
@@ -4609,7 +4623,7 @@ static void windivert_reflect_event_notify(context_t context,
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         match = windivert_filter(/*buffer=*/NULL,
             /*layer=*/WINDIVERT_LAYER_REFLECT, (PVOID)&context->reflect.data,
-            /*ipv4=*/TRUE, /*outbound=*/FALSE, /*loopback=*/FALSE,
+            event, /*ipv4=*/TRUE, /*outbound=*/FALSE, /*loopback=*/FALSE,
             /*impostor=*/FALSE, filter);
         if (!match)
         {
@@ -4658,8 +4672,8 @@ static void windivert_reflect_established_notify(context_t context,
         entry = entry->Flink;
         match = windivert_filter(/*buffer=*/NULL,
             /*layer=*/WINDIVERT_LAYER_REFLECT, (PVOID)&waiter->reflect.data,
-            /*ipv4=*/TRUE, /*outbound=*/FALSE, /*loopback=*/FALSE,
-            /*impostor=*/FALSE, filter);
+            /*event=*/WINDIVERT_EVENT_REFLECT_ESTABLISHED, /*ipv4=*/TRUE,
+            /*outbound=*/FALSE, /*loopback=*/FALSE, /*impostor=*/FALSE, filter);
         if (!match)
         {
             continue;

@@ -113,6 +113,7 @@ static struct packet pkt_ipv6_exthdrs_udp =
 };
 static struct test tests[] =
 {
+    {"event = NETWORK_PACKET",                 &pkt_echo_request, TRUE},
     {"outbound and icmp",                      &pkt_echo_request, TRUE},
     {"outbound",                               &pkt_echo_request, TRUE},
     {"outbound and inbound",                   &pkt_echo_request, FALSE},
