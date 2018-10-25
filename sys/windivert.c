@@ -105,7 +105,7 @@ struct reflect_context_s
 {
     LIST_ENTRY entry;                           // Open handle entry.
     LONGLONG timestamp;                         // Open timestamp.
-    WINDIVERT_REFLECT_DATA data;                // Reflect data.
+    WINDIVERT_DATA_REFLECT data;                // Reflect data.
     BOOL inserted;                              // Entry inserted?
     BOOL open;                                  // Seen OPEN event?
 };
@@ -272,7 +272,7 @@ struct flow_s
     BOOL outbound:1;                        // Flow is outound?
     BOOL loopback:1;                        // Flow is loopback?
     BOOL ipv6:1;                            // Flow is ipv6?
-    WINDIVERT_FLOW_DATA data;               // Flow data.
+    WINDIVERT_DATA_FLOW data;               // Flow data.
 };
 typedef struct flow_s *flow_t;
 
@@ -456,15 +456,15 @@ static void windivert_auth_recv_accept_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static void windivert_flow_established_classify(context_t context, 
-    IN UINT64 flow_id, IN PWINDIVERT_FLOW_DATA flow_data, IN BOOL ipv4,
+    IN UINT64 flow_id, IN PWINDIVERT_DATA_FLOW flow_data, IN BOOL ipv4,
     IN BOOL outbound, IN BOOL loopback, OUT FWPS_CLASSIFY_OUT0 *result);
 static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     UINT64 flow_context);
 static void windivert_socket_classify(context_t context,
-    PWINDIVERT_SOCKET_DATA socket_data, WINDIVERT_EVENT event, BOOL ipv4,
+    PWINDIVERT_DATA_SOCKET socket_data, WINDIVERT_EVENT event, BOOL ipv4,
     BOOL outbound, BOOL loopback, FWPS_CLASSIFY_OUT0 *result);
 static void windivert_network_classify(context_t context,
-    IN PWINDIVERT_NETWORK_DATA network_data, IN BOOL ipv4, IN BOOL outbound,
+    IN PWINDIVERT_DATA_NETWORK network_data, IN BOOL ipv4, IN BOOL outbound,
     IN BOOL loopback, IN UINT advance, IN OUT void *data,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_work(context_t context, PVOID packet,
@@ -1969,11 +1969,11 @@ static void windivert_read_service_request(packet_t packet, WDFREQUEST request)
 
             if (packet->layer != WINDIVERT_LAYER_REFLECT)
             {
-                src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_NETWORK_DATA, packet);
+                src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, packet);
             }
             else
             {
-                src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_REFLECT_DATA, packet);
+                src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_REFLECT, packet);
             }
             src_len = packet->packet_len;
             dst_len = MmGetMdlByteCount(dst_mdl);
@@ -2016,22 +2016,22 @@ static void windivert_read_service_request(packet_t packet, WDFREQUEST request)
             case WINDIVERT_LAYER_NETWORK:
             case WINDIVERT_LAYER_NETWORK_FORWARD:
                 RtlCopyMemory(&addr->Network, layer_data,
-                    sizeof(WINDIVERT_NETWORK_DATA));
+                    sizeof(WINDIVERT_DATA_NETWORK));
                 break;
 
             case WINDIVERT_LAYER_FLOW:
                 RtlCopyMemory(&addr->Flow, layer_data,
-                    sizeof(WINDIVERT_FLOW_DATA));
+                    sizeof(WINDIVERT_DATA_FLOW));
                 break;
 
             case WINDIVERT_LAYER_SOCKET:
                 RtlCopyMemory(&addr->Socket, layer_data,
-                    sizeof(WINDIVERT_SOCKET_DATA));
+                    sizeof(WINDIVERT_DATA_SOCKET));
                 break;
 
             case WINDIVERT_LAYER_REFLECT:
                 RtlCopyMemory(&addr->Reflect, layer_data,
-                    sizeof(WINDIVERT_REFLECT_DATA));
+                    sizeof(WINDIVERT_DATA_REFLECT));
                 break;
 
             default:
@@ -2842,7 +2842,7 @@ static void windivert_outbound_network_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_NETWORK_DATA network_data;
+    WINDIVERT_DATA_NETWORK network_data;
     BOOL loopback;
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
@@ -2872,7 +2872,7 @@ static void windivert_outbound_network_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_NETWORK_DATA network_data;
+    WINDIVERT_DATA_NETWORK network_data;
     BOOL loopback;
  
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
@@ -2902,7 +2902,7 @@ static void windivert_inbound_network_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_NETWORK_DATA network_data;
+    WINDIVERT_DATA_NETWORK network_data;
     UINT advance;
     BOOL loopback;
  
@@ -2939,7 +2939,7 @@ static void windivert_inbound_network_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_NETWORK_DATA network_data;
+    WINDIVERT_DATA_NETWORK network_data;
     UINT advance;
     BOOL loopback;
  
@@ -2976,7 +2976,7 @@ static void windivert_forward_network_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_NETWORK_DATA network_data;
+    WINDIVERT_DATA_NETWORK network_data;
  
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
@@ -3001,7 +3001,7 @@ static void windivert_forward_network_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_NETWORK_DATA network_data;
+    WINDIVERT_DATA_NETWORK network_data;
  
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
@@ -3021,7 +3021,7 @@ static void windivert_forward_network_v6_classify(
  * WinDivert network classify function.
  */
 static void windivert_network_classify(context_t context,
-    IN PWINDIVERT_NETWORK_DATA network_data, IN BOOL ipv4, IN BOOL outbound,
+    IN PWINDIVERT_DATA_NETWORK network_data, IN BOOL ipv4, IN BOOL outbound,
     IN BOOL loopback, IN UINT advance, IN OUT void *data,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
@@ -3223,7 +3223,7 @@ static void windivert_flow_established_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_FLOW_DATA flow_data;
+    WINDIVERT_DATA_FLOW flow_data;
     BOOL outbound, loopback;
     UINT64 flow_id;
 
@@ -3266,7 +3266,7 @@ static void windivert_flow_established_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_FLOW_DATA flow_data;
+    WINDIVERT_DATA_FLOW flow_data;
     BOOL outbound, loopback;
     UINT64 flow_id;
     UINT8 *addr;
@@ -3311,7 +3311,7 @@ static void windivert_flow_established_v6_classify(
  * WinDivert flow established classify function.
  */
 static void windivert_flow_established_classify(context_t context,
-    IN UINT64 flow_id, IN PWINDIVERT_FLOW_DATA flow_data, IN BOOL ipv4,
+    IN UINT64 flow_id, IN PWINDIVERT_DATA_FLOW flow_data, IN BOOL ipv4,
     IN BOOL outbound, IN BOOL loopback, OUT FWPS_CLASSIFY_OUT0 *result)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
@@ -3497,7 +3497,7 @@ static void windivert_resource_assignment_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     FWP_VALUE0 value;
     BOOL loopback;
 
@@ -3545,7 +3545,7 @@ static void windivert_resource_assignment_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     FWP_VALUE0 value;
     BOOL loopback;
     UINT8 *addr;
@@ -3599,7 +3599,7 @@ static void windivert_auth_connect_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
@@ -3638,7 +3638,7 @@ static void windivert_auth_connect_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
     UINT8 *addr;
     INT i;
@@ -3683,7 +3683,7 @@ static void windivert_auth_listen_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
@@ -3719,7 +3719,7 @@ static void windivert_auth_listen_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
     UINT8 *addr;
     INT i;
@@ -3759,7 +3759,7 @@ static void windivert_auth_recv_accept_v4_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
@@ -3798,7 +3798,7 @@ static void windivert_auth_recv_accept_v6_classify(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    WINDIVERT_SOCKET_DATA socket_data;
+    WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
     UINT8 *addr;
     INT i;
@@ -3838,7 +3838,7 @@ static void windivert_auth_recv_accept_v6_classify(
  * WinDivert socket classify function.
  */
 static void windivert_socket_classify(context_t context,
-    PWINDIVERT_SOCKET_DATA socket_data, WINDIVERT_EVENT event, BOOL ipv4,
+    PWINDIVERT_DATA_SOCKET socket_data, WINDIVERT_EVENT event, BOOL ipv4,
     BOOL outbound, BOOL loopback, FWPS_CLASSIFY_OUT0 *result)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
@@ -3947,10 +3947,10 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
     UINT8 *data;
     PLIST_ENTRY old_entry;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums;
-    PWINDIVERT_NETWORK_DATA network_data;
-    PWINDIVERT_FLOW_DATA flow_data;
-    PWINDIVERT_SOCKET_DATA socket_data;
-    PWINDIVERT_REFLECT_DATA reflect_data;
+    PWINDIVERT_DATA_NETWORK network_data;
+    PWINDIVERT_DATA_FLOW flow_data;
+    PWINDIVERT_DATA_SOCKET socket_data;
+    PWINDIVERT_DATA_REFLECT reflect_data;
     BOOL pseudo_ip_checksum, pseudo_tcp_checksum, pseudo_udp_checksum;
 
     if (!match && (flags & WINDIVERT_FLAG_SNIFF) != 0)
@@ -3968,14 +3968,14 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
         case WINDIVERT_LAYER_NETWORK:
         case WINDIVERT_LAYER_NETWORK_FORWARD:
             buffer = (PNET_BUFFER)packet;
-            network_data = (PWINDIVERT_NETWORK_DATA)layer_data;
+            network_data = (PWINDIVERT_DATA_NETWORK)layer_data;
             if (packet_len > UINT16_MAX)
             {
                 // Cannot handle oversized packet
                 return TRUE;
             }
             work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_NETWORK_DATA, packet_len),
+                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_NETWORK, packet_len),
                 FALSE);
             if (work == NULL)
             {
@@ -3983,8 +3983,8 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
             }
             work->packet_len = (UINT32)packet_len;
             data = WINDIVERT_LAYER_DATA_PTR(work);
-            RtlCopyMemory(data, network_data, sizeof(WINDIVERT_NETWORK_DATA));
-            data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_NETWORK_DATA, work);
+            RtlCopyMemory(data, network_data, sizeof(WINDIVERT_DATA_NETWORK));
+            data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, work);
             packet_data = NdisGetDataBuffer(buffer, packet_len, NULL, 1, 0);
             if (packet_data == NULL)
             {
@@ -4014,39 +4014,39 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
             break;
 
         case WINDIVERT_LAYER_FLOW:
-            flow_data = (PWINDIVERT_FLOW_DATA)layer_data;
+            flow_data = (PWINDIVERT_DATA_FLOW)layer_data;
             work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_FLOW_DATA, 0), FALSE);
+                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_FLOW, 0), FALSE);
             if (work == NULL)
             {
                 return TRUE;
             }
             work->packet_len = 0;
             data = WINDIVERT_LAYER_DATA_PTR(work);
-            RtlCopyMemory(data, flow_data, sizeof(WINDIVERT_FLOW_DATA));
+            RtlCopyMemory(data, flow_data, sizeof(WINDIVERT_DATA_FLOW));
             pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
                 FALSE;
             break;
  
         case WINDIVERT_LAYER_SOCKET:
-            socket_data = (PWINDIVERT_SOCKET_DATA)layer_data;
+            socket_data = (PWINDIVERT_DATA_SOCKET)layer_data;
             work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_SOCKET_DATA, 0), FALSE);
+                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_SOCKET, 0), FALSE);
             if (work == NULL)
             {
                 return TRUE;
             }
             work->packet_len = 0;
             data = WINDIVERT_LAYER_DATA_PTR(work);
-            RtlCopyMemory(data, socket_data, sizeof(WINDIVERT_SOCKET_DATA));
+            RtlCopyMemory(data, socket_data, sizeof(WINDIVERT_DATA_SOCKET));
             pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
                 FALSE;
             break;
 
         case WINDIVERT_LAYER_REFLECT:
-            reflect_data = (PWINDIVERT_REFLECT_DATA)layer_data;
+            reflect_data = (PWINDIVERT_DATA_REFLECT)layer_data;
             work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_REFLECT_DATA, packet_len),
+                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_REFLECT, packet_len),
                 FALSE);
             if (work == NULL)
             {
@@ -4054,8 +4054,8 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
             }
             work->packet_len = packet_len;
             data = WINDIVERT_LAYER_DATA_PTR(work);
-            RtlCopyMemory(data, reflect_data, sizeof(WINDIVERT_REFLECT_DATA));
-            data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_REFLECT_DATA, work);
+            RtlCopyMemory(data, reflect_data, sizeof(WINDIVERT_DATA_REFLECT));
+            data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_REFLECT, work);
             RtlCopyMemory(data, packet, packet_len);
             pseudo_ip_checksum  = TRUE;
             pseudo_tcp_checksum = pseudo_udp_checksum = FALSE;
@@ -4188,7 +4188,7 @@ static void windivert_reinject_packet(packet_t packet)
 {
     UINT8 *packet_data;
     UINT32 packet_len;
-    PWINDIVERT_NETWORK_DATA network_data;
+    PWINDIVERT_DATA_NETWORK network_data;
     PMDL mdl;
     PNET_BUFFER_LIST buffers;
     HANDLE handle;
@@ -4202,8 +4202,8 @@ static void windivert_reinject_packet(packet_t packet)
         return;
     }
 
-    network_data = (PWINDIVERT_NETWORK_DATA)WINDIVERT_LAYER_DATA_PTR(packet);
-    packet_data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_NETWORK_DATA, packet);
+    network_data = (PWINDIVERT_DATA_NETWORK)WINDIVERT_LAYER_DATA_PTR(packet);
+    packet_data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, packet);
     packet_len = packet->packet_len;
     mdl = IoAllocateMdl(packet_data, packet_len, FALSE, FALSE, NULL);
     if (mdl == NULL)
@@ -4543,10 +4543,10 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     UINT8 protocol = 0;
     UINT payload_len = 0;
     UINT16 ip, ttl;
-    PWINDIVERT_NETWORK_DATA network_data = NULL;
-    PWINDIVERT_FLOW_DATA flow_data = NULL;
-    PWINDIVERT_SOCKET_DATA socket_data = NULL;
-    PWINDIVERT_REFLECT_DATA reflect_data = NULL;
+    PWINDIVERT_DATA_NETWORK network_data = NULL;
+    PWINDIVERT_DATA_FLOW flow_data = NULL;
+    PWINDIVERT_DATA_SOCKET socket_data = NULL;
+    PWINDIVERT_DATA_REFLECT reflect_data = NULL;
     NTSTATUS status;
 
     switch (layer)
@@ -4559,16 +4559,16 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
             {
                 return FALSE;
             }
-            network_data = (PWINDIVERT_NETWORK_DATA)layer_data;
+            network_data = (PWINDIVERT_DATA_NETWORK)layer_data;
             break;
         case WINDIVERT_LAYER_FLOW:
-            flow_data = (PWINDIVERT_FLOW_DATA)layer_data;
+            flow_data = (PWINDIVERT_DATA_FLOW)layer_data;
             break;
         case WINDIVERT_LAYER_SOCKET:
-            socket_data = (PWINDIVERT_SOCKET_DATA)layer_data;
+            socket_data = (PWINDIVERT_DATA_SOCKET)layer_data;
             break;
         case WINDIVERT_LAYER_REFLECT:
-            reflect_data = (PWINDIVERT_REFLECT_DATA)layer_data;
+            reflect_data = (PWINDIVERT_DATA_REFLECT)layer_data;
             break;
         default:
             DEBUG("FILTER: REJECT (invalid parameter)");

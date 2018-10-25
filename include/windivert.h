@@ -88,7 +88,7 @@ typedef struct
 {
     UINT32 IfIdx;                       /* Packet's interface index. */
     UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
-} WINDIVERT_NETWORK_DATA, *PWINDIVERT_NETWORK_DATA;
+} WINDIVERT_DATA_NETWORK, *PWINDIVERT_DATA_NETWORK;
 
 /*
  * WinDivert FLOW layer data.
@@ -101,7 +101,7 @@ typedef struct
     UINT16 LocalPort;                   /* Local port. */
     UINT16 RemotePort;                  /* Remote port. */
     UINT8  Protocol;                    /* Protocol. */
-} WINDIVERT_FLOW_DATA, *PWINDIVERT_FLOW_DATA;
+} WINDIVERT_DATA_FLOW, *PWINDIVERT_DATA_FLOW;
 
 /*
  * WinDivert SOCKET layer data.
@@ -114,7 +114,7 @@ typedef struct
     UINT16 LocalPort;                   /* Local port. */
     UINT16 RemotePort;                  /* Remote port. */
     UINT8  Protocol;                    /* Protocol. */
-} WINDIVERT_SOCKET_DATA, *PWINDIVERT_SOCKET_DATA;
+} WINDIVERT_DATA_SOCKET, *PWINDIVERT_DATA_SOCKET;
 
 /*
  * WinDivert REFLECTION layer data.
@@ -126,7 +126,7 @@ typedef struct
     WINDIVERT_LAYER Layer;              /* Handle layer. */
     UINT64 Flags;                       /* Handle flags. */
     INT16  Priority;                    /* Handle priority. */
-} WINDIVERT_REFLECT_DATA, *PWINDIVERT_REFLECT_DATA;
+} WINDIVERT_DATA_REFLECT, *PWINDIVERT_DATA_REFLECT;
 
 /*
  * WinDivert address.
@@ -147,10 +147,10 @@ typedef struct
     UINT32 Reserved:8;
     union
     {
-        WINDIVERT_NETWORK_DATA Network; /* Network layer data. */
-        WINDIVERT_FLOW_DATA Flow;       /* Flow layer data. */
-        WINDIVERT_SOCKET_DATA Socket;   /* Socket layer data. */
-        WINDIVERT_REFLECT_DATA Reflect; /* Reflect layer data. */
+        WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
+        WINDIVERT_DATA_FLOW Flow;       /* Flow layer data. */
+        WINDIVERT_DATA_SOCKET Socket;   /* Socket layer data. */
+        WINDIVERT_DATA_REFLECT Reflect; /* Reflect layer data. */
     };
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
 
