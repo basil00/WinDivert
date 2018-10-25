@@ -105,6 +105,10 @@ do
         $CC -s -O2 -Iinclude/ examples/windivertctl/windivertctl.c \
             -o "install/MINGW/$CPU/windivertctl.exe" -lWinDivert -lws2_32 \
             -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
+        echo "\tcopy install/MINGW/$CPU/socketdump.exe..."
+        $CC -s -O2 -Iinclude/ examples/socketdump/socketdump.c \
+            -o "install/MINGW/$CPU/socketdump.exe" -lWinDivert -lws2_32 \
+            -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
         cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU
     else

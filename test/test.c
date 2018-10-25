@@ -257,6 +257,8 @@ static struct test tests[] =
                                                &pkt_dns_request, TRUE},
     {"ip.SrcAddr < 10.0.0.0 or ip.SrcAddr > 10.255.255.255",
                                                &pkt_dns_request, FALSE},
+    {"ip.DstAddr == ::ffff:8.8.4.4",           &pkt_dns_request, TRUE},
+    {"ip.DstAddr == ::0:ffff:8.8.4.4",         &pkt_dns_request, TRUE},
     {"udp.PayloadLength == 29",                &pkt_dns_request, TRUE},
     {"ipv6",                                   &pkt_ipv6_tcp_syn, TRUE},
     {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
@@ -284,8 +286,10 @@ static struct test tests[] =
     {"false",                                  &pkt_ipv6_exthdrs_udp, FALSE},
     {"udp",                                    &pkt_ipv6_exthdrs_udp, TRUE},
     {"tcp",                                    &pkt_ipv6_exthdrs_udp, FALSE},
+    {"ipv6.SrcAddr == ::",                     &pkt_ipv6_exthdrs_udp, FALSE},
     {"ipv6.SrcAddr == ::1",                    &pkt_ipv6_exthdrs_udp, TRUE},
     {"ipv6.SrcAddr == ::2",                    &pkt_ipv6_exthdrs_udp, FALSE},
+    {"ipv6.SrcAddr == ::8.8.4.4",              &pkt_ipv6_exthdrs_udp, FALSE},
     {"ipv6.SrcAddr < abcd::1",                 &pkt_ipv6_exthdrs_udp, TRUE},
     {"ipv6.SrcAddr <= abcd::1",                &pkt_ipv6_exthdrs_udp, TRUE},
     {"ipv6.SrcAddr != abcd::1",                &pkt_ipv6_exthdrs_udp, TRUE},
@@ -332,7 +336,7 @@ int main(void)
     Sleep(100);
 
     // Run tests:
-    size_t num_tests = sizeof(tests) / sizeof(struct test);
+    size_t num_tests = sizeof(tests) / sizeof(struct test), passed_tests = 0;
     for (i = 0; i < num_tests; i++)
     {
         char *filter = tests[i].filter;
@@ -352,6 +356,7 @@ int main(void)
         {
             SetConsoleTextAttribute(console, FOREGROUND_GREEN);
             printf("PASSED");
+            passed_tests++;
         }
         else
         {
@@ -375,6 +380,9 @@ int main(void)
 
     WinDivertClose(upper_handle);
     WinDivertClose(lower_handle);
+
+    printf("\npassed = %.2f%%\n",
+        ((double)passed_tests / (double)num_tests) * 100.0);
 
     return 0;
 }

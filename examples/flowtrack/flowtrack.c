@@ -1,5 +1,5 @@
 /*
- * streamdump.c
+ * flowtrack.c
  * (C) 2018, all rights reserved,
  *
  * This file is part of WinDivert.
@@ -47,7 +47,8 @@
 
 #include "windivert.h"
 
-#define MAX_FLOWS   256
+#define MAX_FLOWS           256
+#define INET6_ADDRSTRLEN    45
 
 /*
  * Flow tracking.
@@ -62,39 +63,6 @@ static HANDLE lock;
 static PFLOW flows = NULL;
 
 /*
- * Print an IP address.
- */
-static void print_address(const UINT32 *addr)
-{
-    if (addr[3] == 0 && addr[2] == 0 && addr[1] == 0x0000FFFF)
-    {
-        // IPv4 address:
-        UINT32 a, b, c, d;
-        a = (addr[0] >> 24) & 0xFF;
-        b = (addr[0] >> 16) & 0xFF;
-        c = (addr[0] >> 8) & 0xFF;
-        d = (addr[0] >> 0) & 0xFF;
-        printf("%u.%u.%u.%u", a, b, c, d);
-    }
-    else
-    {
-        // IPv6 address:
-        int i;
-        for (i = 3; i >= 0; i--)
-        {
-            UINT32 a, b;
-            a = (addr[i] >> 16) & 0xFFFF;
-            b = (addr[i] >> 0) & 0xFFFF;
-            printf("%x:%x", a, b);
-            if (i != 0)
-            {
-                putchar(':');
-            }
-        } 
-    }
-}
-
-/*
  * Draw flows to console in a delayed loop.
  *
  * This function does minimal error checking.
@@ -105,6 +73,7 @@ static DWORD draw(LPVOID arg)
     HANDLE process, console = GetStdHandle(STD_OUTPUT_HANDLE);
     CONSOLE_SCREEN_BUFFER_INFO screen;
     char path[MAX_PATH+1];
+    char addr_str[INET6_ADDRSTRLEN+1];
     char *filename;
     const char header[] = "PID        PROGRAM              PROT   FLOW";
     DWORD rows, columns, written, fill_len, path_len, i;
@@ -216,11 +185,13 @@ static DWORD draw(LPVOID arg)
             }
             SetConsoleTextAttribute(console,
                 FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-            print_address(addr->Flow.LocalAddr);
-            printf(":%u %s ", addr->Flow.LocalPort,
+            WinDivertHelperFormatIPv6Address(addr->Flow.LocalAddr, addr_str,
+                sizeof(addr_str));
+            printf("%s:%u %s ", addr_str, addr->Flow.LocalPort,
                 (addr->Outbound? "---->": "<----"));
-            print_address(addr->Flow.RemoteAddr);
-            printf(":%u", addr->Flow.RemotePort);
+            WinDivertHelperFormatIPv6Address(addr->Flow.RemoteAddr, addr_str,
+                sizeof(addr_str));
+            printf("%s:%u", addr_str, addr->Flow.RemotePort);
             fflush(stdout);
         }
         for (; i < rows-1; i++)

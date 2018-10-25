@@ -315,6 +315,9 @@ usage:
             case WINDIVERT_LAYER_FLOW:
                 fputs("FLOW", stdout);
                 break;
+            case WINDIVERT_LAYER_SOCKET:
+                fputs("SOCKET", stdout);
+                break;
             case WINDIVERT_LAYER_REFLECT:
                 fputs("REFLECT", stdout);
                 break;

@@ -413,6 +413,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         case WINDIVERT_LAYER_NETWORK:
         case WINDIVERT_LAYER_NETWORK_FORWARD:
         case WINDIVERT_LAYER_FLOW:
+        case WINDIVERT_LAYER_SOCKET:
         case WINDIVERT_LAYER_REFLECT:
             break;
         default:

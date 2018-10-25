@@ -77,7 +77,8 @@ typedef enum
     WINDIVERT_LAYER_NETWORK = 0,        /* Network layer. */
     WINDIVERT_LAYER_NETWORK_FORWARD = 1,/* Network layer (forwarded packets) */
     WINDIVERT_LAYER_FLOW = 2,           /* Flow layer. */
-    WINDIVERT_LAYER_REFLECT = 3,        /* Reflect layer. */
+    WINDIVERT_LAYER_SOCKET = 3,         /* Socket layer. */
+    WINDIVERT_LAYER_REFLECT = 4,        /* Reflect layer. */
 } WINDIVERT_LAYER, *PWINDIVERT_LAYER;
 
 /*
@@ -101,6 +102,19 @@ typedef struct
     UINT16 RemotePort;                  /* Remote port. */
     UINT8  Protocol;                    /* Protocol. */
 } WINDIVERT_FLOW_DATA, *PWINDIVERT_FLOW_DATA;
+
+/*
+ * WinDivert SOCKET layer data.
+ */
+typedef struct
+{
+    UINT32 ProcessId;                   /* Process ID. */
+    UINT32 LocalAddr[4];                /* Local address. */
+    UINT32 RemoteAddr[4];               /* Remote address. */
+    UINT16 LocalPort;                   /* Local port. */
+    UINT16 RemotePort;                  /* Remote port. */
+    UINT8  Protocol;                    /* Protocol. */
+} WINDIVERT_SOCKET_DATA, *PWINDIVERT_SOCKET_DATA;
 
 /*
  * WinDivert REFLECTION layer data.
@@ -135,6 +149,7 @@ typedef struct
     {
         WINDIVERT_NETWORK_DATA Network; /* Network layer data. */
         WINDIVERT_FLOW_DATA Flow;       /* Flow layer data. */
+        WINDIVERT_SOCKET_DATA Socket;   /* Socket layer data. */
         WINDIVERT_REFLECT_DATA Reflect; /* Reflect layer data. */
     };
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
@@ -148,10 +163,14 @@ typedef enum
     WINDIVERT_EVENT_FLOW_ESTABLISHED = 1,
                                         /* Flow established. */
     WINDIVERT_EVENT_FLOW_DELETED = 2,   /* Flow deleted. */
-    WINDIVERT_EVENT_REFLECT_ESTABLISHED = 3,
+    WINDIVERT_EVENT_SOCKET_BIND = 3,    /* Socket bind. */
+    WINDIVERT_EVENT_SOCKET_CONNECT = 4, /* Socket connect. */
+    WINDIVERT_EVENT_SOCKET_LISTEN = 5,  /* Socket listen. */
+    WINDIVERT_EVENT_SOCKET_ACCEPT = 6,  /* Socket accept. */
+    WINDIVERT_EVENT_REFLECT_ESTABLISHED = 7,
                                         /* Previously open WinDivert handle. */
-    WINDIVERT_EVENT_REFLECT_OPEN = 4,   /* Open new WinDivert handle. */
-    WINDIVERT_EVENT_REFLECT_CLOSE = 5,  /* Close existing WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 8,   /* Open new WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 9,  /* Close existing WinDivert handle. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*
@@ -433,6 +452,22 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv4Address(
 extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
     __in        const char *addrStr,
     __out_opt   UINT32 *pAddr);
+
+/*
+ * Format an IPv4 address.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv4Address(
+    __in        UINT32 addr,
+    __out       char *buffer,
+    __in        UINT bufLen);
+
+/*
+ * Format an IPv6 address.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
+    __in        const UINT32 *pAddr,
+    __out       char *buffer,
+    __in        UINT bufLen);
 
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
