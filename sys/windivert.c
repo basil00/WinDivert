@@ -327,6 +327,8 @@ static HANDLE engine_handle = NULL;
 static LONG priority_counter = 0;
 static LONGLONG counts_per_ms = 0;
 static POOL_TYPE non_paged_pool = NonPagedPool;
+static MM_PAGE_PRIORITY no_write_flag = 0;
+static MM_PAGE_PRIORITY no_exec_flag  = 0;
 
 /*
  * Priorities & weights.
@@ -862,6 +864,10 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
             (version.dwMajorVersion == 6 && version.dwMinorVersion >= 2))
         {
             non_paged_pool = (POOL_TYPE)512;    // NonPagedPoolNx (documented)
+            no_exec_flag   = (MM_PAGE_PRIORITY)0x40000000;
+                                                // MdlMappingNoExecute
+            no_write_flag  = (MM_PAGE_PRIORITY)0x80000000;
+                                                // MdlMappingNoWrite
         }
     }
 
@@ -1952,7 +1958,8 @@ static void windivert_read_service_request(packet_t packet, WDFREQUEST request)
                 DEBUG_ERROR("failed to retrieve output MDL", status);
                 goto windivert_read_service_request_exit;
             }
-            dst = MmGetSystemAddressForMdlSafe(dst_mdl, NormalPagePriority);
+            dst = MmGetSystemAddressForMdlSafe(dst_mdl,
+                NormalPagePriority | no_exec_flag);
             if (dst == NULL)
             {
                 status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2158,7 +2165,8 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
         goto windivert_write_exit;
     }
 
-    data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
+    data = MmGetSystemAddressForMdlSafe(mdl,
+        NormalPagePriority | no_write_flag | no_exec_flag);
     if (data == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
@@ -2318,7 +2326,8 @@ static void NTAPI windivert_inject_complete(VOID *context,
         WdfRequestCompleteWithInformation(request, status, length);
     }
     mdl = NET_BUFFER_FIRST_MDL(buffer);
-    data = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority);
+    data = MmGetSystemAddressForMdlSafe(mdl,
+        NormalPagePriority | no_exec_flag);
     windivert_free(data);
     IoFreeMdl(mdl);
     FwpsFreeNetBufferList0(buffers);
