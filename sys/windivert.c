@@ -475,7 +475,7 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
 static void windivert_queue_packet(context_t context, packet_t packet);
 static void windivert_reinject_packet(packet_t packet);
 static void windivert_free_packet(packet_t packet);
-static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4, BOOL checksum);
+static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4);
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b);
 static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_IPHDR *ip_header_ptr, PWINDIVERT_IPV6HDR *ipv6_header_ptr,
@@ -2243,8 +2243,7 @@ windivert_write_bad_packet:
     }
 
     // Decrement TTL for impostor packets:
-    if (addr->Impostor && !windivert_decrement_ttl(data_copy, ipv4,
-            (addr->PseudoIPChecksum == 0)))
+    if (addr->Impostor && !windivert_decrement_ttl(data_copy, ipv4))
     {
         status = STATUS_HOPLIMIT_EXCEEDED;
         goto windivert_write_exit;
@@ -4286,7 +4285,7 @@ static void windivert_free_packet(packet_t packet)
 /*
  * Decrement the TTL of a packet.
  */
-static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4, BOOL checksum)
+static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4)
 {
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_IPV6HDR ipv6_header;
@@ -4299,17 +4298,15 @@ static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4, BOOL checksum)
             return FALSE;
         }
         ip_header->TTL--;
-        if (checksum)
+
+        // Incremental checksum update:
+        if (ip_header->Checksum >= 0xFFFE)
         {
-            // Incremental checksum update:
-            if (ip_header->Checksum >= 0xFFFE)
-            {
-                ip_header->Checksum -= 0xFFFE;
-            }
-            else
-            {
-                ip_header->Checksum += 1;
-            }
+            ip_header->Checksum -= 0xFFFE;
+        }
+        else
+        {
+            ip_header->Checksum += 1;
         }
     }
     else
