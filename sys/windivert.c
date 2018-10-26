@@ -663,7 +663,7 @@ static struct layer_s layer_resource_assignment_ipv4_0 =
     0
 };
 static layer_t layer_resource_assignment_ipv4 =
-	&layer_resource_assignment_ipv4_0;
+    &layer_resource_assignment_ipv4_0;
 
 static struct layer_s layer_resource_assignment_ipv6_0 =
 {
@@ -680,7 +680,7 @@ static struct layer_s layer_resource_assignment_ipv6_0 =
     0
 };
 static layer_t layer_resource_assignment_ipv6 =
-	&layer_resource_assignment_ipv6_0;
+    &layer_resource_assignment_ipv6_0;
 
 static struct layer_s layer_auth_connect_ipv4_0 =
 {
@@ -811,6 +811,11 @@ static struct layer_s layer_flow_established_ipv6_0 =
 static layer_t layer_flow_established_ipv6 = &layer_flow_established_ipv6_0;
 
 /*
+ * Shared functions.
+ */
+#include "windivert_shared.c"
+
+/*
  * WinDivert malloc/free.
  */
 static PVOID windivert_malloc(SIZE_T size, BOOL paged)
@@ -887,18 +892,18 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4;
     layer_flow_established_ipv6->layer_guid =
         FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6;
-	layer_resource_assignment_ipv4->layer_guid =
+    layer_resource_assignment_ipv4->layer_guid =
         FWPM_LAYER_ALE_RESOURCE_ASSIGNMENT_V4;
-	layer_resource_assignment_ipv6->layer_guid =
+    layer_resource_assignment_ipv6->layer_guid =
         FWPM_LAYER_ALE_RESOURCE_ASSIGNMENT_V6;
     layer_auth_connect_ipv4->layer_guid = FWPM_LAYER_ALE_AUTH_CONNECT_V4;
     layer_auth_connect_ipv6->layer_guid = FWPM_LAYER_ALE_AUTH_CONNECT_V6;
     layer_auth_listen_ipv4->layer_guid = FWPM_LAYER_ALE_AUTH_LISTEN_V4;
     layer_auth_listen_ipv6->layer_guid = FWPM_LAYER_ALE_AUTH_LISTEN_V6;
     layer_auth_recv_accept_ipv4->layer_guid =
-		FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4;
+        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4;
     layer_auth_recv_accept_ipv6->layer_guid =
-		FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6;
+        FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6;
     layer_inbound_network_ipv4->sublayer_guid =
         WINDIVERT_SUBLAYER_INBOUND_IPV4_GUID;
     layer_outbound_network_ipv4->sublayer_guid = 
@@ -2119,7 +2124,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     BOOL ipv4;
     UINT8 layer;
     UINT32 priority;
-    UINT64 flags;
+    UINT64 flags, checksums;
     HANDLE handle, compl_handle;
     PNET_BUFFER_LIST buffers = NULL;
     NTSTATUS status = STATUS_SUCCESS;
@@ -2183,6 +2188,7 @@ windivert_write_bad_packet:
         goto windivert_write_exit;
     }
 
+    // Copy packet data:
     data_copy = windivert_malloc(data_len, FALSE);
     if (data_copy == NULL)
     {
@@ -2191,7 +2197,6 @@ windivert_write_bad_packet:
             status);
         goto windivert_write_exit;
     }
-
     RtlCopyMemory(data_copy, data, sizeof(WINDIVERT_IPHDR));
     ip_header = (PWINDIVERT_IPHDR)data_copy;
     switch (ip_header->Version)
@@ -2225,6 +2230,19 @@ windivert_write_bad_packet:
             (char *)data + sizeof(WINDIVERT_IPHDR),
             data_len - sizeof(WINDIVERT_IPHDR));
     }
+
+    // Fix checksums:
+    if (addr->PseudoIPChecksum != 0 || addr->PseudoTCPChecksum != 0 ||
+        addr->PseudoUDPChecksum != 0)
+    {
+        checksums = 
+            (addr->PseudoIPChecksum?  0: WINDIVERT_HELPER_NO_IP_CHECKSUM) |
+            (addr->PseudoTCPChecksum? 0: WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
+            (addr->PseudoUDPChecksum? 0: WINDIVERT_HELPER_NO_UDP_CHECKSUM);
+        WinDivertHelperCalcChecksums(data_copy, data_len, NULL, checksums);
+    }
+
+    // Decrement TTL for impostor packets:
     if (addr->Impostor && !windivert_decrement_ttl(data_copy, ipv4,
             (addr->PseudoIPChecksum == 0)))
     {
@@ -2232,6 +2250,7 @@ windivert_write_bad_packet:
         goto windivert_write_exit;
     }
 
+    // Allocate packet:
     mdl_copy = IoAllocateMdl(data_copy, data_len, FALSE, FALSE, NULL);
     if (mdl_copy == NULL)
     {
@@ -2239,7 +2258,6 @@ windivert_write_bad_packet:
         DEBUG_ERROR("failed to allocate MDL for injected packet", status);
         goto windivert_write_exit;
     }
-
     MmBuildMdlForNonPagedPool(mdl_copy);
     status = FwpsAllocateNetBufferAndNetBufferList0(nbl_pool_handle, 0, 0,
         mdl_copy, 0, data_len, &buffers);
@@ -2250,6 +2268,7 @@ windivert_write_bad_packet:
         goto windivert_write_exit;
     }
 
+    // Inject packet:
     handle = (ipv4? inject_handle: injectv6_handle);
     compl_handle = ((flags & WINDIVERT_FLAG_DEBUG) != 0? (HANDLE)request: NULL);
     if (layer == WINDIVERT_LAYER_NETWORK_FORWARD)
@@ -3521,7 +3540,7 @@ static void windivert_resource_assignment_v4_classify(
     socket_data.RemoteAddr[2] = 0;
     socket_data.RemoteAddr[3] = 0;
     value = fixed_vals->incomingValue[
-		FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_LOCAL_PORT].value;
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_LOCAL_PORT].value;
     socket_data.LocalPort = (value.type == FWP_UINT16? value.uint16: 0);
     socket_data.RemotePort = 0;
     socket_data.Protocol = fixed_vals->incomingValue[
@@ -3575,7 +3594,7 @@ static void windivert_resource_assignment_v6_classify(
     socket_data.RemoteAddr[2] = 0;
     socket_data.RemoteAddr[3] = 0;
     value = fixed_vals->incomingValue[
-		FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_LOCAL_PORT].value;
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_LOCAL_PORT].value;
     socket_data.LocalPort = (value.type == FWP_UINT16? value.uint16: 0);
     socket_data.RemotePort = 0;
     socket_data.Protocol = fixed_vals->incomingValue[
@@ -3697,7 +3716,7 @@ static void windivert_auth_listen_v4_classify(
     socket_data.RemoteAddr[2] = 0;
     socket_data.RemoteAddr[3] = 0;
     socket_data.LocalPort = fixed_vals->incomingValue[
-		FWPS_FIELD_ALE_AUTH_LISTEN_V4_IP_LOCAL_PORT].value.uint16;
+        FWPS_FIELD_ALE_AUTH_LISTEN_V4_IP_LOCAL_PORT].value.uint16;
     socket_data.RemotePort = 0;
     socket_data.Protocol = IPPROTO_TCP;
 
@@ -3737,7 +3756,7 @@ static void windivert_auth_listen_v6_classify(
     socket_data.RemoteAddr[2] = 0;
     socket_data.RemoteAddr[3] = 0;
     socket_data.LocalPort = fixed_vals->incomingValue[
-		FWPS_FIELD_ALE_AUTH_LISTEN_V6_IP_LOCAL_PORT].value.uint16;
+        FWPS_FIELD_ALE_AUTH_LISTEN_V6_IP_LOCAL_PORT].value.uint16;
     socket_data.RemotePort = 0;
     socket_data.Protocol = IPPROTO_TCP;
 
@@ -5455,8 +5474,6 @@ windivert_filter_compile_error:
 /****************************************************************************/
 /* WINDIVERT REFLECT MANAGER IMPLEMENTATION                                 */
 /****************************************************************************/
-
-#include "windivert_shared.c"
 
 /*
  * WinDivert reflect state.

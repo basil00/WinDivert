@@ -51,19 +51,6 @@
 #define WINDIVERT_DRIVER32_SYS          L"\\" WINDIVERT_DRIVER_NAME L"32.sys"
 #define WINDIVERT_DRIVER64_SYS          L"\\" WINDIVERT_DRIVER_NAME L"64.sys"
 
-/*
- * Definitions to remove (some) external dependencies:
- */
-#define BYTESWAP16(x)                   \
-    ((((x) >> 8) & 0x00FF) | (((x) << 8) & 0xFF00))
-#define BYTESWAP32(x)                   \
-    ((((x) >> 24) & 0x000000FF) | (((x) >> 8) & 0x0000FF00) | \
-     (((x) << 8) & 0x00FF0000) | (((x) << 24) & 0xFF000000))
-#define ntohs(x)                        BYTESWAP16(x)
-#define htons(x)                        BYTESWAP16(x)
-#define ntohl(x)                        BYTESWAP32(x)
-#define htonl(x)                        BYTESWAP32(x)
-
 static BOOLEAN WinDivertIsXDigit(char c);
 static BOOLEAN WinDivertIsSpace(char c);
 static BOOLEAN WinDivertIsAlNum(char c);
@@ -533,41 +520,6 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 }
 
 /*
- * Workaround for #134
- */
-static void WinDivertFixChecksums(PVOID pPacket, UINT packetLen,
-    PWINDIVERT_ADDRESS addr)
-{
-    UINT64 flags =
-        WINDIVERT_HELPER_NO_IP_CHECKSUM |
-        WINDIVERT_HELPER_NO_TCP_CHECKSUM |
-        WINDIVERT_HELPER_NO_UDP_CHECKSUM;
-    BOOL calc = FALSE;
-    if (addr->PseudoIPChecksum != 0)
-    {
-        addr->PseudoIPChecksum = 0;
-        flags &= ~WINDIVERT_HELPER_NO_IP_CHECKSUM;
-        calc = TRUE;
-    }
-    if (addr->PseudoTCPChecksum != 0)
-    {
-        addr->PseudoTCPChecksum = 0;
-        flags &= ~WINDIVERT_HELPER_NO_TCP_CHECKSUM;
-        calc = TRUE;
-    }
-    if (addr->PseudoUDPChecksum != 0)
-    {
-        addr->PseudoUDPChecksum = 0;
-        flags &= ~WINDIVERT_HELPER_NO_UDP_CHECKSUM;
-        calc = TRUE;
-    }
-    if (calc)
-    {
-        WinDivertHelperCalcChecksums(pPacket, packetLen, addr, flags);
-    }
-}
-
-/*
  * Receive a WinDivert packet.
  */
 extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
@@ -612,7 +564,6 @@ extern BOOL WinDivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    WinDivertFixChecksums(pPacket, packetLen, addr);
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0, (UINT64)addr,
         pPacket, packetLen, writelen);
 }
@@ -629,7 +580,6 @@ extern BOOL WinDivertSendEx(HANDLE handle, PVOID pPacket, UINT packetLen,
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    WinDivertFixChecksums(pPacket, packetLen, addr);
     if (overlapped == NULL)
     {
         return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0,

@@ -413,8 +413,6 @@ typedef struct
     UINT16 Checksum;
 } WINDIVERT_UDPHDR, *PWINDIVERT_UDPHDR;
 
-#ifndef WINDIVERT_KERNEL
-
 /*
  * Flags for WinDivertHelperCalcChecksums()
  */
@@ -423,6 +421,8 @@ typedef struct
 #define WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM                 4
 #define WINDIVERT_HELPER_NO_TCP_CHECKSUM                    8
 #define WINDIVERT_HELPER_NO_UDP_CHECKSUM                    16
+
+#ifndef WINDIVERT_KERNEL
 
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
