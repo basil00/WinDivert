@@ -134,17 +134,17 @@ typedef struct
 typedef struct
 {
     INT64  Timestamp;                   /* Packet's timestamp. */
-    UINT32 Layer:8;                     /* Packet's layer. */
-    UINT32 Event:8;                     /* Packet event. */
-    UINT32 Outbound:1;                  /* Packet is outound? */
-    UINT32 Loopback:1;                  /* Packet is loopback? */
-    UINT32 Impostor:1;                  /* Packet is impostor? */
-    UINT32 IPv6:1;                      /* Packet is IPv6? */
-    UINT32 PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
-    UINT32 PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
-    UINT32 PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
-    UINT32 Final:1;                     /* Packet is final event? */
-    UINT32 Reserved:8;
+    UINT64 Layer:8;                     /* Packet's layer. */
+    UINT64 Event:24;                    /* Packet event. */
+    UINT64 Outbound:1;                  /* Packet is outound? */
+    UINT64 Loopback:1;                  /* Packet is loopback? */
+    UINT64 Impostor:1;                  /* Packet is impostor? */
+    UINT64 IPv6:1;                      /* Packet is IPv6? */
+    UINT64 PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
+    UINT64 PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
+    UINT64 PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
+    UINT64 Final:1;                     /* Packet is final event? */
+    UINT64 Reserved:24;
     union
     {
         WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
@@ -159,18 +159,26 @@ typedef struct
  */
 typedef enum
 {
-    WINDIVERT_EVENT_NETWORK_PACKET = 0, /* Network packet. */
-    WINDIVERT_EVENT_FLOW_ESTABLISHED = 1,
+    WINDIVERT_EVENT_NETWORK_PACKET = 0x0001,
+                                        /* Network packet. */
+    WINDIVERT_EVENT_FLOW_ESTABLISHED = 0x0002,
                                         /* Flow established. */
-    WINDIVERT_EVENT_FLOW_DELETED = 2,   /* Flow deleted. */
-    WINDIVERT_EVENT_SOCKET_BIND = 3,    /* Socket bind. */
-    WINDIVERT_EVENT_SOCKET_CONNECT = 4, /* Socket connect. */
-    WINDIVERT_EVENT_SOCKET_LISTEN = 5,  /* Socket listen. */
-    WINDIVERT_EVENT_SOCKET_ACCEPT = 6,  /* Socket accept. */
-    WINDIVERT_EVENT_REFLECT_ESTABLISHED = 7,
+    WINDIVERT_EVENT_FLOW_DELETED = 0x0004,
+                                        /* Flow deleted. */
+    WINDIVERT_EVENT_SOCKET_BIND = 0x0008,
+                                        /* Socket bind. */
+    WINDIVERT_EVENT_SOCKET_LISTEN = 0x0010,
+                                        /* Socket listen. */
+    WINDIVERT_EVENT_SOCKET_CONNECT = 0x0020,
+                                        /* Socket connect. */
+    WINDIVERT_EVENT_SOCKET_ACCEPT = 0x0040,
+                                        /* Socket accept. */
+    WINDIVERT_EVENT_REFLECT_ESTABLISHED = 0x0080,
                                         /* Previously open WinDivert handle. */
-    WINDIVERT_EVENT_REFLECT_OPEN = 8,   /* Open new WinDivert handle. */
-    WINDIVERT_EVENT_REFLECT_CLOSE = 9,  /* Close existing WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 0x0100,
+                                        /* Open new WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 0x0200,
+                                        /* Close existing WinDivert handle. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*

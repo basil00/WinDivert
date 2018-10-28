@@ -130,16 +130,15 @@ typedef enum
     TOKEN_NETWORK,
     TOKEN_NETWORK_FORWARD,
     TOKEN_REFLECT,
-    TOKEN_NETWORK_PACKET,
-    TOKEN_FLOW_ESTABLISHED,
-    TOKEN_FLOW_DELETED,
-    TOKEN_SOCKET_BIND,
-    TOKEN_SOCKET_CONNECT,
-    TOKEN_SOCKET_LISTEN,
-    TOKEN_SOCKET_ACCEPT,
-    TOKEN_REFLECT_ESTABLISHED,
-    TOKEN_REFLECT_OPEN,
-    TOKEN_REFLECT_CLOSE,
+    TOKEN_EVENT_PACKET,
+    TOKEN_EVENT_ESTABLISHED,
+    TOKEN_EVENT_DELETED,
+    TOKEN_EVENT_BIND,
+    TOKEN_EVENT_CONNECT,
+    TOKEN_EVENT_LISTEN,
+    TOKEN_EVENT_ACCEPT,
+    TOKEN_EVENT_OPEN,
+    TOKEN_EVENT_CLOSE,
     TOKEN_OPEN,
     TOKEN_CLOSE,
     TOKEN_EQ,
@@ -193,6 +192,8 @@ typedef struct
                          WINDIVERT_LAYER_FLAG_SOCKET)
 #define LN_F__          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
                          WINDIVERT_LAYER_FLAG_FLOW)
+#define L__F_R          (WINDIVERT_LAYER_FLAG_FLOW |                        \
+                         WINDIVERT_LAYER_FLAG_REFLECT)
 #define LN_FS_          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
                          WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_SOCKET)
@@ -262,7 +263,7 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
 static BOOL WinDivertDeserializeFilter(PWINDIVERT_STREAM stream,
     PWINDIVERT_FILTER filter, UINT *length);
 static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
-    BOOL top_level, BOOL and);
+    WINDIVERT_LAYER layer, BOOL top_level, BOOL and);
 
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
@@ -475,7 +476,8 @@ static PTOKEN_INFO WinDivertTokenLookup(PTOKEN_INFO token_info,
 /*
  * Expand a "macro" value.
  */
-static BOOL WinDivertExpandMacro(KIND kind, UINT32 *val)
+static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer,
+    UINT32 *val)
 {
     switch (kind)
     {
@@ -494,36 +496,42 @@ static BOOL WinDivertExpandMacro(KIND kind, UINT32 *val)
         case TOKEN_REFLECT:
             *val = WINDIVERT_LAYER_REFLECT;
             return TRUE;
-        case TOKEN_NETWORK_PACKET:
+        case TOKEN_EVENT_PACKET:
             *val = WINDIVERT_EVENT_NETWORK_PACKET;
-            return TRUE;
-        case TOKEN_FLOW_ESTABLISHED:
-            *val = WINDIVERT_EVENT_FLOW_ESTABLISHED;
-            return TRUE;
-        case TOKEN_FLOW_DELETED:
+            return (layer == WINDIVERT_LAYER_NETWORK);
+        case TOKEN_EVENT_ESTABLISHED:
+            if (layer == WINDIVERT_LAYER_FLOW)
+            {
+                *val = WINDIVERT_EVENT_FLOW_ESTABLISHED;
+                return TRUE;
+            }
+            else if (layer == WINDIVERT_LAYER_REFLECT)
+            {
+                *val = WINDIVERT_EVENT_REFLECT_ESTABLISHED;
+                return TRUE;
+            }
+            return FALSE;
+        case TOKEN_EVENT_DELETED:
             *val = WINDIVERT_EVENT_FLOW_DELETED;
-            return TRUE;
-        case TOKEN_SOCKET_BIND:
+            return (layer == WINDIVERT_LAYER_FLOW);
+        case TOKEN_EVENT_BIND:
             *val = WINDIVERT_EVENT_SOCKET_BIND;
-            return TRUE;
-        case TOKEN_SOCKET_CONNECT:
+            return (layer == WINDIVERT_LAYER_FLOW);
+        case TOKEN_EVENT_CONNECT:
             *val = WINDIVERT_EVENT_SOCKET_CONNECT;
-            return TRUE;
-        case TOKEN_SOCKET_LISTEN:
+            return (layer == WINDIVERT_LAYER_SOCKET);
+        case TOKEN_EVENT_LISTEN:
             *val = WINDIVERT_EVENT_SOCKET_LISTEN;
-            return TRUE;
-        case TOKEN_SOCKET_ACCEPT:
+            return (layer == WINDIVERT_LAYER_SOCKET);
+        case TOKEN_EVENT_ACCEPT:
             *val = WINDIVERT_EVENT_SOCKET_ACCEPT;
-            return TRUE;
-        case TOKEN_REFLECT_ESTABLISHED:
-            *val = WINDIVERT_EVENT_REFLECT_ESTABLISHED;
-            return TRUE;
-        case TOKEN_REFLECT_OPEN:
+            return (layer == WINDIVERT_LAYER_SOCKET);
+        case TOKEN_EVENT_OPEN:
             *val = WINDIVERT_EVENT_REFLECT_OPEN;
-            return TRUE;
-        case TOKEN_REFLECT_CLOSE:
+            return (layer == WINDIVERT_LAYER_REFLECT);
+        case TOKEN_EVENT_CLOSE:
             *val = WINDIVERT_EVENT_REFLECT_CLOSE;
-            return TRUE;
+            return (layer == WINDIVERT_LAYER_REFLECT);
         default:
             return FALSE;
     }
@@ -537,21 +545,20 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
 {
     static const TOKEN_INFO token_info[] =
     {
+        {"ACCEPT",              TOKEN_EVENT_ACCEPT,        L___S_},
+        {"BIND",                TOKEN_EVENT_BIND,          L___S_},
+        {"CLOSE",               TOKEN_EVENT_CLOSE,         L____R},
+        {"CONNECT",             TOKEN_EVENT_CONNECT,       L___S_},
+        {"DELETED",             TOKEN_EVENT_DELETED,       L__F__},
+        {"ESTABLISHED",         TOKEN_EVENT_ESTABLISHED,   L__F_R},
         {"FLOW",                TOKEN_FLOW,                L____R},
-        {"FLOW_DELETED",        TOKEN_FLOW_DELETED,        L__F__},
-        {"FLOW_ESTABLISHED",    TOKEN_FLOW_ESTABLISHED,    L__F__},
+        {"LISTEN",              TOKEN_EVENT_LISTEN,        L___S_},
         {"NETWORK",             TOKEN_NETWORK,             L____R},
         {"NETWORK_FORWARD",     TOKEN_NETWORK_FORWARD,     L____R},
-        {"NETWORK_PACKET",      TOKEN_NETWORK_PACKET,      LNM___},
+        {"OPEN",                TOKEN_EVENT_OPEN,          L____R},
+        {"PACKET",              TOKEN_EVENT_PACKET,        LNM___},
         {"REFLECT",             TOKEN_REFLECT,             L____R},
-        {"REFLECT_CLOSE",       TOKEN_REFLECT_CLOSE,       L____R},
-        {"REFLECT_ESTABLISHED", TOKEN_REFLECT_ESTABLISHED, L____R},
-        {"REFLECT_OPEN",        TOKEN_REFLECT_OPEN,        L____R},
         {"SOCKET",              TOKEN_SOCKET,              L____R},
-        {"SOCKET_ACCEPT",       TOKEN_SOCKET_ACCEPT,       L___S_},
-        {"SOCKET_BIND",         TOKEN_SOCKET_BIND,         L___S_},
-        {"SOCKET_CONNECT",      TOKEN_SOCKET_CONNECT,      L___S_},
-        {"SOCKET_LISTEN",       TOKEN_SOCKET_LISTEN,       L___S_},
         {"and",                 TOKEN_AND,                 LNMFSR},
         {"event",               TOKEN_EVENT,               LNMFSR},
         {"false",               TOKEN_FALSE,               LNMFSR},
@@ -759,7 +766,8 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 {
                     return MAKE_ERROR(WINDIVERT_ERROR_BAD_TOKEN_FOR_LAYER, i-j);
                 }
-                if (WinDivertExpandMacro(result->kind, &tokens[tp].val[0]))
+                if (WinDivertExpandMacro(result->kind, layer,
+                        &tokens[tp].val[0]))
                 {
                     tokens[tp].kind = TOKEN_NUMBER;
                 }
@@ -3545,10 +3553,12 @@ extern BOOL WinDivertHelperFormatIPv6Address(const UINT32 *addr, char *buffer,
 /*
  * Format a test expression.
  */
-static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
+static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
+    WINDIVERT_LAYER layer)
 {
     PEXPR field = expr->arg[0], val = expr->arg[1];
-    BOOL ipv4_addr = FALSE, ipv6_addr = FALSE, layer = FALSE, event = FALSE;
+    BOOL is_ipv4_addr = FALSE, is_ipv6_addr = FALSE, is_layer = FALSE,
+        is_event = FALSE;
 
     switch (field->kind)
     {
@@ -3580,13 +3590,13 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
             {
                 case TOKEN_EQ:
                     WinDivertPutString(stream, (val->val[0] == 0? "not ": ""));
-                    WinDivertFormatExpr(stream, field, /*top_level=*/FALSE,
-                        /*and=*/FALSE);
+                    WinDivertFormatExpr(stream, field, layer,
+                        /*top_level=*/FALSE, /*and=*/FALSE);
                     return;
                 case TOKEN_NEQ:
                     WinDivertPutString(stream, (val->val[0] != 0? "not ": ""));
-                    WinDivertFormatExpr(stream, field, /*top_level=*/FALSE,
-                        /*and=*/FALSE);
+                    WinDivertFormatExpr(stream, field, layer,
+                        /*top_level=*/FALSE, /*and=*/FALSE);
                     return;
                 default:
                     break;
@@ -3594,25 +3604,26 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
             break;
         case TOKEN_IP_SRC_ADDR:
         case TOKEN_IP_DST_ADDR:
-            ipv4_addr = TRUE;
+            is_ipv4_addr = TRUE;
             break;
         case TOKEN_IPV6_SRC_ADDR:
         case TOKEN_IPV6_DST_ADDR:
         case TOKEN_LOCAL_ADDR:
         case TOKEN_REMOTE_ADDR:
-            ipv6_addr = TRUE;
+            is_ipv6_addr = TRUE;
             break;
         case TOKEN_LAYER:
-            layer = TRUE;
+            is_layer = TRUE;
             break;
         case TOKEN_EVENT:
-            event = TRUE;
+            is_event = TRUE;
             break;
         default:
             break;
     }
 
-    WinDivertFormatExpr(stream, field, /*top_level=*/FALSE, /*and=*/FALSE);
+    WinDivertFormatExpr(stream, field, layer, /*top_level=*/FALSE,
+        /*and=*/FALSE);
     switch (expr->kind)
     {
         case TOKEN_EQ:
@@ -3628,15 +3639,15 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
         case TOKEN_GEQ:
             WinDivertPutString(stream, " >= "); break;
     }
-    if (ipv4_addr)
+    if (is_ipv4_addr)
     {
         WinDivertFormatIPv4Addr(stream, val->val[0]);
     }
-    else if (ipv6_addr)
+    else if (is_ipv6_addr)
     {
         WinDivertFormatIPv6Addr(stream, val->val);
     }
-    else if (layer)
+    else if (is_layer)
     {
         switch (val->val[0])
         {
@@ -3654,30 +3665,60 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
                 WinDivertFormatNumber(stream, val->val[0]); break;
         }
     }
-    else if (event)
+    else if (is_event)
     {
-        switch (val->val[0])
+        switch (layer)
         {
-            case WINDIVERT_EVENT_NETWORK_PACKET:
-                WinDivertPutString(stream, "NETWORK_PACKET"); break;
-            case WINDIVERT_EVENT_FLOW_ESTABLISHED:
-                WinDivertPutString(stream, "FLOW_ESTABLISHED"); break;
-            case WINDIVERT_EVENT_FLOW_DELETED:
-                WinDivertPutString(stream, "FLOW_DELETED"); break;
-            case WINDIVERT_EVENT_SOCKET_BIND:
-                WinDivertPutString(stream, "SOCKET_BIND"); break;
-            case WINDIVERT_EVENT_SOCKET_CONNECT:
-                WinDivertPutString(stream, "SOCKET_CONNECT"); break;
-            case WINDIVERT_EVENT_SOCKET_LISTEN:
-                WinDivertPutString(stream, "SOCKET_LISTEN"); break;
-            case WINDIVERT_EVENT_SOCKET_ACCEPT:
-                WinDivertPutString(stream, "SOCKET_ACCEPT"); break;
-            case WINDIVERT_EVENT_REFLECT_ESTABLISHED:
-                WinDivertPutString(stream, "REFLECT_ESTABLISHED"); break;
-            case WINDIVERT_EVENT_REFLECT_OPEN:
-                WinDivertPutString(stream, "REFLECT_OPEN"); break;
-            case WINDIVERT_EVENT_REFLECT_CLOSE:
-                WinDivertPutString(stream, "REFLECT_CLOSE"); break;
+            case WINDIVERT_LAYER_NETWORK:
+            case WINDIVERT_LAYER_NETWORK_FORWARD:
+                if (val->val[0] == WINDIVERT_EVENT_NETWORK_PACKET)
+                {
+                    WinDivertPutString(stream, "PACKET");
+                }
+                else
+                {
+                    WinDivertFormatNumber(stream, val->val[0]);
+                }
+                break;
+            case WINDIVERT_LAYER_FLOW:
+                switch (val->val[0])
+                {
+                    case WINDIVERT_EVENT_FLOW_ESTABLISHED:
+                        WinDivertPutString(stream, "ESTABLISHED"); break;
+                    case WINDIVERT_EVENT_FLOW_DELETED:
+                        WinDivertPutString(stream, "DELETED"); break;
+                    default:
+                        WinDivertFormatNumber(stream, val->val[0]); break;
+                }
+                break;
+            case WINDIVERT_LAYER_SOCKET:
+                switch (val->val[0])
+                {
+                    case WINDIVERT_EVENT_SOCKET_BIND:
+                        WinDivertPutString(stream, "BIND"); break;
+                    case WINDIVERT_EVENT_SOCKET_CONNECT:
+                        WinDivertPutString(stream, "CONNECT"); break;
+                    case WINDIVERT_EVENT_SOCKET_LISTEN:
+                        WinDivertPutString(stream, "LISTEN"); break;
+                    case WINDIVERT_EVENT_SOCKET_ACCEPT:
+                        WinDivertPutString(stream, "ACCEPT"); break;
+                    default:
+                        WinDivertFormatNumber(stream, val->val[0]); break;
+                }
+                break;
+            case WINDIVERT_LAYER_REFLECT:
+                switch (val->val[0])
+                {
+                    case WINDIVERT_EVENT_REFLECT_ESTABLISHED:
+                        WinDivertPutString(stream, "ESTABLISHED"); break;
+                    case WINDIVERT_EVENT_REFLECT_OPEN:
+                        WinDivertPutString(stream, "OPEN"); break;
+                    case WINDIVERT_EVENT_REFLECT_CLOSE:
+                        WinDivertPutString(stream, "CLOSE"); break;
+                    default:
+                        WinDivertFormatNumber(stream, val->val[0]); break;
+                }
+                break;
             default:
                 WinDivertFormatNumber(stream, val->val[0]); break;
         }
@@ -3692,7 +3733,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr)
  * Format an expression.
  */
 static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
-    BOOL top_level, BOOL and)
+    WINDIVERT_LAYER layer, BOOL top_level, BOOL and)
 {
     if (stream->pos >= stream->max)
     {
@@ -3706,11 +3747,11 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             {
                 WinDivertPutChar(stream, '(');
             }
-            WinDivertFormatExpr(stream, expr->arg[0], /*top_level=*/FALSE,
-                /*and=*/TRUE);
+            WinDivertFormatExpr(stream, expr->arg[0], layer,
+                /*top_level=*/FALSE, /*and=*/TRUE);
             WinDivertPutString(stream, " and ");
-            WinDivertFormatExpr(stream, expr->arg[1], /*top_level=*/FALSE,
-                /*and=*/TRUE);
+            WinDivertFormatExpr(stream, expr->arg[1], layer,
+                /*top_level=*/FALSE, /*and=*/TRUE);
             if (!top_level && !and)
             {
                 WinDivertPutChar(stream, ')');
@@ -3721,11 +3762,11 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             {
                 WinDivertPutChar(stream, '(');
             }
-            WinDivertFormatExpr(stream, expr->arg[0], /*top_level=*/FALSE,
-                /*and=*/FALSE);
+            WinDivertFormatExpr(stream, expr->arg[0], layer,
+                /*top_level=*/FALSE, /*and=*/FALSE);
             WinDivertPutString(stream, " or ");
-            WinDivertFormatExpr(stream, expr->arg[1], /*top_level=*/FALSE,
-                /*and=*/FALSE);
+            WinDivertFormatExpr(stream, expr->arg[1], layer,
+                /*top_level=*/FALSE, /*and=*/FALSE);
             if (!top_level && and)
             {
                 WinDivertPutChar(stream, ')');
@@ -3733,14 +3774,14 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             return;
         case TOKEN_QUESTION:
             WinDivertPutChar(stream, '(');
-            WinDivertFormatExpr(stream, expr->arg[0], /*top_level=*/TRUE,
-                /*and=*/FALSE);
+            WinDivertFormatExpr(stream, expr->arg[0], layer,
+                /*top_level=*/TRUE, /*and=*/FALSE);
             WinDivertPutString(stream, "? ");
-            WinDivertFormatExpr(stream, expr->arg[1], /*top_level=*/TRUE,
-                /*and=*/FALSE);
+            WinDivertFormatExpr(stream, expr->arg[1], layer,
+                /*top_level=*/TRUE, /*and=*/FALSE);
             WinDivertPutString(stream, ": ");
-            WinDivertFormatExpr(stream, expr->arg[2], /*top_level=*/TRUE,
-                /*and=*/FALSE);
+            WinDivertFormatExpr(stream, expr->arg[2], layer,
+                /*top_level=*/TRUE, /*and=*/FALSE);
             WinDivertPutChar(stream, ')');
             return;
         case TOKEN_TRUE:
@@ -3755,7 +3796,7 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         case TOKEN_LEQ:
         case TOKEN_GT:
         case TOKEN_GEQ:
-            WinDivertFormatTestExpr(stream, expr);
+            WinDivertFormatTestExpr(stream, expr, layer);
             return;
         case TOKEN_ZERO:
             WinDivertPutString(stream, "zero"); return;
@@ -3990,7 +4031,8 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
     stream.pos      = 0;
     stream.max      = buflen;
     stream.overflow = FALSE;
-    WinDivertFormatExpr(&stream, expr, /*top_level=*/TRUE, /*and=*/FALSE);
+    WinDivertFormatExpr(&stream, expr, layer, /*top_level=*/TRUE,
+        /*and=*/FALSE);
     WinDivertPutNul(&stream);
 
     // Clean-up:

@@ -155,8 +155,7 @@
 /*
  * WinDivert events.
  */
-#define WINDIVERT_EVENT_MAX                         \
-    WINDIVERT_EVENT_REFLECT_CLOSE
+#define WINDIVERT_EVENT_MAX                         0x8000
 
 /*
  * WinDivert flags.

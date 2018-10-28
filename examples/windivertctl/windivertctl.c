@@ -278,6 +278,10 @@ usage:
                 SetConsoleTextAttribute(console, FOREGROUND_RED);
                 fputs("CLOSE", stdout);
                 break;
+            
+            default:
+                fputs("???", stdout);
+                break;
         }
         SetConsoleTextAttribute(console,
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);

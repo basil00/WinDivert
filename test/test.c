@@ -113,7 +113,7 @@ static struct packet pkt_ipv6_exthdrs_udp =
 };
 static struct test tests[] =
 {
-    {"event = NETWORK_PACKET",                 &pkt_echo_request, TRUE},
+    {"event = PACKET",                         &pkt_echo_request, TRUE},
     {"outbound and icmp",                      &pkt_echo_request, TRUE},
     {"outbound",                               &pkt_echo_request, TRUE},
     {"outbound and inbound",                   &pkt_echo_request, FALSE},
@@ -418,6 +418,7 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     addr.Outbound = TRUE;
     addr.Layer    = WINDIVERT_LAYER_NETWORK;
     addr.IPv6     = (iphdr == NULL);
+    addr.Event    = WINDIVERT_EVENT_NETWORK_PACKET;
     if (WinDivertHelperEvalFilter(filter, (PVOID)packet, packet_len, &addr)
             != match)
     {
