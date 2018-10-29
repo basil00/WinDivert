@@ -289,27 +289,6 @@ struct flow_s
 typedef struct flow_s *flow_t;
 
 /*
- * IPv4/IPv6 pseudo headers.
- */
-typedef struct
-{
-    UINT32 SrcAddr;
-    UINT32 DstAddr;
-    UINT8  Zero;
-    UINT8  Protocol;
-    UINT16 Length;
-} WINDIVERT_PSEUDOHDR, *PWINDIVERT_PSEUDOHDR;
-
-typedef struct
-{
-    UINT32 SrcAddr[4];
-    UINT32 DstAddr[4];
-    UINT32 Length;
-    UINT32 Zero:24;
-    UINT32 NextHdr:8;
-} WINDIVERT_PSEUDOV6HDR, *PWINDIVERT_PSEUDOV6HDR;
-
-/*
  * Misc.
  */
 #define UINT8_MAX       0xFF
@@ -2854,6 +2833,59 @@ static NTSTATUS windivert_notify(IN FWPS_CALLOUT_NOTIFY_TYPE type,
 }
 
 /*
+ * WinDivert get fixed values.
+ */
+static UINT8 windivert_get_val8(const FWPS_INCOMING_VALUES0 *fixed_vals,
+    int idx)
+{
+    FWP_VALUE0 value = fixed_vals->incomingValue[idx].value;
+    return (value.type != FWP_UINT8? 0: value.uint8);
+}
+static UINT16 windivert_get_val16(const FWPS_INCOMING_VALUES0 *fixed_vals,
+    int idx)
+{
+    FWP_VALUE0 value = fixed_vals->incomingValue[idx].value;
+    return (value.type != FWP_UINT16? 0: value.uint16);
+}
+static UINT32 windivert_get_val32(const FWPS_INCOMING_VALUES0 *fixed_vals,
+    int idx)
+{
+    FWP_VALUE0 value = fixed_vals->incomingValue[idx].value;
+    return (value.type != FWP_UINT32? 0: value.uint32);
+}
+static void windivert_get_ipv4_addr(const FWPS_INCOMING_VALUES0 *fixed_vals,
+    int idx, UINT32 *addr)
+{
+    FWP_VALUE0 value = fixed_vals->incomingValue[idx].value;
+    addr[2] = addr[3] = 0;
+    if (value.type != FWP_UINT32)
+    {
+        addr[0] = addr[1] = 0;
+    }
+    else
+    {
+        addr[0] = value.uint32;
+        addr[1] = 0x0000FFFF;
+    }
+}
+static void windivert_get_ipv6_addr(const FWPS_INCOMING_VALUES0 *fixed_vals,
+    int idx, UINT32 *addr)
+{
+    UINT8 *addr8 = (UINT8 *)addr;
+    INT i;
+    FWP_VALUE0 value = fixed_vals->incomingValue[idx].value;
+	if (value.type != FWP_BYTE_ARRAY16_TYPE)
+    {
+        RtlZeroMemory(&addr, 16);
+        return;
+    }
+    for (i = 16-1; i >= 0; i--)
+    {
+        addr8[16-i-1] = value.byteArray16->byteArray16[i];
+    }
+}
+
+/*
  * WinDivert classify outbound IPv4 function.
  */
 static void windivert_outbound_network_v4_classify(
@@ -2870,12 +2902,12 @@ static void windivert_outbound_network_v4_classify(
         return;
     }
 
-    network_data.IfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_OUTBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32,
-    network_data.SubIfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_OUTBOUND_IPPACKET_V4_SUB_INTERFACE_INDEX].value.uint32,
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_OUTBOUND_IPPACKET_V4_FLAGS].value.uint32 &
+    network_data.IfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_OUTBOUND_IPPACKET_V4_INTERFACE_INDEX);
+    network_data.SubIfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_OUTBOUND_IPPACKET_V4_SUB_INTERFACE_INDEX);
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_OUTBOUND_IPPACKET_V4_FLAGS) &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_network_classify((context_t)filter->context, &network_data,
@@ -2900,12 +2932,12 @@ static void windivert_outbound_network_v6_classify(
         return;
     }
 
-    network_data.IfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_OUTBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32,
-    network_data.SubIfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_OUTBOUND_IPPACKET_V6_SUB_INTERFACE_INDEX].value.uint32,
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_OUTBOUND_IPPACKET_V6_FLAGS].value.uint32 &
+    network_data.IfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_OUTBOUND_IPPACKET_V6_INTERFACE_INDEX);
+    network_data.SubIfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_OUTBOUND_IPPACKET_V6_SUB_INTERFACE_INDEX);
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_OUTBOUND_IPPACKET_V6_FLAGS) &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_network_classify((context_t)filter->context, &network_data,
@@ -2931,8 +2963,8 @@ static void windivert_inbound_network_v4_classify(
         return;
     }
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_INBOUND_IPPACKET_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_INBOUND_IPPACKET_V4_FLAGS) &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
     if (loopback)
     {
@@ -2940,10 +2972,10 @@ static void windivert_inbound_network_v4_classify(
         return;
     }
 
-    network_data.IfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_INBOUND_IPPACKET_V4_INTERFACE_INDEX].value.uint32;
-    network_data.SubIfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_INBOUND_IPPACKET_V4_SUB_INTERFACE_INDEX].value.uint32;
+    network_data.IfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_INBOUND_IPPACKET_V4_INTERFACE_INDEX);
+    network_data.SubIfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_INBOUND_IPPACKET_V4_SUB_INTERFACE_INDEX);
     advance = meta_vals->ipHeaderSize;
     
     windivert_network_classify((context_t)filter->context, &network_data,
@@ -2968,8 +3000,8 @@ static void windivert_inbound_network_v6_classify(
         return;
     }
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_INBOUND_IPPACKET_V6_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_INBOUND_IPPACKET_V6_FLAGS) &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
     if (loopback)
     {
@@ -2977,10 +3009,10 @@ static void windivert_inbound_network_v6_classify(
         return;
     }
 
-    network_data.IfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_INBOUND_IPPACKET_V6_INTERFACE_INDEX].value.uint32;
-    network_data.SubIfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_INBOUND_IPPACKET_V6_SUB_INTERFACE_INDEX].value.uint32;
+    network_data.IfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_INBOUND_IPPACKET_V6_INTERFACE_INDEX);
+    network_data.SubIfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_INBOUND_IPPACKET_V6_SUB_INTERFACE_INDEX);
     advance = meta_vals->ipHeaderSize;
     
     windivert_network_classify((context_t)filter->context, &network_data,
@@ -3003,8 +3035,8 @@ static void windivert_forward_network_v4_classify(
         return;
     }
  
-    network_data.IfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_IPFORWARD_V4_DESTINATION_INTERFACE_INDEX].value.uint32;
+    network_data.IfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_IPFORWARD_V4_DESTINATION_INTERFACE_INDEX);
     network_data.SubIfIdx = 0;
 
     windivert_network_classify((context_t)filter->context, &network_data,
@@ -3028,8 +3060,8 @@ static void windivert_forward_network_v6_classify(
         return;
     }
 
-    network_data.IfIdx = fixed_vals->incomingValue[
-        FWPS_FIELD_IPFORWARD_V6_DESTINATION_INTERFACE_INDEX].value.uint32;
+    network_data.IfIdx = windivert_get_val32(fixed_vals,
+        FWPS_FIELD_IPFORWARD_V6_DESTINATION_INTERFACE_INDEX);
     network_data.SubIfIdx = 0;
 
     windivert_network_classify((context_t)filter->context, &network_data,
@@ -3248,28 +3280,24 @@ static void windivert_flow_established_v4_classify(
     UINT64 flow_id;
 
     flow_data.ProcessId = (UINT32)meta_vals->processId;
-    flow_data.LocalAddr[0] = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_LOCAL_ADDRESS].value.uint32;
-    flow_data.LocalAddr[1] = 0x0000FFFF;
-    flow_data.LocalAddr[2] = 0;
-    flow_data.LocalAddr[3] = 0;
-    flow_data.RemoteAddr[0] = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_REMOTE_ADDRESS].value.uint32;
-    flow_data.RemoteAddr[1] = 0x0000FFFF;
-    flow_data.RemoteAddr[2] = 0;
-    flow_data.RemoteAddr[3] = 0;
-    flow_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_LOCAL_PORT].value.uint16;
-    flow_data.RemotePort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_REMOTE_PORT].value.uint16;
-    flow_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_PROTOCOL].value.uint8;
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_LOCAL_ADDRESS,
+        flow_data.LocalAddr);
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_REMOTE_ADDRESS,
+        flow_data.RemoteAddr);
+    flow_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_LOCAL_PORT);
+    flow_data.RemotePort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_REMOTE_PORT);
+    flow_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_IP_PROTOCOL);
 
-    outbound = (fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_DIRECTION].value.uint32 ==
+    outbound = (windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_DIRECTION) ==
         FWP_DIRECTION_OUTBOUND);
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
     flow_id = meta_vals->flowHandle;
 
@@ -3289,37 +3317,26 @@ static void windivert_flow_established_v6_classify(
     WINDIVERT_DATA_FLOW flow_data;
     BOOL outbound, loopback;
     UINT64 flow_id;
-    UINT8 *addr;
-    INT i;
 
-    // IPv6 assumes host byte order, so convert:
     flow_data.ProcessId = (UINT32)meta_vals->processId;
-    addr = (UINT8 *)&flow_data.LocalAddr;
-    for (i = sizeof(flow_data.LocalAddr)-1; i >= 0; i--)
-    {
-        addr[sizeof(flow_data.LocalAddr)-i-1] = fixed_vals->incomingValue[
-            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_LOCAL_ADDRESS]
-                .value.byteArray16->byteArray16[i];
-    }
-    addr = (UINT8 *)&flow_data.RemoteAddr;
-    for (i = sizeof(flow_data.RemoteAddr)-1; i >= 0; i--)
-    {
-        addr[sizeof(flow_data.RemoteAddr)-i-1] = fixed_vals->incomingValue[
-            FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_REMOTE_ADDRESS]
-                .value.byteArray16->byteArray16[i];
-    }
-    flow_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_LOCAL_PORT].value.uint16;
-    flow_data.RemotePort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_REMOTE_PORT].value.uint16;
-    flow_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_PROTOCOL].value.uint8;
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_LOCAL_ADDRESS,
+        flow_data.LocalAddr);
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_REMOTE_ADDRESS,
+        flow_data.RemoteAddr);
+    flow_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_LOCAL_PORT);
+    flow_data.RemotePort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_REMOTE_PORT);
+    flow_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_PROTOCOL);
     
-    outbound = (fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_DIRECTION].value.uint32 ==
+    outbound = (windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_DIRECTION) ==
         FWP_DIRECTION_OUTBOUND);
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
     flow_id = meta_vals->flowHandle;
     
@@ -3518,37 +3535,21 @@ static void windivert_resource_assignment_v4_classify(
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
     WINDIVERT_DATA_SOCKET socket_data;
-    FWP_VALUE0 value;
     BOOL loopback;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    value = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_LOCAL_ADDRESS].value;
-    if (value.type == FWP_UINT32)
-    {
-        socket_data.LocalAddr[0] = value.uint32;
-        socket_data.LocalAddr[1] = 0x0000FFFF;
-    }
-    else
-    {
-        socket_data.LocalAddr[0] = 0;
-        socket_data.LocalAddr[1] = 0;
-    }
-    socket_data.LocalAddr[2] = 0;
-    socket_data.LocalAddr[3] = 0;
-    socket_data.RemoteAddr[0] = 0;
-    socket_data.RemoteAddr[1] = 0;
-    socket_data.RemoteAddr[2] = 0;
-    socket_data.RemoteAddr[3] = 0;
-    value = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_LOCAL_PORT].value;
-    socket_data.LocalPort = (value.type == FWP_UINT16? value.uint16: 0);
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    RtlZeroMemory(&socket_data.RemoteAddr, sizeof(socket_data.RemoteAddr));
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_LOCAL_PORT);
     socket_data.RemotePort = 0;
-    socket_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_PROTOCOL].value.uint8;
+    socket_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_IP_PROTOCOL);
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,
@@ -3566,43 +3567,21 @@ static void windivert_resource_assignment_v6_classify(
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
     WINDIVERT_DATA_SOCKET socket_data;
-    FWP_VALUE0 value;
     BOOL loopback;
-    UINT8 *addr;
-    INT i;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    addr = (UINT8 *)&socket_data.LocalAddr;
-    value = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_LOCAL_ADDRESS].value;
-    if (value.type == FWP_BYTE_ARRAY16_TYPE)
-    {
-        for (i = sizeof(socket_data.LocalAddr)-1; i >= 0; i--)
-        {
-            addr[sizeof(socket_data.LocalAddr)-i-1] =
-                value.byteArray16->byteArray16[i];
-        }
-    }
-    else
-    {
-        socket_data.LocalAddr[0] = 0;
-        socket_data.LocalAddr[1] = 0;
-        socket_data.LocalAddr[2] = 0;
-        socket_data.LocalAddr[3] = 0;
-    }
-    socket_data.RemoteAddr[0] = 0;
-    socket_data.RemoteAddr[1] = 0;
-    socket_data.RemoteAddr[2] = 0;
-    socket_data.RemoteAddr[3] = 0;
-    value = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_LOCAL_PORT].value;
-    socket_data.LocalPort = (value.type == FWP_UINT16? value.uint16: 0);
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    RtlZeroMemory(&socket_data.RemoteAddr, sizeof(socket_data.RemoteAddr));
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_LOCAL_PORT);
     socket_data.RemotePort = 0;
-    socket_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_PROTOCOL].value.uint8;
+    socket_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_IP_PROTOCOL);
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,
@@ -3623,25 +3602,21 @@ static void windivert_auth_connect_v4_classify(
     BOOL loopback;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    socket_data.LocalAddr[0] = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_LOCAL_ADDRESS].value.uint32;
-    socket_data.LocalAddr[1] = 0x0000FFFF;
-    socket_data.LocalAddr[2] = 0;
-    socket_data.LocalAddr[3] = 0;
-    socket_data.RemoteAddr[0] = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_REMOTE_ADDRESS].value.uint32;
-    socket_data.RemoteAddr[1] = 0x0000FFFF;
-    socket_data.RemoteAddr[2] = 0;
-    socket_data.RemoteAddr[3] = 0;
-    socket_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_LOCAL_PORT].value.uint16;
-    socket_data.RemotePort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_REMOTE_PORT].value.uint16;
-    socket_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_PROTOCOL].value.uint8;
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_REMOTE_ADDRESS,
+        socket_data.RemoteAddr);
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_LOCAL_PORT);
+    socket_data.RemotePort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_REMOTE_PORT);
+    socket_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_PROTOCOL);
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,
@@ -3660,33 +3635,23 @@ static void windivert_auth_connect_v6_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
-    UINT8 *addr;
-    INT i;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    addr = (UINT8 *)&socket_data.LocalAddr;
-    for (i = sizeof(socket_data.LocalAddr)-1; i >= 0; i--)
-    {
-        addr[sizeof(socket_data.LocalAddr)-i-1] = fixed_vals->incomingValue[
-            FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_LOCAL_ADDRESS]
-                .value.byteArray16->byteArray16[i];
-    }
-    addr = (UINT8 *)&socket_data.RemoteAddr;
-    for (i = sizeof(socket_data.RemoteAddr)-1; i >= 0; i--)
-    {
-        addr[sizeof(socket_data.RemoteAddr)-i-1] = fixed_vals->incomingValue[
-            FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_REMOTE_ADDRESS]
-                .value.byteArray16->byteArray16[i];
-    }
-    socket_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_LOCAL_PORT].value.uint16;
-    socket_data.RemotePort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_REMOTE_PORT].value.uint16;
-    socket_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_IP_PROTOCOL].value.uint8;
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_REMOTE_ADDRESS,
+        socket_data.RemoteAddr);
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_LOCAL_PORT);
+    socket_data.RemotePort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_REMOTE_PORT);
+    socket_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V6_IP_PROTOCOL);
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_CONNECT_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_CONNECT_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,
@@ -3707,22 +3672,17 @@ static void windivert_auth_listen_v4_classify(
     BOOL loopback;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    socket_data.LocalAddr[0] = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_LISTEN_V4_IP_LOCAL_ADDRESS].value.uint32;
-    socket_data.LocalAddr[1] = 0x0000FFFF;
-    socket_data.LocalAddr[2] = 0;
-    socket_data.LocalAddr[3] = 0;
-    socket_data.RemoteAddr[0] = 0;
-    socket_data.RemoteAddr[1] = 0;
-    socket_data.RemoteAddr[2] = 0;
-    socket_data.RemoteAddr[3] = 0;
-    socket_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_LISTEN_V4_IP_LOCAL_PORT].value.uint16;
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_LISTEN_V4_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    RtlZeroMemory(&socket_data.RemoteAddr, sizeof(socket_data.RemoteAddr));
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_LISTEN_V4_IP_LOCAL_PORT);
     socket_data.RemotePort = 0;
     socket_data.Protocol = IPPROTO_TCP;
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_LISTEN_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_LISTEN_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,
@@ -3741,28 +3701,19 @@ static void windivert_auth_listen_v6_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
-    UINT8 *addr;
-    INT i;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    addr = (UINT8 *)&socket_data.LocalAddr;
-    for (i = sizeof(socket_data.LocalAddr)-1; i >= 0; i--)
-    {
-        addr[sizeof(socket_data.LocalAddr)-i-1] = fixed_vals->incomingValue[
-            FWPS_FIELD_ALE_AUTH_LISTEN_V6_IP_LOCAL_ADDRESS]
-                .value.byteArray16->byteArray16[i];
-    }
-    socket_data.RemoteAddr[0] = 0;
-    socket_data.RemoteAddr[1] = 0;
-    socket_data.RemoteAddr[2] = 0;
-    socket_data.RemoteAddr[3] = 0;
-    socket_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_LISTEN_V6_IP_LOCAL_PORT].value.uint16;
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_LISTEN_V6_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    RtlZeroMemory(&socket_data.RemoteAddr, sizeof(socket_data.RemoteAddr));
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_LISTEN_V6_IP_LOCAL_PORT);
     socket_data.RemotePort = 0;
     socket_data.Protocol = IPPROTO_TCP;
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_LISTEN_V6_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_LISTEN_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,
@@ -3783,25 +3734,21 @@ static void windivert_auth_recv_accept_v4_classify(
     BOOL loopback;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    socket_data.LocalAddr[0] = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_LOCAL_ADDRESS].value.uint32;
-    socket_data.LocalAddr[1] = 0x0000FFFF;
-    socket_data.LocalAddr[2] = 0;
-    socket_data.LocalAddr[3] = 0;
-    socket_data.RemoteAddr[0] = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_REMOTE_ADDRESS].value.uint32;
-    socket_data.RemoteAddr[1] = 0x0000FFFF;
-    socket_data.RemoteAddr[2] = 0;
-    socket_data.RemoteAddr[3] = 0;
-    socket_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_LOCAL_PORT].value.uint16;
-    socket_data.RemotePort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_REMOTE_PORT].value.uint16;
-    socket_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_PROTOCOL].value.uint8;
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    windivert_get_ipv4_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_REMOTE_ADDRESS,
+        socket_data.RemoteAddr);
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_LOCAL_PORT);
+    socket_data.RemotePort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_REMOTE_PORT);
+    socket_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_PROTOCOL);
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,
@@ -3820,33 +3767,23 @@ static void windivert_auth_recv_accept_v6_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
-    UINT8 *addr;
-    INT i;
 
     socket_data.ProcessId = (UINT32)meta_vals->processId;
-    addr = (UINT8 *)&socket_data.LocalAddr;
-    for (i = sizeof(socket_data.LocalAddr)-1; i >= 0; i--)
-    {
-        addr[sizeof(socket_data.LocalAddr)-i-1] = fixed_vals->incomingValue[
-            FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_IP_LOCAL_ADDRESS]
-                .value.byteArray16->byteArray16[i];
-    }
-    addr = (UINT8 *)&socket_data.RemoteAddr;
-    for (i = sizeof(socket_data.RemoteAddr)-1; i >= 0; i--)
-    {
-        addr[sizeof(socket_data.RemoteAddr)-i-1] = fixed_vals->incomingValue[
-            FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_IP_REMOTE_ADDRESS]
-                .value.byteArray16->byteArray16[i];
-    }
-    socket_data.LocalPort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_LOCAL_PORT].value.uint16;
-    socket_data.RemotePort = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_REMOTE_PORT].value.uint16;
-    socket_data.Protocol = fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_IP_PROTOCOL].value.uint8;
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_IP_LOCAL_ADDRESS,
+        socket_data.LocalAddr);
+    windivert_get_ipv6_addr(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_IP_REMOTE_ADDRESS,
+        socket_data.RemoteAddr);
+    socket_data.LocalPort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_IP_LOCAL_PORT);
+    socket_data.RemotePort = windivert_get_val16(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_IP_REMOTE_PORT);
+    socket_data.Protocol = windivert_get_val8(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_IP_PROTOCOL);
 
-    loopback = ((fixed_vals->incomingValue[
-        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V4_FLAGS].value.uint32 &
+    loopback = ((windivert_get_val32(fixed_vals,
+        FWPS_FIELD_ALE_AUTH_RECV_ACCEPT_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
     windivert_socket_classify((context_t)filter->context,

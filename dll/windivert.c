@@ -64,27 +64,6 @@ static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr);
 static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr);
 
 /*
- * IPv4/IPv6 pseudo headers.
- */
-typedef struct
-{
-    UINT32 SrcAddr;
-    UINT32 DstAddr;
-    UINT8  Zero;
-    UINT8  Protocol;
-    UINT16 Length;
-} WINDIVERT_PSEUDOHDR, *PWINDIVERT_PSEUDOHDR;
-
-typedef struct
-{
-    UINT32 SrcAddr[4];
-    UINT32 DstAddr[4];
-    UINT32 Length;
-    UINT32 Zero:24;
-    UINT32 NextHdr:8;
-} WINDIVERT_PSEUDOV6HDR, *PWINDIVERT_PSEUDOV6HDR;
-
-/*
  * Misc.
  */
 #ifndef UINT8_MAX
