@@ -365,6 +365,11 @@ usage:
                 printf("%sDEBUG", (or? "|": ""));
                 or = TRUE;
             }
+            if ((addr.Reflect.Flags & WINDIVERT_FLAG_PARTIAL) != 0)
+            {
+                printf("%sPARTIAL", (or? "|": ""));
+                or = TRUE;
+            }
             if ((addr.Reflect.Flags & WINDIVERT_FLAG_NO_INSTALL) != 0)
             {
                 printf("%sNO_INSTALL", (or? "|": ""));

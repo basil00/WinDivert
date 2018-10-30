@@ -191,7 +191,8 @@ typedef enum
 #define WINDIVERT_FLAG_SEND_ONLY        0x08
 #define WINDIVERT_FLAG_WRITE_ONLY       WINDIVERT_FLAG_SEND_ONLY
 #define WINDIVERT_FLAG_DEBUG            0x10
-#define WINDIVERT_FLAG_NO_INSTALL       0x20
+#define WINDIVERT_FLAG_PARTIAL          0x20
+#define WINDIVERT_FLAG_NO_INSTALL       0x40
 
 /*
  * WinDivert parameters.

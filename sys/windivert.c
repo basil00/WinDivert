@@ -1919,7 +1919,8 @@ static NTSTATUS windivert_read(context_t context, WDFREQUEST request)
 /*
  * WinDivert service a single read request.
  */
-static void windivert_read_service_request(packet_t packet, WDFREQUEST request)
+static void windivert_read_service_request(packet_t packet, BOOL partial,
+    WDFREQUEST request)
 {
     PMDL dst_mdl;
     UINT8 *layer_data, *src, *dst;
@@ -1963,6 +1964,10 @@ static void windivert_read_service_request(packet_t packet, WDFREQUEST request)
             }
             src_len = packet->packet_len;
             dst_len = MmGetMdlByteCount(dst_mdl);
+            if (!partial && src_len > dst_len)
+            {
+                status = STATUS_BUFFER_TOO_SMALL;
+            }
             dst_len = (src_len < dst_len? src_len: dst_len);
             RtlCopyMemory(dst, src, dst_len);
             break;
@@ -2027,14 +2032,7 @@ static void windivert_read_service_request(packet_t packet, WDFREQUEST request)
 
 windivert_read_service_request_exit:
 
-    if (NT_SUCCESS(status))
-    {
-        WdfRequestCompleteWithInformation(request, status, dst_len);
-    }
-    else
-    {
-        WdfRequestComplete(request, status);
-    }
+    WdfRequestCompleteWithInformation(request, status, dst_len);
 }
 
 /*
@@ -2049,6 +2047,7 @@ static void windivert_read_service(context_t context)
     PVOID dst, src;
     ULONG dst_len, src_len;
     LONGLONG timestamp;
+    BOOL partial;
     BOOL timeout;
     NTSTATUS status;
     packet_t packet;
@@ -2057,6 +2056,7 @@ static void windivert_read_service(context_t context)
 
     timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    partial = ((context->flags & WINDIVERT_FLAG_PARTIAL) != 0);
     while (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
            !IsListEmpty(&context->packet_queue))
     {
@@ -2080,7 +2080,7 @@ static void windivert_read_service(context_t context)
 
         if (!timeout)
         {
-            windivert_read_service_request(packet, request);
+            windivert_read_service_request(packet, partial, request);
         }
 
         windivert_free_packet(packet);

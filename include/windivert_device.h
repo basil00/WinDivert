@@ -163,7 +163,7 @@
 #define WINDIVERT_FLAGS_ALL                                                 \
     (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_RECV_ONLY |\
         WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_DEBUG |                   \
-        WINDIVERT_FLAG_NO_INSTALL)
+        WINDIVERT_FLAG_PARTIAL | WINDIVERT_FLAG_NO_INSTALL)
 #define WINDIVERT_FLAGS_EXCLUDE(flags, flag1, flag2)                        \
     (((flags) & ((flag1) | (flag2))) != ((flag1) | (flag2)))
 #define WINDIVERT_FLAGS_VALID(flags)                                        \
@@ -171,6 +171,8 @@
      WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_SNIFF,                   \
         WINDIVERT_FLAG_DROP) &&                                             \
      WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_RECV_ONLY,               \
+        WINDIVERT_FLAG_SEND_ONLY) &&                                        \
+     WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_PARTIAL,                 \
         WINDIVERT_FLAG_SEND_ONLY))
 
 /*
