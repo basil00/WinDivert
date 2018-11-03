@@ -79,10 +79,10 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr);
 static BOOLEAN WinDivertUse32Bit(void);
 static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str);
 static SC_HANDLE WinDivertDriverInstall(VOID);
-static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen);
-static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped);
+static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen);
+static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped);
 static UINT8 WinDivertSkipExtHeaders(UINT8 proto, UINT8 **header, UINT *len);
 
 /*
@@ -300,8 +300,8 @@ WinDivertDriverInstallExit:
 /*
  * Perform a DeviceIoControl.
  */
-static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen)
+static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen)
 {
     OVERLAPPED overlapped;
     DWORD iolen0;
@@ -320,7 +320,7 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
 
     memset(&overlapped, 0, sizeof(overlapped));
     overlapped.hEvent = event;
-    if (!WinDivertIoControlEx(handle, code, arg8, arg, buf, len, iolen,
+    if (!WinDivertIoControlEx(handle, code, arg1, arg2, buf, len, iolen,
             &overlapped))
     {
         if (GetLastError() != ERROR_IO_PENDING ||
@@ -339,17 +339,15 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
 /*
  * Perform an (overlapped) DeviceIoControl.
  */
-static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped)
+static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped)
 {
     WINDIVERT_IOCTL ioctl;
     BOOL result;
     DWORD iolen0;
 
-    ioctl.version = WINDIVERT_IOCTL_VERSION;
-    ioctl.magic   = WINDIVERT_IOCTL_MAGIC;
-    ioctl.arg8    = arg8;
-    ioctl.arg     = arg;
+    ioctl.arg1 = arg1;
+    ioctl.arg2 = arg2;
     result = DeviceIoControl(handle, code, &ioctl, sizeof(ioctl), buf,
         (DWORD)len, &iolen0, overlapped);
     if (result && iolen != NULL)
@@ -454,8 +452,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     // Set the layer:
     if (layer != WINDIVERT_LAYER_DEFAULT)
     {
-        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_LAYER, 0,
-                (UINT64)layer, NULL, 0, NULL))
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_LAYER,
+                (UINT64)layer, 0, NULL, 0, NULL))
         {
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
@@ -465,7 +463,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     // Set the flags:
     if (flags != 0)
     {
-        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_FLAGS, 0, flags,
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_FLAGS, flags, 0,
                 NULL, 0, NULL))
         {
             CloseHandle(handle);
@@ -478,8 +476,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     {
         // Make positive:
         priority64 = (UINT64)((INT64)priority + WINDIVERT_PRIORITY_MAX);
-        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PRIORITY, 0,
-                priority64, NULL, 0, NULL))
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PRIORITY,
+                priority64, 0, NULL, 0, NULL))
         {
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
@@ -487,8 +485,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     }
 
     // Start the filter:
-    if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_START_FILTER, 0,
-            filter_flags, object, obj_len * sizeof(WINDIVERT_FILTER), NULL))
+    if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_START_FILTER,
+            filter_flags, 0, object, obj_len * sizeof(WINDIVERT_FILTER), NULL))
     {
         CloseHandle(handle);
         return INVALID_HANDLE_VALUE;
@@ -504,15 +502,15 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
     PWINDIVERT_ADDRESS addr, UINT *readlen)
 {
-    return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, 0, (UINT64)addr,
-        pPacket, packetLen, readlen);
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, (UINT64)addr,
+        (UINT64)NULL, pPacket, packetLen, readlen);
 }
 
 /*
  * Receive a WinDivert packet.
  */
 extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
-    UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *readlen,
+    UINT *readLen, UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *pAddrLen,
     LPOVERLAPPED overlapped)
 {
     if (flags != 0)
@@ -522,13 +520,14 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
     }
     if (overlapped == NULL)
     {
-        return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, 0,
-            (UINT64)addr, pPacket, packetLen, readlen);
+        return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV,
+            (UINT64)addr, (UINT64)pAddrLen, pPacket, packetLen, readLen);
     }
     else
     {
-        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_RECV, 0,
-            (UINT64)addr, pPacket, packetLen, readlen, overlapped);
+        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_RECV,
+            (UINT64)addr, (UINT64)pAddrLen, pPacket, packetLen, readLen,
+            overlapped);
     }
 }
 
@@ -538,36 +537,32 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
 extern BOOL WinDivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
     PWINDIVERT_ADDRESS addr, UINT *writelen)
 {
-    if (addr == NULL)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0, (UINT64)addr,
-        pPacket, packetLen, writelen);
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, (UINT64)addr,
+        sizeof(WINDIVERT_ADDRESS), pPacket, packetLen, writelen);
 }
 
 /*
  * Send a WinDivert packet.
  */
 extern BOOL WinDivertSendEx(HANDLE handle, PVOID pPacket, UINT packetLen,
-    UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *writelen,
+    UINT *writeLen, UINT64 flags, PWINDIVERT_ADDRESS addr, UINT addrLen,
     LPOVERLAPPED overlapped)
 {
-    if (flags != 0 || addr == NULL)
+    if (flags != 0)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
     if (overlapped == NULL)
     {
-        return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0,
-            (UINT64)addr, pPacket, packetLen, writelen);
+        return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND,
+            (UINT64)addr, (UINT64)addrLen, pPacket, packetLen, writeLen);
     }
     else
     {
-        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_SEND, 0,
-            (UINT64)addr, pPacket, packetLen, writelen, overlapped);
+        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_SEND,
+            (UINT64)addr, (UINT64)addrLen, pPacket, packetLen, writeLen,
+            overlapped);
     }
 }
 

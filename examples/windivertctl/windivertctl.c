@@ -360,14 +360,9 @@ usage:
                 printf("%sSEND_ONLY", (or? "|": ""));
                 or = TRUE;
             }
-            if ((addr.Reflect.Flags & WINDIVERT_FLAG_DEBUG) != 0)
+            if ((addr.Reflect.Flags & WINDIVERT_FLAG_RECV_PARTIAL) != 0)
             {
-                printf("%sDEBUG", (or? "|": ""));
-                or = TRUE;
-            }
-            if ((addr.Reflect.Flags & WINDIVERT_FLAG_PARTIAL) != 0)
-            {
-                printf("%sPARTIAL", (or? "|": ""));
+                printf("%sRECV_PARTIAL", (or? "|": ""));
                 or = TRUE;
             }
             if ((addr.Reflect.Flags & WINDIVERT_FLAG_NO_INSTALL) != 0)

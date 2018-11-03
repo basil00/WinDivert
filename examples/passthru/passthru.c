@@ -47,7 +47,10 @@
 
 #include "windivert.h"
 
-#define MAXBUF  0xFFFF
+#define MAXBUF      0xFFFF
+#define MAXBATCH    0xFF
+
+static int batch = 1;
 
 static DWORD passthru(LPVOID arg);
 
@@ -59,9 +62,10 @@ int __cdecl main(int argc, char **argv)
     int num_threads, priority = 0, i;
     HANDLE handle, thread;
 
-    if (argc != 3 && argc != 4)
+    if (argc < 3 || argc > 5)
     {
-        fprintf(stderr, "usage: %s filter num-threads [priority]\n", argv[0]);
+        fprintf(stderr, "usage: %s filter num-threads [batch] [priority]\n",
+            argv[0]);
         exit(EXIT_FAILURE);
     }
     num_threads = atoi(argv[2]);
@@ -70,9 +74,18 @@ int __cdecl main(int argc, char **argv)
         fprintf(stderr, "error: invalid number of threads\n");
         exit(EXIT_FAILURE);
     }
-    if (argc == 4)
+    if (argc >= 4)
     {
-        priority = atoi(argv[3]);
+        batch = atoi(argv[3]);
+    }
+    if (batch <= 0 || batch > MAXBATCH)
+    {
+        fprintf(stderr, "error: invalid batch size\n");
+        exit(EXIT_FAILURE);
+    }
+    if (argc >= 5)
+    {
+        priority = atoi(argv[4]);
     }
 
     // Divert traffic matching the filter:
@@ -112,16 +125,18 @@ int __cdecl main(int argc, char **argv)
 // Passthru thread.
 static DWORD passthru(LPVOID arg)
 {
-    unsigned char packet[MAXBUF];
-    UINT packet_len;
-    WINDIVERT_ADDRESS addr;
+    UINT8 packet[MAXBUF];
+    UINT packet_len, addr_len;
+    WINDIVERT_ADDRESS addr[MAXBATCH];
     HANDLE handle = (HANDLE)arg;
 
     // Main loop:
     while (TRUE)
     {
         // Read a matching packet.
-        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        addr_len = batch * sizeof(WINDIVERT_ADDRESS);
+        if (!WinDivertRecvEx(handle, packet, sizeof(packet), &packet_len, 0,
+                addr, &addr_len, NULL))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
@@ -129,7 +144,8 @@ static DWORD passthru(LPVOID arg)
         }
 
         // Re-inject the matching packet.
-        if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
+        if (!WinDivertSendEx(handle, packet, packet_len, NULL, 0, addr,
+                addr_len, NULL))
         {
             fprintf(stderr, "warning: failed to reinject packet (%d)\n",
                 GetLastError());

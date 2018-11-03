@@ -227,8 +227,8 @@ int __cdecl main(int argc, char **argv)
         memset(&overlapped, 0, sizeof(overlapped));
         ResetEvent(event);
         overlapped.hEvent = event;
-        if (!WinDivertRecvEx(handle, packet, sizeof(packet), 0, &addr,
-                &packet_len, &overlapped))
+        if (!WinDivertRecvEx(handle, packet, sizeof(packet), &packet_len, 0,
+                &addr, NULL, &overlapped))
         {
             if (GetLastError() != ERROR_IO_PENDING)
             {
@@ -299,8 +299,8 @@ read_failed:
             error("failed to allocate memory");
         }
         memset(poverlapped, 0, sizeof(OVERLAPPED));
-        if (WinDivertSendEx(handle, packet, packet_len, 0, &addr, NULL,
-                poverlapped))
+        if (WinDivertSendEx(handle, packet, packet_len, NULL, 0, &addr,
+                sizeof(WINDIVERT_ADDRESS), poverlapped))
         {
             continue;
         }

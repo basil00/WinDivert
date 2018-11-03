@@ -319,7 +319,7 @@ int main(void)
     // (1) stop normal traffic from interacting with the tests; and
     // (2) stop test packets escaping to the Internet or TCP/IP stack.
     upper_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, -510,
-        WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_DEBUG);
+        WINDIVERT_FLAG_DROP);
     lower_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 510,
         WINDIVERT_FLAG_DROP);
     if (upper_handle == INVALID_HANDLE_VALUE ||
@@ -468,7 +468,7 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
         goto failed;
     }
     overlapped.hEvent = event;
-    if (!WinDivertRecvEx(handle, buf, sizeof(buf), 0, &addr, &buf_len,
+    if (!WinDivertRecvEx(handle, buf, sizeof(buf), &buf_len, 0, &addr, NULL,
             &overlapped))
     {
         if (GetLastError() != ERROR_IO_PENDING)

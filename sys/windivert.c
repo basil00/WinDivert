@@ -159,7 +159,7 @@ struct context_s
     WDFWORKITEM workers[WINDIVERT_CONTEXT_MAXWORKERS];
                                                 // Read workers.
     UINT8 worker_curr;                          // Current read worker.
-    UINT8 layer;                                // Context's layer.
+    WINDIVERT_LAYER layer;                      // Context's layer.
     UINT64 flags;                               // Context's flags.
     UINT32 priority;                            // Context (internal) priority.
     INT16 priority16;                           // Context (user) priority.
@@ -215,6 +215,8 @@ typedef struct layer_s *layer_t;
 struct req_context_s
 {
     PWINDIVERT_ADDRESS addr;                // Pointer to address structure.
+    UINT *addr_len_ptr;                     // Pointer to address length.
+    UINT addr_len;                          // Address length (in bytes).
 };
 typedef struct req_context_s req_context_s;
 typedef struct req_context_s *req_context_t;
@@ -347,7 +349,7 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object);
 extern VOID windivert_close(IN WDFFILEOBJECT object);
 extern VOID windivert_destroy(IN WDFOBJECT object);
 extern NTSTATUS windivert_write(context_t context, WDFREQUEST request,
-    PWINDIVERT_ADDRESS addr);
+    req_context_t req_context);
 extern void NTAPI windivert_inject_complete(VOID *context,
     NET_BUFFER_LIST *packets, BOOLEAN dispatch_level);
 extern void NTAPI windivert_reinject_complete(VOID *context,
@@ -1919,20 +1921,33 @@ static NTSTATUS windivert_read(context_t context, WDFREQUEST request)
 /*
  * WinDivert service a single read request.
  */
-static void windivert_read_service_request(packet_t packet, BOOL partial,
-    WDFREQUEST request)
+static void windivert_read_service_request(context_t context, packet_t packet,
+    BOOL partial, LONGLONG timestamp, WDFREQUEST request)
 {
+    KLOCK_QUEUE_HANDLE lock_handle;
+    PLIST_ENTRY entry;
     PMDL dst_mdl;
     UINT8 *layer_data, *src, *dst;
-    ULONG dst_len, src_len;
+    ULONG dst_len, src_len, read_len;
+    BOOL timeout;
+    packet_t new_packet;
     req_context_t req_context;
     PWINDIVERT_ADDRESS addr;
+    UINT i, addr_len, addr_len_max;
+    UINT *addr_len_ptr;
     NTSTATUS status;
+
+    if (request == NULL)
+    {
+        // This occurs if the packet timed out.
+        windivert_free_packet(packet);
+        return;
+    }
 
     DEBUG("SERVICE: servicing read request (request=%p, packet=%p)", request,
         packet);
-        
-    layer_data = (PVOID)packet->data;
+
+    // Get the packet and address buffers: 
     switch (packet->layer)
     {
         case WINDIVERT_LAYER_NETWORK:
@@ -1953,29 +1968,14 @@ static void windivert_read_service_request(packet_t packet, BOOL partial,
                 DEBUG_ERROR("failed to get address of output MDL", status);
                 goto windivert_read_service_request_exit;
             }
-
-            if (packet->layer != WINDIVERT_LAYER_REFLECT)
-            {
-                src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, packet);
-            }
-            else
-            {
-                src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_REFLECT, packet);
-            }
-            src_len = packet->packet_len;
             dst_len = MmGetMdlByteCount(dst_mdl);
-            if (!partial && src_len > dst_len)
-            {
-                status = STATUS_BUFFER_TOO_SMALL;
-            }
-            dst_len = (src_len < dst_len? src_len: dst_len);
-            RtlCopyMemory(dst, src, dst_len);
             break;
 
         case WINDIVERT_LAYER_FLOW:
         case WINDIVERT_LAYER_SOCKET:
 
             status = STATUS_SUCCESS;
+            dst = NULL;
             dst_len = 0;
             break;
 
@@ -1985,54 +1985,144 @@ static void windivert_read_service_request(packet_t packet, BOOL partial,
             goto windivert_read_service_request_exit;
     }
 
-    // Write the address information.
-    req_context = windivert_req_context_get(request);
-    addr = req_context->addr;
-    if (addr != NULL)
+    req_context  = windivert_req_context_get(request);
+    addr         = req_context->addr;
+    addr_len     = 0;
+    addr_len_max = (UINT)req_context->addr_len;
+    addr_len_ptr = req_context->addr_len_ptr;
+    read_len     = 0;
+    i            = 0;
+    while (TRUE)
     {
-        addr->Timestamp         = (INT64)packet->timestamp;
-        addr->Layer             = packet->layer;
-        addr->Event             = packet->event;
-        addr->Outbound          = packet->outbound;
-        addr->Loopback          = packet->loopback;
-        addr->Impostor          = packet->impostor;
-        addr->IPv6              = packet->ipv6;
-        addr->PseudoIPChecksum  = packet->pseudo_ip_checksum;
-        addr->PseudoTCPChecksum = packet->pseudo_tcp_checksum;
-        addr->PseudoUDPChecksum = packet->pseudo_udp_checksum;
-        addr->Final             = packet->final;
-        addr->Reserved          = 0;
+        // Copy the packet data:
         switch (packet->layer)
         {
             case WINDIVERT_LAYER_NETWORK:
             case WINDIVERT_LAYER_NETWORK_FORWARD:
-                RtlCopyMemory(&addr->Network, layer_data,
+            case WINDIVERT_LAYER_REFLECT:
+
+                if (packet->layer != WINDIVERT_LAYER_REFLECT)
+                {
+                    src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK,
+                        packet);
+                }
+                else
+                {
+                    src = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_REFLECT,
+                        packet);
+                }
+                src_len = packet->packet_len;
+                if (!partial && src_len > dst_len)
+                {
+                    status = STATUS_BUFFER_TOO_SMALL;
+                }
+                src_len = (src_len < dst_len? src_len: dst_len);
+                RtlCopyMemory(dst, src, src_len);
+                dst += src_len;
+                dst_len -= src_len;
+                read_len += src_len;
+                break;
+
+            default:
+                break;
+        }
+
+        // Copy the address data:
+        addr[i].Timestamp         = (INT64)packet->timestamp;
+        addr[i].Layer             = packet->layer;
+        addr[i].Event             = packet->event;
+        addr[i].Outbound          = packet->outbound;
+        addr[i].Loopback          = packet->loopback;
+        addr[i].Impostor          = packet->impostor;
+        addr[i].IPv6              = packet->ipv6;
+        addr[i].PseudoIPChecksum  = packet->pseudo_ip_checksum;
+        addr[i].PseudoTCPChecksum = packet->pseudo_tcp_checksum;
+        addr[i].PseudoUDPChecksum = packet->pseudo_udp_checksum;
+        addr[i].Final             = packet->final;
+        addr[i].Reserved          = 0;
+        layer_data = (PVOID)packet->data;
+        switch (packet->layer)
+        {
+            case WINDIVERT_LAYER_NETWORK:
+            case WINDIVERT_LAYER_NETWORK_FORWARD:
+                RtlCopyMemory(&addr[i].Network, layer_data,
                     sizeof(WINDIVERT_DATA_NETWORK));
                 break;
 
             case WINDIVERT_LAYER_FLOW:
-                RtlCopyMemory(&addr->Flow, layer_data,
+                RtlCopyMemory(&addr[i].Flow, layer_data,
                     sizeof(WINDIVERT_DATA_FLOW));
                 break;
 
             case WINDIVERT_LAYER_SOCKET:
-                RtlCopyMemory(&addr->Socket, layer_data,
+                RtlCopyMemory(&addr[i].Socket, layer_data,
                     sizeof(WINDIVERT_DATA_SOCKET));
                 break;
 
             case WINDIVERT_LAYER_REFLECT:
-                RtlCopyMemory(&addr->Reflect, layer_data,
+                RtlCopyMemory(&addr[i].Reflect, layer_data,
                     sizeof(WINDIVERT_DATA_REFLECT));
                 break;
 
             default:
                 break;
         }
+
+        i++;
+        addr_len += sizeof(WINDIVERT_ADDRESS);
+        if (addr_len >= addr_len_max || i >= WINDIVERT_BATCH_MAX)
+        {
+            // addr[] is full:
+            break;
+        }
+        if (dst_len < sizeof(WINDIVERT_IPHDR) + sizeof(WINDIVERT_TCPHDR))
+        {
+            // Remaining space too small:
+            break;
+        }
+
+        // Attempt to fill the buffer with more packets:
+        new_packet = NULL;
+        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+        if (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
+                !IsListEmpty(&context->packet_queue))
+        {
+            entry = RemoveHeadList(&context->packet_queue);
+            new_packet = CONTAINING_RECORD(entry, struct packet_s, entry);
+            timeout = WINDIVERT_TIMEOUT(context, new_packet->timestamp,
+                timestamp);
+            if (new_packet->packet_len > dst_len || timeout)
+            {
+                // Note: timeouts to be handled elsewhere.
+                InsertHeadList(&context->packet_queue, entry);
+                new_packet = NULL;
+            }
+            else
+            {
+                context->packet_queue_length--;
+                context->packet_queue_size -= new_packet->packet_len;
+            }
+        }
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        if (new_packet == NULL)
+        {
+            // No suitable packet:
+            break;
+        }
+
+        windivert_free_packet(packet);
+        packet = new_packet;
+    }
+
+    if (addr_len_ptr != NULL)
+    {
+        *addr_len_ptr = addr_len;
     }
 
 windivert_read_service_request_exit:
 
-    WdfRequestCompleteWithInformation(request, status, dst_len);
+    windivert_free_packet(packet);
+    WdfRequestCompleteWithInformation(request, status, read_len);
 }
 
 /*
@@ -2043,12 +2133,8 @@ static void windivert_read_service(context_t context)
     KLOCK_QUEUE_HANDLE lock_handle;
     WDFREQUEST request;
     PLIST_ENTRY entry;
-    PMDL dst_mdl;
-    PVOID dst, src;
-    ULONG dst_len, src_len;
     LONGLONG timestamp;
-    BOOL partial;
-    BOOL timeout;
+    BOOL partial, timeout;
     NTSTATUS status;
     packet_t packet;
     req_context_t req_context;
@@ -2056,7 +2142,7 @@ static void windivert_read_service(context_t context)
 
     timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-    partial = ((context->flags & WINDIVERT_FLAG_PARTIAL) != 0);
+    partial = ((context->flags & WINDIVERT_FLAG_RECV_PARTIAL) != 0);
     while (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
            !IsListEmpty(&context->packet_queue))
     {
@@ -2078,12 +2164,9 @@ static void windivert_read_service(context_t context)
         context->packet_queue_size -= packet->packet_len;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
 
-        if (!timeout)
-        {
-            windivert_read_service_request(packet, partial, request);
-        }
+        windivert_read_service_request(context, packet, partial, timestamp,
+            request);
 
-        windivert_free_packet(packet);
         timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
@@ -2094,12 +2177,12 @@ static void windivert_read_service(context_t context)
  * WinDivert write routine.
  */
 static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
-    PWINDIVERT_ADDRESS addr)
+    req_context_t req_context)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PMDL mdl = NULL, mdl_copy = NULL;
     PVOID data, data_copy = NULL;
-    UINT data_len;
+    UINT data_len, packet_len, inject_len;
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_IPV6HDR ipv6_header;
     BOOL ipv4;
@@ -2108,7 +2191,9 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     UINT64 flags, checksums;
     HANDLE handle, compl_handle;
     PNET_BUFFER_LIST buffers = NULL;
-    NTSTATUS status = STATUS_SUCCESS;
+    PWINDIVERT_ADDRESS addr;
+    UINT i, addr_len, addr_len_max;
+    NTSTATUS status = STATUS_SUCCESS, status_soft_error = STATUS_SUCCESS;
 
     DEBUG("WRITE: writing/injecting a packet (context=%p, request=%p)",
         context, request);
@@ -2118,7 +2203,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         status = STATUS_INVALID_DEVICE_STATE;
-        goto windivert_write_exit;
+        goto windivert_write_hard_error;
     }
     layer = context->layer;
     priority = context->priority;
@@ -2129,7 +2214,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     {
         status = STATUS_INVALID_PARAMETER;
         DEBUG_ERROR("failed to inject; recv-only flag is set", status);
-        goto windivert_write_exit;
+        goto windivert_write_hard_error;
     }
 
     switch (layer)
@@ -2139,7 +2224,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
         case WINDIVERT_LAYER_REFLECT:
             status = STATUS_INVALID_PARAMETER;
             DEBUG_ERROR("failed to inject at layer", status);
-            goto windivert_write_exit;
+            goto windivert_write_hard_error;
         default:
             break;
     }
@@ -2148,7 +2233,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to retrieve input MDL", status);
-        goto windivert_write_exit;
+        goto windivert_write_hard_error;
     }
 
     data = MmGetSystemAddressForMdlSafe(mdl,
@@ -2157,143 +2242,165 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
         DEBUG_ERROR("failed to get MDL address", status);
-        goto windivert_write_exit;
+        goto windivert_write_hard_error;
     }
     
-    data_len = MmGetMdlByteCount(mdl);
-    if (data_len > UINT16_MAX || data_len < sizeof(WINDIVERT_IPHDR))
-    {
-windivert_write_bad_packet:
-        status = STATUS_INVALID_PARAMETER;
-        DEBUG_ERROR("failed to inject a bad packet", status);
-        goto windivert_write_exit;
-    }
+    data_len     = MmGetMdlByteCount(mdl);
+    inject_len   = 0;
+    addr         = req_context->addr;
+    addr_len_max = (ULONG)req_context->addr_len;
+    addr_len     = 0;
 
-    // Copy packet data:
-    data_copy = windivert_malloc(data_len, FALSE);
-    if (data_copy == NULL)
+    for (i = 0; addr_len < addr_len_max && i < WINDIVERT_BATCH_MAX; i++,
+            addr_len += sizeof(WINDIVERT_ADDRESS))
     {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        DEBUG_ERROR("failed to allocate memory for injected packet data",
-            status);
-        goto windivert_write_exit;
-    }
-    RtlCopyMemory(data_copy, data, sizeof(WINDIVERT_IPHDR));
-    ip_header = (PWINDIVERT_IPHDR)data_copy;
-    switch (ip_header->Version)
-    {
-        case 4:
-            if (data_len != RtlUshortByteSwap(ip_header->Length))
-            {
-                goto windivert_write_bad_packet;
-            }
-            ipv4 = TRUE;
-            break;
-        case 6:
-            if (data_len < sizeof(WINDIVERT_IPV6HDR))
-            {
-                goto windivert_write_bad_packet;
-            }
-            ipv6_header = (PWINDIVERT_IPV6HDR)data_copy;
-            if (data_len != RtlUshortByteSwap(ipv6_header->Length) +
-                    sizeof(WINDIVERT_IPV6HDR))
-            {
-                goto windivert_write_bad_packet;
-            }
-            ipv4 = FALSE;
-            break;
-        default:
-            goto windivert_write_bad_packet;
-    }
-    if (data_len > sizeof(WINDIVERT_IPHDR))
-    {
-        RtlCopyMemory((char *)data_copy + sizeof(WINDIVERT_IPHDR),
-            (char *)data + sizeof(WINDIVERT_IPHDR),
-            data_len - sizeof(WINDIVERT_IPHDR));
-    }
-
-    // Fix checksums:
-    if (addr->PseudoIPChecksum != 0 || addr->PseudoTCPChecksum != 0 ||
-        addr->PseudoUDPChecksum != 0)
-    {
-        checksums = 
-            (addr->PseudoIPChecksum?  0: WINDIVERT_HELPER_NO_IP_CHECKSUM) |
-            (addr->PseudoTCPChecksum? 0: WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
-            (addr->PseudoUDPChecksum? 0: WINDIVERT_HELPER_NO_UDP_CHECKSUM);
-        WinDivertHelperCalcChecksums(data_copy, data_len, NULL, checksums);
-    }
-
-    // Decrement TTL for impostor packets:
-    if (addr->Impostor && !windivert_decrement_ttl(data_copy, ipv4))
-    {
-        status = STATUS_HOPLIMIT_EXCEEDED;
-        goto windivert_write_exit;
-    }
-
-    // Allocate packet:
-    mdl_copy = IoAllocateMdl(data_copy, data_len, FALSE, FALSE, NULL);
-    if (mdl_copy == NULL)
-    {
-        status = STATUS_INSUFFICIENT_RESOURCES;
-        DEBUG_ERROR("failed to allocate MDL for injected packet", status);
-        goto windivert_write_exit;
-    }
-    MmBuildMdlForNonPagedPool(mdl_copy);
-    status = FwpsAllocateNetBufferAndNetBufferList0(nbl_pool_handle, 0, 0,
-        mdl_copy, 0, data_len, &buffers);
-    if (!NT_SUCCESS(status))
-    {
-        DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
-            status);
-        goto windivert_write_exit;
-    }
-
-    // Inject packet:
-    handle = (ipv4? inject_handle: injectv6_handle);
-    compl_handle = ((flags & WINDIVERT_FLAG_DEBUG) != 0? (HANDLE)request: NULL);
-    if (layer == WINDIVERT_LAYER_NETWORK_FORWARD)
-    {
-        status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
-            (ipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
-            addr->Network.IfIdx, buffers, windivert_inject_complete,
-            compl_handle);
-    }
-    else if (addr->Outbound != 0)
-    {
-        status = FwpsInjectNetworkSendAsync0(handle, (HANDLE)priority, 0,
-            UNSPECIFIED_COMPARTMENT_ID, buffers, windivert_inject_complete,
-            compl_handle);
-    }
-    else
-    {
-        status = FwpsInjectNetworkReceiveAsync0(handle, (HANDLE)priority, 0,
-            UNSPECIFIED_COMPARTMENT_ID, addr->Network.IfIdx,
-            addr->Network.SubIfIdx, buffers, windivert_inject_complete,
-            compl_handle);
-    }
-
-windivert_write_exit:
-
-    if (NT_SUCCESS(status))
-    {
-        if ((flags & WINDIVERT_FLAG_DEBUG) == 0)
+        buffers   = NULL;
+        mdl_copy  = NULL;
+        data_copy = NULL;
+        
+        // Get the packet length:
+        if (data_len < sizeof(WINDIVERT_IPHDR))
         {
-            WdfRequestCompleteWithInformation(request, status, data_len);
+windivert_write_too_small_packet:
+            status = STATUS_BUFFER_TOO_SMALL;
+            DEBUG_ERROR("failed to inject partial packet", status);
+            goto windivert_write_hard_error;
         }
-    }
-    else
-    {
-        // Request completed in windivert_ioctl()
-        if (buffers != NULL)
+        ip_header = (PWINDIVERT_IPHDR)data;
+        switch (ip_header->Version)
         {
+            case 4:
+                packet_len = RtlUshortByteSwap(ip_header->Length);
+                ipv4 = TRUE;
+                break;
+            case 6:
+                if (data_len < sizeof(WINDIVERT_IPV6HDR))
+                {
+                    goto windivert_write_too_small_packet;
+                }
+                ipv6_header = (PWINDIVERT_IPV6HDR)data;
+                packet_len = RtlUshortByteSwap(ipv6_header->Length) +
+                    sizeof(WINDIVERT_IPV6HDR);
+                ipv4 = FALSE;
+                break;
+            default:
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("failed to inject non-IP packet", status);
+                goto windivert_write_hard_error;
+        }
+        if (data_len < packet_len)
+        {
+            goto windivert_write_too_small_packet;
+        }
+
+        // Copy packet data:
+        data_copy = windivert_malloc(packet_len, FALSE);
+        if (data_copy == NULL)
+        {
+            status = STATUS_INSUFFICIENT_RESOURCES;
+            DEBUG_ERROR("failed to allocate memory for injected packet data",
+                status);
+            goto windivert_write_hard_error;
+        }
+        RtlCopyMemory(data_copy, data, packet_len);
+
+        // Fix checksums:
+        if (addr[i].PseudoIPChecksum != 0 || addr[i].PseudoTCPChecksum != 0 ||
+            addr[i].PseudoUDPChecksum != 0)
+        {
+            checksums = 
+                (addr[i].PseudoIPChecksum?  0:
+                    WINDIVERT_HELPER_NO_IP_CHECKSUM) |
+                (addr[i].PseudoTCPChecksum? 0:
+                    WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
+                (addr[i].PseudoUDPChecksum? 0:
+                    WINDIVERT_HELPER_NO_UDP_CHECKSUM);
+            WinDivertHelperCalcChecksums(data_copy, packet_len, NULL,
+                checksums);
+        }
+
+        // Decrement TTL for impostor packets:
+        if (addr[i].Impostor && !windivert_decrement_ttl(data_copy, ipv4))
+        {
+            status_soft_error = STATUS_HOPLIMIT_EXCEEDED;
+            windivert_free(data_copy);
+            goto windivert_write_loop;
+        }
+
+        // Allocate packet:
+        mdl_copy = IoAllocateMdl(data_copy, packet_len, FALSE, FALSE, NULL);
+        if (mdl_copy == NULL)
+        {
+            status = STATUS_INSUFFICIENT_RESOURCES;
+            DEBUG_ERROR("failed to allocate MDL for injected packet", status);
+            goto windivert_write_hard_error;
+        }
+        MmBuildMdlForNonPagedPool(mdl_copy);
+        status = FwpsAllocateNetBufferAndNetBufferList0(nbl_pool_handle, 0, 0,
+            mdl_copy, 0, packet_len, &buffers);
+        if (!NT_SUCCESS(status))
+        {
+            DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
+                status);
+            goto windivert_write_hard_error;
+        }
+
+        // Inject packet:
+        handle = (ipv4? inject_handle: injectv6_handle);
+        if (layer == WINDIVERT_LAYER_NETWORK_FORWARD)
+        {
+            status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
+                (ipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
+                addr[i].Network.IfIdx, buffers, windivert_inject_complete,
+                data_copy);
+        }
+        else if (addr[i].Outbound != 0)
+        {
+            status = FwpsInjectNetworkSendAsync0(handle, (HANDLE)priority, 0,
+                UNSPECIFIED_COMPARTMENT_ID, buffers, windivert_inject_complete,
+                data_copy);
+        }
+        else
+        {
+            status = FwpsInjectNetworkReceiveAsync0(handle, (HANDLE)priority, 0,
+                UNSPECIFIED_COMPARTMENT_ID, addr[i].Network.IfIdx,
+                addr[i].Network.SubIfIdx, buffers, windivert_inject_complete,
+                data_copy);
+        }
+
+        if (!NT_SUCCESS(status))
+        {
+            status_soft_error = status;
             FwpsFreeNetBufferList0(buffers);
-        }
-        if (mdl_copy != NULL)
-        {
             IoFreeMdl(mdl_copy);
+            windivert_free(data_copy);
         }
-        windivert_free(data_copy);
+
+windivert_write_loop:
+
+        // Reset state:
+        inject_len += packet_len;
+        data        = (PVOID)((UINT8 *)data + packet_len);
+        data_len   -= packet_len;
     }
+
+    // Note: status_soft_error is for "soft" errors that do not prevent other
+    //       batched packets from being injected.
+    WdfRequestCompleteWithInformation(request, status_soft_error, inject_len);
+    return STATUS_SUCCESS;
+
+windivert_write_hard_error:
+
+    // Request to be completed in windivert_ioctl()
+    if (buffers != NULL)
+    {
+        FwpsFreeNetBufferList0(buffers);
+    }
+    if (mdl_copy != NULL)
+    {
+        IoFreeMdl(mdl_copy);
+    }
+    windivert_free(data_copy);
 
     return status;
 }
@@ -2301,32 +2408,15 @@ windivert_write_exit:
 /*
  * WinDivert inject complete routine.
  */
-static void NTAPI windivert_inject_complete(VOID *context,
+static void NTAPI windivert_inject_complete(VOID *data,
     NET_BUFFER_LIST *buffers, BOOLEAN dispatch_level)
 {
     PMDL mdl;
-    PVOID data;
     PNET_BUFFER buffer;
-    size_t length;
-    WDFREQUEST request;
-    NTSTATUS status;
     UNREFERENCED_PARAMETER(dispatch_level);
 
     buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
-    request = (WDFREQUEST)context;
-    if (request != NULL)
-    {
-        status = NET_BUFFER_LIST_STATUS(buffers);
-        length = 0;
-        if (NT_SUCCESS(status))
-        {
-            length = NET_BUFFER_DATA_LENGTH(buffer);
-        }
-        WdfRequestCompleteWithInformation(request, status, length);
-    }
     mdl = NET_BUFFER_FIRST_MDL(buffer);
-    data = MmGetSystemAddressForMdlSafe(mdl,
-        NormalPagePriority | no_exec_flag);
     windivert_free(data);
     IoFreeMdl(mdl);
     FwpsFreeNetBufferList0(buffers);
@@ -2340,7 +2430,6 @@ static void NTAPI windivert_reinject_complete(VOID *context,
 {
     PMDL mdl;
     PNET_BUFFER buffer;
-    size_t length;
     packet_t packet;
     UNREFERENCED_PARAMETER(dispatch_level);
 
@@ -2362,6 +2451,8 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     WDF_REQUEST_PARAMETERS params;
     WDFMEMORY memobj;
     PWINDIVERT_ADDRESS addr = NULL;
+    UINT *addr_len_ptr = NULL;
+    UINT64 addr_len = 0;
     PWINDIVERT_IOCTL ioctl;
     WDF_OBJECT_ATTRIBUTES attributes;
     req_context_t req_context = NULL;
@@ -2390,16 +2481,6 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
         goto windivert_caller_context_error;
     }
 
-    ioctl = (PWINDIVERT_IOCTL)inbuf;
-    if (ioctl->version != WINDIVERT_IOCTL_VERSION ||
-        ioctl->magic != WINDIVERT_IOCTL_MAGIC)
-    {
-        status = STATUS_INVALID_PARAMETER;
-        DEBUG_ERROR("input buffer contained a bad ioctl message header",
-            status);
-        goto windivert_caller_context_error;
-    }
-
     // Probe and lock user buffers here (if required).
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, req_context_s);
     status = WdfObjectAllocateContext(request, &attributes, &req_context);
@@ -2411,34 +2492,71 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     switch (params.Parameters.DeviceIoControl.IoControlCode)
     {
         case IOCTL_WINDIVERT_RECV:
-            if ((PVOID)ioctl->arg == NULL)
+            ioctl        = (PWINDIVERT_IOCTL)inbuf;
+            addr         = (PWINDIVERT_ADDRESS)ioctl->arg1;
+            addr_len_ptr = (UINT *)ioctl->arg2;
+            addr_len     = sizeof(WINDIVERT_ADDRESS);
+            if (addr_len_ptr != NULL)
+            {
+                status = WdfRequestProbeAndLockUserBufferForWrite(request,
+                    addr_len_ptr, sizeof(UINT), &memobj);
+                if (!NT_SUCCESS(status))
+                {
+                    status = STATUS_INVALID_PARAMETER;
+                    DEBUG_ERROR("invalid address length pointer for RECV ioctl",
+                        status);
+                    goto windivert_caller_context_error;
+                }
+                addr_len_ptr = (UINT *)WdfMemoryGetBuffer(memobj, NULL);
+                addr_len     = *addr_len_ptr;
+                if (addr_len < sizeof(WINDIVERT_ADDRESS) ||
+                    addr_len > WINDIVERT_BATCH_MAX * sizeof(WINDIVERT_ADDRESS))
+                {
+                    status = STATUS_INVALID_PARAMETER;
+                    DEBUG_ERROR("out-of-range address length for RECV ioctl",
+                        status);
+                    goto windivert_caller_context_error;
+                }
+            }
+            if (addr == NULL)
             {
                 status = STATUS_INVALID_PARAMETER;
-                DEBUG_ERROR("null arg pointer for RECV ioctl", status);
+                DEBUG_ERROR("null address for RECV ioctl", status);
                 goto windivert_caller_context_error;
             }
-            status = WdfRequestProbeAndLockUserBufferForWrite(request,
-                (PVOID)ioctl->arg, sizeof(WINDIVERT_ADDRESS), &memobj);
+            status = WdfRequestProbeAndLockUserBufferForWrite(request, addr,
+                addr_len, &memobj);
             if (!NT_SUCCESS(status))
             {
-                DEBUG_ERROR("invalid arg pointer for RECV ioctl", status);
+                DEBUG_ERROR("invalid address for RECV ioctl", status);
                 goto windivert_caller_context_error;
             }
             addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
             break;
 
         case IOCTL_WINDIVERT_SEND:
-            if ((PVOID)ioctl->arg == NULL)
+            ioctl    = (PWINDIVERT_IOCTL)inbuf;
+            addr     = (PWINDIVERT_ADDRESS)ioctl->arg1;
+            addr_len = ioctl->arg2;
+            if (addr_len < sizeof(WINDIVERT_ADDRESS) ||
+                addr_len > WINDIVERT_BATCH_MAX * sizeof(WINDIVERT_ADDRESS))
             {
                 status = STATUS_INVALID_PARAMETER;
-                DEBUG_ERROR("null arg pointer for SEND ioctl", status);
+                DEBUG_ERROR("out-of-range address length for RECV ioctl",
+                    status);
                 goto windivert_caller_context_error;
             }
-            status = WdfRequestProbeAndLockUserBufferForRead(request,
-                (PVOID)ioctl->arg, sizeof(WINDIVERT_ADDRESS), &memobj);
+            if (addr == NULL)
+            {
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("null address for SEND ioctl", status);
+                goto windivert_caller_context_error;
+            }
+            status = WdfRequestProbeAndLockUserBufferForRead(request, addr,
+                addr_len, &memobj);
             if (!NT_SUCCESS(status))
             {
-                DEBUG_ERROR("invalid arg pointer for SEND ioctl", status);
+                DEBUG_ERROR("invalid address for SEND ioctl", status);
                 goto windivert_caller_context_error;
             }
             addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
@@ -2459,7 +2577,9 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
             goto windivert_caller_context_error;
     }
     
-    req_context->addr = addr;
+    req_context->addr         = addr;
+    req_context->addr_len     = (UINT)addr_len;
+    req_context->addr_len_ptr = addr_len_ptr;
 
 windivert_caller_context_exit:
 
@@ -2488,10 +2608,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     PWINDIVERT_FILTER filter;
     UINT8 layer;
     INT16 priority;
-    UINT32 priority32;
-    INT64 priority64;
     UINT64 flags;
-    PWINDIVERT_ADDRESS addr;
     req_context_t req_context;
     NTSTATUS status = STATUS_SUCCESS;
     context_t context =
@@ -2539,8 +2656,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
         case IOCTL_WINDIVERT_SEND:
             
             req_context = windivert_req_context_get(request);
-            addr = req_context->addr;
-            status = windivert_write(context, request, addr);
+            status = windivert_write(context, request, req_context);
             if (NT_SUCCESS(status))
             {
                 return;
@@ -2552,11 +2668,13 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             BOOL inbound, outbound, ipv4, ipv6;
             PIRP irp;
             LONGLONG timestamp;
+            UINT64 filter_flags;
             UINT32 process_id;
             UINT8 filter_len;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            if ((ioctl->arg & ~WINDIVERT_FILTER_FLAGS_ALL) != 0)
+            filter_flags = ioctl->arg1;
+            if ((filter_flags & ~WINDIVERT_FILTER_FLAGS_ALL) != 0)
             {
                 status = STATUS_INVALID_PARAMETER;
                 DEBUG_ERROR("failed to start filter; invalid flags", status);
@@ -2630,15 +2748,18 @@ windivert_ioctl_bad_start_state:
 
             windivert_reflect_open_event(context);
 
-            flags = ioctl->arg;
-            status = windivert_install_callouts(context, layer, flags);
+            status = windivert_install_callouts(context, layer, filter_flags);
 
             break;
         }
 
         case IOCTL_WINDIVERT_SET_LAYER:
+        {
+            UINT64 layer;
+
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            switch (ioctl->arg)
+            layer = ioctl->arg1;
+            switch (layer)
             {
                 case WINDIVERT_LAYER_NETWORK:
                 case WINDIVERT_LAYER_NETWORK_FORWARD:
@@ -2651,7 +2772,6 @@ windivert_ioctl_bad_start_state:
                     DEBUG_ERROR("failed to set layer; invalid value", status);
                     goto windivert_ioctl_exit;
             }
-            layer = (UINT8)ioctl->arg;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             if (context->state != WINDIVERT_CONTEXT_STATE_OPENING)
             {
@@ -2659,13 +2779,18 @@ windivert_ioctl_bad_start_state:
                 status = STATUS_INVALID_DEVICE_STATE;
                 goto windivert_ioctl_exit;
             }
-            context->layer = layer;
+            context->layer = (WINDIVERT_LAYER)layer;
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
+        }
 
         case IOCTL_WINDIVERT_SET_PRIORITY:
+        {
+            UINT32 priority32;
+            INT64 priority64;
+
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            priority64 = (INT64)ioctl->arg - WINDIVERT_PRIORITY_MAX;
+            priority64 = (INT64)ioctl->arg1 - WINDIVERT_PRIORITY_MAX;
             if (priority64 < WINDIVERT_PRIORITY_MIN ||
                 priority64 > WINDIVERT_PRIORITY_MAX)
             {
@@ -2686,17 +2811,21 @@ windivert_ioctl_bad_start_state:
             context->priority = priority32;
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
+        }
 
         case IOCTL_WINDIVERT_SET_FLAGS:
+        {
+            UINT64 flags;
+            
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            if (!WINDIVERT_FLAGS_VALID(ioctl->arg))
+            flags = ioctl->arg1;
+            if (!WINDIVERT_FLAGS_VALID(flags))
             {
                 status = STATUS_INVALID_PARAMETER;
                 DEBUG_ERROR("failed to set flags; invalid flags value",
                     status);
                 goto windivert_ioctl_exit;
             }
-            flags = ioctl->arg;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             if (context->state != WINDIVERT_CONTEXT_STATE_OPENING)
             {
@@ -2707,10 +2836,15 @@ windivert_ioctl_bad_start_state:
             context->flags = flags;
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
+        }
 
         case IOCTL_WINDIVERT_SET_PARAM:
+        {
+            UINT64 param, value;
+
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            value = ioctl->arg;
+            param = ioctl->arg1;
+            value = ioctl->arg2;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
             {
@@ -2718,7 +2852,7 @@ windivert_ioctl_bad_start_state:
                 status = STATUS_INVALID_DEVICE_STATE;
                 goto windivert_ioctl_exit;
             }
-            switch ((WINDIVERT_PARAM)ioctl->arg8)
+            switch (param)
             {
                 case WINDIVERT_PARAM_QUEUE_LEN:
                     if (value < WINDIVERT_PARAM_QUEUE_LEN_MIN ||
@@ -2770,9 +2904,14 @@ windivert_ioctl_bad_start_state:
             }
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
+        }
 
         case IOCTL_WINDIVERT_GET_PARAM:
+        {
+            UINT64 param;
+
             ioctl = (PWINDIVERT_IOCTL)inbuf;
+            param = ioctl->arg1;
             if (outbuflen != sizeof(UINT64))
             {
                 status = STATUS_INVALID_PARAMETER;
@@ -2788,7 +2927,7 @@ windivert_ioctl_bad_start_state:
                 status = STATUS_INVALID_DEVICE_STATE;
                 goto windivert_ioctl_exit;
             }
-            switch ((WINDIVERT_PARAM)ioctl->arg8)
+            switch (param)
             {
                 case WINDIVERT_PARAM_QUEUE_LEN:
                     *valptr = context->packet_queue_maxlength;
@@ -2808,6 +2947,7 @@ windivert_ioctl_bad_start_state:
             }
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
+        }
 
         default:
             status = STATUS_INVALID_DEVICE_REQUEST;

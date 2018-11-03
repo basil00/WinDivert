@@ -184,15 +184,14 @@ typedef enum
 /*
  * WinDivert flags.
  */
-#define WINDIVERT_FLAG_SNIFF            0x01
-#define WINDIVERT_FLAG_DROP             0x02
-#define WINDIVERT_FLAG_RECV_ONLY        0x04
+#define WINDIVERT_FLAG_SNIFF            0x0001
+#define WINDIVERT_FLAG_DROP             0x0002
+#define WINDIVERT_FLAG_RECV_ONLY        0x0004
 #define WINDIVERT_FLAG_READ_ONLY        WINDIVERT_FLAG_RECV_ONLY
-#define WINDIVERT_FLAG_SEND_ONLY        0x08
+#define WINDIVERT_FLAG_SEND_ONLY        0x0008
 #define WINDIVERT_FLAG_WRITE_ONLY       WINDIVERT_FLAG_SEND_ONLY
-#define WINDIVERT_FLAG_DEBUG            0x10
-#define WINDIVERT_FLAG_PARTIAL          0x20
-#define WINDIVERT_FLAG_NO_INSTALL       0x40
+#define WINDIVERT_FLAG_RECV_PARTIAL     0x0010
+#define WINDIVERT_FLAG_NO_INSTALL       0x0020
 
 /*
  * WinDivert parameters.
@@ -201,7 +200,7 @@ typedef enum
 {
     WINDIVERT_PARAM_QUEUE_LEN  = 0,     /* Packet queue length. */
     WINDIVERT_PARAM_QUEUE_TIME = 1,     /* Packet queue time. */
-    WINDIVERT_PARAM_QUEUE_SIZE = 2      /* Packet queue size. */
+    WINDIVERT_PARAM_QUEUE_SIZE = 2,     /* Packet queue size. */
 } WINDIVERT_PARAM, *PWINDIVERT_PARAM;
 #define WINDIVERT_PARAM_MAX             WINDIVERT_PARAM_QUEUE_SIZE
 
@@ -224,7 +223,7 @@ extern WINDIVERTEXPORT BOOL WinDivertRecv(
     __out       PVOID pPacket,
     __in        UINT packetLen,
     __out_opt   PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *readLen);
+    __out_opt   UINT *pReadLen);
 
 /*
  * Receive (read) a packet from a WinDivert handle.
@@ -233,9 +232,10 @@ extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
     __in        HANDLE handle,
     __out       PVOID pPacket,
     __in        UINT packetLen,
+    __out_opt   UINT *pReadLen,
     __in        UINT64 flags,
-    __out_opt   PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *readLen,
+    __out       PWINDIVERT_ADDRESS pAddr,
+    __inout_opt UINT *pAddrLen,
     __inout_opt LPOVERLAPPED lpOverlapped);
 
 /*
@@ -246,7 +246,7 @@ extern WINDIVERTEXPORT BOOL WinDivertSend(
     __in        PVOID pPacket,
     __in        UINT packetLen,
     __in        PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *writeLen);
+    __out_opt   UINT *pWriteLen);
 
 /*
  * Send (write/inject) a packet to a WinDivert handle.
@@ -255,9 +255,10 @@ extern WINDIVERTEXPORT BOOL WinDivertSendEx(
     __in        HANDLE handle,
     __in        PVOID pPacket,
     __in        UINT packetLen,
+    __out_opt   UINT *pWriteLen,
     __in        UINT64 flags,
     __in        PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *writeLen,
+    __in        UINT addrLen,
     __inout_opt LPOVERLAPPED lpOverlapped);
 
 /*

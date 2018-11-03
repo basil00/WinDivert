@@ -59,9 +59,6 @@
 #define WINDIVERT_DEVICE_NAME                                               \
     L"WinDivert" WINDIVERT_VERSION_LSTR
 
-#define WINDIVERT_IOCTL_VERSION                     7
-#define WINDIVERT_IOCTL_MAGIC                       0xC7C9
-
 #define WINDIVERT_FILTER_FIELD_ZERO                 0
 #define WINDIVERT_FILTER_FIELD_INBOUND              1
 #define WINDIVERT_FILTER_FIELD_OUTBOUND             2
@@ -162,8 +159,8 @@
  */
 #define WINDIVERT_FLAGS_ALL                                                 \
     (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_RECV_ONLY |\
-        WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_DEBUG |                   \
-        WINDIVERT_FLAG_PARTIAL | WINDIVERT_FLAG_NO_INSTALL)
+        WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_RECV_PARTIAL |            \
+        WINDIVERT_FLAG_NO_INSTALL)
 #define WINDIVERT_FLAGS_EXCLUDE(flags, flag1, flag2)                        \
     (((flags) & ((flag1) | (flag2))) != ((flag1) | (flag2)))
 #define WINDIVERT_FLAGS_VALID(flags)                                        \
@@ -172,7 +169,7 @@
         WINDIVERT_FLAG_DROP) &&                                             \
      WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_RECV_ONLY,               \
         WINDIVERT_FLAG_SEND_ONLY) &&                                        \
-     WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_PARTIAL,                 \
+     WINDIVERT_FLAGS_EXCLUDE(flags, WINDIVERT_FLAG_RECV_PARTIAL,            \
         WINDIVERT_FLAG_SEND_ONLY))
 
 /*
@@ -208,15 +205,18 @@
 #define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT          4194304     // 4MB
 
 /*
+ * WinDivert batch limits.
+ */
+#define WINDIVERT_BATCH_MAX                         0xFF
+
+/*
  * WinDivert message definitions.
  */
 #pragma pack(push, 1)
 typedef struct
 {
-    UINT16 magic;                   // WINDIVERT_IOCTL_MAGIC
-    UINT8  version;                 // WINDIVERT_IOCTL_VERSION
-    UINT8  arg8;                    // 8-bit argument
-    UINT64 arg;                     // 64-bit argument
+    UINT64 arg1;                    // argument #1
+    UINT64 arg2;                    // argument #2
 } WINDIVERT_IOCTL, *PWINDIVERT_IOCTL;
 
 /*
