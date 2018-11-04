@@ -4285,6 +4285,7 @@ static void windivert_reinject_packet(packet_t packet)
 {
     UINT8 *packet_data;
     UINT32 packet_len;
+    UINT64 checksums;
     PWINDIVERT_DATA_NETWORK network_data;
     PMDL mdl;
     PNET_BUFFER_LIST buffers;
@@ -4302,11 +4303,37 @@ static void windivert_reinject_packet(packet_t packet)
     network_data = (PWINDIVERT_DATA_NETWORK)WINDIVERT_LAYER_DATA_PTR(packet);
     packet_data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, packet);
     packet_len = packet->packet_len;
+
+    // Fix checksums:
+    if (packet->pseudo_ip_checksum != 0 || packet->pseudo_tcp_checksum != 0 ||
+        packet->pseudo_udp_checksum != 0)
+    {
+        checksums =
+            (packet->pseudo_ip_checksum != 0?  0:
+                WINDIVERT_HELPER_NO_IP_CHECKSUM) |
+            (packet->pseudo_tcp_checksum != 0? 0:
+                WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
+            (packet->pseudo_udp_checksum != 0? 0:
+                WINDIVERT_HELPER_NO_UDP_CHECKSUM);
+        WinDivertHelperCalcChecksums(packet_data, packet_len, NULL, checksums);
+    }
+
+    // Decrement TTL for impostor packets:
+    if (packet->impostor != 0 && !windivert_decrement_ttl(packet_data,
+            packet->ipv6 == 0))
+    {
+        status = STATUS_HOPLIMIT_EXCEEDED;
+        DEBUG_ERROR("failed to reinject ttl-exceeded impostor packet", status);
+        windivert_free_packet(packet);
+        return;
+    }
+
+    // Reinject packet:
     mdl = IoAllocateMdl(packet_data, packet_len, FALSE, FALSE, NULL);
     if (mdl == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
-        DEBUG_ERROR("failed to allocate MDL for injected packet", status);
+        DEBUG_ERROR("failed to allocate MDL for reinjected packet", status);
         windivert_free_packet(packet);
         return;
     }
@@ -4315,7 +4342,7 @@ static void windivert_reinject_packet(packet_t packet)
         mdl, 0, packet_len, &buffers);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to create NET_BUFFER_LIST for injected packet",
+        DEBUG_ERROR("failed to create NET_BUFFER_LIST for reinjected packet",
             status);
         IoFreeMdl(mdl);
         windivert_free_packet(packet);
@@ -4346,7 +4373,7 @@ static void windivert_reinject_packet(packet_t packet)
 
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to re-inject (packet=%p)", status, packet);
+        DEBUG_ERROR("failed to reinject (packet=%p)", status, packet);
         FwpsFreeNetBufferList0(buffers);
         IoFreeMdl(mdl);
         windivert_free_packet(packet);

@@ -47,7 +47,7 @@
 
 #include "windivert.h"
 
-#define MAXBUF      0xFFFF
+#define MAXBUF      400000
 #define MAXBATCH    0xFF
 
 static int batch = 1;
