@@ -55,7 +55,8 @@
 
 #include "windivert.h"
 
-#define MAXBUF  0xFFFF
+#define MAXBUF              0xFFFF
+#define INET6_ADDRSTRLEN    45
 
 /*
  * Pre-fabricated packets.
@@ -97,6 +98,18 @@ static void PacketIpv6TcpInit(PTCPV6PACKET packet);
 static void PacketIpv6Icmpv6Init(PICMPV6PACKET packet);
 
 /*
+ * IPv6 address byte swap.
+ */
+void byteswap128(UINT32 *dst_addr, const UINT32 *src_addr)
+{
+    int i;
+    for (i = 0; i < 4; i++)
+    {
+        dst_addr[i] = ntohl(src_addr[4-i-1]);
+    }
+}
+
+/*
  * Entry.
  */
 int __cdecl main(int argc, char **argv)
@@ -113,6 +126,8 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
+    UINT32 src_addr[4], dst_addr[4];
+    char src_str[INET6_ADDRSTRLEN+1], dst_str[INET6_ADDRSTRLEN+1];
     UINT payload_len;
     const char *err_str;
     
@@ -208,28 +223,21 @@ int __cdecl main(int argc, char **argv)
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         if (ip_header != NULL)
         {
-            UINT8 *src_addr = (UINT8 *)&ip_header->SrcAddr;
-            UINT8 *dst_addr = (UINT8 *)&ip_header->DstAddr;
-            printf("ip.SrcAddr=%u.%u.%u.%u ip.DstAddr=%u.%u.%u.%u ",
-                src_addr[0], src_addr[1], src_addr[2], src_addr[3],
-                dst_addr[0], dst_addr[1], dst_addr[2], dst_addr[3]);
+            WinDivertHelperFormatIPv4Address(ntohl(ip_header->SrcAddr),
+                src_str, sizeof(src_str));
+            WinDivertHelperFormatIPv4Address(ntohl(ip_header->DstAddr),
+                dst_str, sizeof(dst_str));
         }
         if (ipv6_header != NULL)
         {
-            UINT16 *src_addr = (UINT16 *)&ipv6_header->SrcAddr;
-            UINT16 *dst_addr = (UINT16 *)&ipv6_header->DstAddr;
-            fputs("ipv6.SrcAddr=", stdout);
-            for (i = 0; i < 8; i++)
-            {
-                printf("%x%c", ntohs(src_addr[i]), (i == 7? ' ': ':'));
-            } 
-            fputs(" ipv6.DstAddr=", stdout);
-            for (i = 0; i < 8; i++)
-            {
-                printf("%x%c", ntohs(dst_addr[i]), (i == 7? ' ': ':'));
-            }
-            putchar(' ');
+            byteswap128(src_addr, ipv6_header->SrcAddr);
+            byteswap128(dst_addr, ipv6_header->DstAddr);
+            WinDivertHelperFormatIPv6Address(src_addr, src_str,
+                sizeof(src_str));
+            WinDivertHelperFormatIPv6Address(dst_addr, dst_str,
+                sizeof(dst_str));
         }
+        printf("ip.SrcAddr=%s ip.DstAddr=%s ", src_str, dst_str);
         if (icmp_header != NULL)
         {
             printf("icmp.Type=%u icmp.Code=%u ",
