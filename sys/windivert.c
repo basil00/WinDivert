@@ -457,13 +457,14 @@ static void windivert_queue_packet(context_t context, packet_t packet);
 static void windivert_reinject_packet(packet_t packet);
 static void windivert_free_packet(packet_t packet);
 static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4);
-static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b);
+static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b,
+    BOOL big);
 static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_IPHDR *ip_header_ptr, PWINDIVERT_IPV6HDR *ipv6_header_ptr,
     PWINDIVERT_ICMPHDR *icmp_header_ptr,
     PWINDIVERT_ICMPV6HDR *icmpv6_header_ptr,
     PWINDIVERT_TCPHDR *tcp_header_ptr, PWINDIVERT_UDPHDR *udp_header_ptr,
-    UINT8 *proto_ptr, UINT *payload_len_ptr);
+    UINT8 *proto_ptr, UINT *header_len_ptr, UINT *payload_len_ptr);
 static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     PVOID layer_data, WINDIVERT_EVENT event, BOOL ipv4, BOOL outbound,
     BOOL loopback, BOOL impostor, PWINDIVERT_FILTER filter);
@@ -3014,7 +3015,7 @@ static void windivert_get_ipv6_addr(const FWPS_INCOMING_VALUES0 *fixed_vals,
     UINT8 *addr8 = (UINT8 *)addr;
     INT i;
     FWP_VALUE0 value = fixed_vals->incomingValue[idx].value;
-	if (value.type != FWP_BYTE_ARRAY16_TYPE)
+    if (value.type != FWP_BYTE_ARRAY16_TYPE)
     {
         RtlZeroMemory(&addr, 16);
         return;
@@ -4431,31 +4432,34 @@ static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4)
 /*
  * Big number comparison.
  */
-static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b)
+static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b, BOOL big)
 {
-    if (a[3] < b[3])
+    if (big)
     {
-        return -1;
-    }
-    if (a[3] > b[3])
-    {
-        return 1;
-    }
-    if (a[2] < b[2])
-    {
-        return -1;
-    }
-    if (a[2] > b[2])
-    {
-        return 1;
-    }
-    if (a[1] < b[1])
-    {
-        return -1;
-    }
-    if (a[1] > b[1])
-    {
-        return 1;
+        if (a[3] < b[3])
+        {
+            return -1;
+        }
+        if (a[3] > b[3])
+        {
+            return 1;
+        }
+        if (a[2] < b[2])
+        {
+            return -1;
+        }
+        if (a[2] > b[2])
+        {
+            return 1;
+        }
+        if (a[1] < b[1])
+        {
+            return -1;
+        }
+        if (a[1] > b[1])
+        {
+            return 1;
+        }
     }
     if (a[0] < b[0])
     {
@@ -4469,6 +4473,44 @@ static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b)
 }
 
 /*
+ * Get packet/payload data.
+ */
+static BOOL windivert_get_data(PNET_BUFFER buffer, UINT offset, INT idx,
+    UINT size, PVOID data)
+{
+    PVOID ptr;
+    UINT length = NET_BUFFER_DATA_LENGTH(buffer);
+
+    if (idx < 0)
+    {
+        idx += (INT)length;
+    }
+    else
+    {
+        idx += (INT)offset;
+    }
+    if (idx < (INT)offset || idx > (INT)(length - size))
+    {
+        return FALSE;                       // OOB
+    }
+
+    if (idx > 0)
+    {
+        NdisAdvanceNetBufferDataStart(buffer, idx, FALSE, NULL);
+    }
+    ptr = NdisGetDataBuffer(buffer, size, data, 1, 0);
+    if (ptr != NULL && ptr != data)
+    {
+        RtlCopyMemory(data, ptr, size);     // Non-contiguous case
+    }
+    if (idx > 0)
+    {
+        (VOID)NdisRetreatNetBufferDataStart(buffer, idx, 0, NULL);
+    }
+    return TRUE;
+}
+
+/*
  * Parse packet headers.
  */
 static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
@@ -4476,7 +4518,7 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_ICMPHDR *icmp_header_ptr,
     PWINDIVERT_ICMPV6HDR *icmpv6_header_ptr,
     PWINDIVERT_TCPHDR *tcp_header_ptr, PWINDIVERT_UDPHDR *udp_header_ptr,
-    UINT8 *proto_ptr, UINT *payload_len_ptr)
+    UINT8 *proto_ptr, UINT *header_len_ptr, UINT *payload_len_ptr)
 {
     UINT tot_len, ip_header_len;
     PWINDIVERT_IPHDR ip_header = NULL;
@@ -4487,7 +4529,7 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_UDPHDR udp_header = NULL;
     UINT16 ip, ttl;
     UINT8 proto = 0;
-    UINT payload_len = 0;
+    UINT header_len = 0, payload_len = 0;
     NTSTATUS status;
 
     // Parse the headers:
@@ -4609,23 +4651,25 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
         case IPPROTO_ICMP:
             icmp_header = (PWINDIVERT_ICMPHDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_ICMPHDR), NULL, 1, 0);
+            header_len = ip_header_len + sizeof(WINDIVERT_ICMPHDR);
             break;
         case IPPROTO_ICMPV6:
             icmpv6_header = (PWINDIVERT_ICMPV6HDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_ICMPV6HDR), NULL, 1, 0);
+            header_len = ip_header_len + sizeof(WINDIVERT_ICMPV6HDR);
             break;
         case IPPROTO_TCP:
             tcp_header = (PWINDIVERT_TCPHDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_TCPHDR), NULL, 1, 0);
-            payload_len = tot_len - ip_header_len -
-                tcp_header->HdrLength*sizeof(UINT32);
+            header_len = ip_header_len + tcp_header->HdrLength*sizeof(UINT32);
             break;
         case IPPROTO_UDP:
             udp_header = (PWINDIVERT_UDPHDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_UDPHDR), NULL, 1, 0);
-            payload_len = tot_len - ip_header_len - sizeof(WINDIVERT_UDPHDR);
+            header_len = ip_header_len + sizeof(WINDIVERT_UDPHDR);
             break;
         default:
+            header_len = ip_header_len;
             break;
     }
 
@@ -4644,7 +4688,8 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     *tcp_header_ptr    = tcp_header;
     *udp_header_ptr    = udp_header;
     *proto_ptr         = proto;
-    *payload_len_ptr   = payload_len;
+    *header_len_ptr    = header_len;
+    *payload_len_ptr   = tot_len - header_len;
 
     return TRUE;
 }
@@ -4663,12 +4708,15 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
     UINT8 protocol = 0;
-    UINT payload_len = 0;
+    UINT header_len = 0, payload_len = 0;
     UINT16 ip, ttl;
     PWINDIVERT_DATA_NETWORK network_data = NULL;
     PWINDIVERT_DATA_FLOW flow_data = NULL;
     PWINDIVERT_DATA_SOCKET socket_data = NULL;
     PWINDIVERT_DATA_REFLECT reflect_data = NULL;
+    UINT8 data8;
+    UINT16 data16;
+    UINT32 data32;
     NTSTATUS status;
 
     switch (layer)
@@ -4677,7 +4725,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
         case WINDIVERT_LAYER_NETWORK_FORWARD:
             if (!windivert_parse_headers(buffer, ipv4, &ip_header, &ipv6_header,
                     &icmp_header, &icmpv6_header, &tcp_header, &udp_header,
-                    &protocol, &payload_len))
+                    &protocol, &header_len, &payload_len))
             {
                 return FALSE;
             }
@@ -4703,12 +4751,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     while (ttl-- != 0)
     {
         BOOL result = FALSE;
-        BOOL error  = FALSE;
+        BOOL big    = FALSE;
         int cmp;
         UINT32 field[4];
-        field[1] = 0;
-        field[2] = 0;
-        field[3] = 0;
 
         switch (filter[ip].field)
         {
@@ -4733,6 +4778,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                 break;
             case WINDIVERT_FILTER_FIELD_IFIDX:
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
+            case WINDIVERT_FILTER_FIELD_PACKET:
+            case WINDIVERT_FILTER_FIELD_PACKET16:
+            case WINDIVERT_FILTER_FIELD_PACKET32:
                 result = (layer == WINDIVERT_LAYER_NETWORK ||
                           layer == WINDIVERT_LAYER_NETWORK_FORWARD);
                 break;
@@ -4810,6 +4858,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
             case WINDIVERT_FILTER_FIELD_TCP_WINDOW:
             case WINDIVERT_FILTER_FIELD_TCP_CHECKSUM:
             case WINDIVERT_FILTER_FIELD_TCP_URGPTR:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
             case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
                 result = (layer == WINDIVERT_LAYER_NETWORK ||
                           layer == WINDIVERT_LAYER_NETWORK_FORWARD);
@@ -4819,15 +4870,16 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
             case WINDIVERT_FILTER_FIELD_UDP_DSTPORT:
             case WINDIVERT_FILTER_FIELD_UDP_LENGTH:
             case WINDIVERT_FILTER_FIELD_UDP_CHECKSUM:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                 result = (layer == WINDIVERT_LAYER_NETWORK ||
                           layer == WINDIVERT_LAYER_NETWORK_FORWARD);
                 result = result && (udp_header != NULL);
                 break;
             default:
-                result = FALSE;
-                error  = TRUE;
-                break;
+                return FALSE;
         }
         if (result)
         {
@@ -4838,6 +4890,39 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     break;
                 case WINDIVERT_FILTER_FIELD_EVENT:
                     field[0] = (UINT32)event;
+                    break;
+                case WINDIVERT_FILTER_FIELD_PACKET:
+                    result = windivert_get_data(buffer, /*offset=*/0,
+                        (INT)filter[ip].arg[1], sizeof(data8), &data8);
+                    field[0] = (UINT32)data8;
+                    break;
+                case WINDIVERT_FILTER_FIELD_PACKET16:
+                    result = windivert_get_data(buffer, /*offset=*/0,
+                        (INT)filter[ip].arg[1], sizeof(data16), &data16);
+                    field[0] = (UINT32)RtlUshortByteSwap(data16);
+                    break;
+                case WINDIVERT_FILTER_FIELD_PACKET32:
+                    result = windivert_get_data(buffer, /*offset=*/0,
+                        (INT)filter[ip].arg[1], sizeof(data32), &data32);
+                    field[0] = (UINT32)RtlUlongByteSwap(data32);
+                    break;
+                case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+                case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+                    result = windivert_get_data(buffer, header_len,
+                        (INT)filter[ip].arg[1], sizeof(data8), &data8);
+                    field[0] = (UINT32)data8;
+                    break;
+                case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+                case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+                    result = windivert_get_data(buffer, header_len,
+                        (INT)filter[ip].arg[1], sizeof(data16), &data16);
+                    field[0] = (UINT32)RtlUshortByteSwap(data16);
+                    break;
+                case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
+                case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
+                    result = windivert_get_data(buffer, header_len,
+                        (INT)filter[ip].arg[1], sizeof(data32), &data32);
+                    field[0] = (UINT32)RtlUlongByteSwap(data32);
                     break;
                 case WINDIVERT_FILTER_FIELD_INBOUND:
                     field[0] = (UINT32)!outbound;
@@ -4879,9 +4964,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                                 flow_data->Protocol == IPPROTO_ICMP);
                             break;
                         default:
-                            error = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_ICMPV6:
@@ -4900,9 +4983,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                                 flow_data->Protocol == IPPROTO_ICMPV6);
                             break;
                         default:
-                            error = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_TCP:
@@ -4921,9 +5002,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                                 (UINT32)(flow_data->Protocol == IPPROTO_TCP);
                             break;
                         default:
-                            error = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_UDP:
@@ -4942,9 +5021,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                                 (UINT32)(flow_data->Protocol == IPPROTO_UDP);
                             break;
                         default:
-                            error = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
@@ -5004,6 +5081,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     field[0] = (UINT32)ipv6_header->HopLimit;
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
+                    big = TRUE;
                     field[3] =
                         (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[0]);
                     field[2] =
@@ -5014,6 +5092,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                         (UINT32)RtlUlongByteSwap(ipv6_header->SrcAddr[3]);
                     break;
                 case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
+                    big = TRUE;
                     field[3] =
                         (UINT32)RtlUlongByteSwap(ipv6_header->DstAddr[0]);
                     field[2] =
@@ -5111,6 +5190,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     field[0] = (UINT32)payload_len;
                     break;
                 case WINDIVERT_FILTER_FIELD_LOCALADDR:
+                    big = TRUE;
                     switch (layer)
                     {
                         case WINDIVERT_LAYER_NETWORK:
@@ -5157,12 +5237,11 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                             field[3] = socket_data->LocalAddr[3];
                             break;
                         default:
-                            error  = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_REMOTEADDR:
+                    big = TRUE;
                     switch (layer)
                     {
                         case WINDIVERT_LAYER_NETWORK:
@@ -5209,9 +5288,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                             field[3] = socket_data->RemoteAddr[3];
                             break;
                         default:
-                            error  = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_LOCALPORT:
@@ -5242,9 +5319,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                             field[0] = (UINT32)socket_data->LocalPort;
                             break;
                         default:
-                            error  = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_REMOTEPORT:
@@ -5275,9 +5350,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                             field[0] = (UINT32)socket_data->RemotePort;
                             break;
                         default:
-                            error  = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_PROTOCOL:
@@ -5293,9 +5366,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                             field[0] = (UINT32)socket_data->Protocol;
                             break;
                         default:
-                            error  = TRUE;
-                            result = FALSE;
-                            break;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_PROCESSID:
@@ -5311,22 +5382,19 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                             field[0] = reflect_data->ProcessId;
                             break;
                         default:
-                            error  = TRUE;
-                            result = FALSE;
+                            return FALSE;
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_LAYER:
                     field[0] = reflect_data->Layer;
                     break;
                 default:
-                    error  = TRUE;
-                    result = FALSE;
-                    break;
+                    return FALSE;
             }
         }
         if (result)
         {
-            cmp = windivert_big_num_compare(field, filter[ip].arg);
+            cmp = windivert_big_num_compare(field, filter[ip].arg, big);
             switch (filter[ip].test)
             {
                 case WINDIVERT_FILTER_TEST_EQ:
@@ -5348,15 +5416,8 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     result = (cmp >= 0);
                     break;
                 default:
-                    error  = TRUE;
-                    result = FALSE;
-                    break;
+                    return FALSE;
             }
-        }
-        if (error)
-        {
-            DEBUG("FILTER: REJECT (bad filter)");
-            return FALSE;
         }
         ip = (result? filter[ip].success: filter[ip].failure);
         if (ip == WINDIVERT_FILTER_RESULT_ACCEPT)
@@ -5447,17 +5508,38 @@ static PWINDIVERT_FILTER windivert_filter_compile(
             {
                 goto windivert_filter_compile_error;
             }
-            if ((ioctl_filter[i].field == WINDIVERT_FILTER_FIELD_IP_SRCADDR ||
-                 ioctl_filter[i].field == WINDIVERT_FILTER_FIELD_IP_DSTADDR))
+            switch (ioctl_filter[i].field)
             {
-                if (ioctl_filter[i].arg[1] != 0x0000FFFF)
+                case WINDIVERT_FILTER_FIELD_IP_SRCADDR:
+                case WINDIVERT_FILTER_FIELD_IP_DSTADDR:
+                    if (ioctl_filter[i].arg[1] != 0x0000FFFF)
+                    {
+                        goto windivert_filter_compile_error;
+                    }
+                    break;
+                case WINDIVERT_FILTER_FIELD_PACKET:
+                case WINDIVERT_FILTER_FIELD_PACKET16:
+                case WINDIVERT_FILTER_FIELD_PACKET32:
+                case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+                case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+                case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
+                case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+                case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+                case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
                 {
-                    goto windivert_filter_compile_error;
+                    INT idx = (INT)ioctl_filter[i].arg[1];
+                    if (idx > UINT16_MAX || idx < -UINT16_MAX)
+                    {
+                        goto windivert_filter_compile_error;
+                    }
+                    break;
                 }
-            }
-            else if (ioctl_filter[i].arg[1] != 0)
-            {
-                goto windivert_filter_compile_error;
+                default:
+                    if (ioctl_filter[i].arg[1] != 0)
+                    {
+                        goto windivert_filter_compile_error;
+                    }
+                    break;
             }
         }
         switch (ioctl_filter[i].field)
@@ -5547,6 +5629,9 @@ static PWINDIVERT_FILTER windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_ICMPV6_TYPE:
             case WINDIVERT_FILTER_FIELD_ICMPV6_CODE:
             case WINDIVERT_FILTER_FIELD_PROTOCOL:
+            case WINDIVERT_FILTER_FIELD_PACKET:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
                 if (ioctl_filter[i].arg[0] > UINT8_MAX)
                 {
                     goto windivert_filter_compile_error;
@@ -5577,6 +5662,9 @@ static PWINDIVERT_FILTER windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
             case WINDIVERT_FILTER_FIELD_LOCALPORT:
             case WINDIVERT_FILTER_FIELD_REMOTEPORT:
+            case WINDIVERT_FILTER_FIELD_PACKET16:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
                 if (ioctl_filter[i].arg[0] > UINT16_MAX)
                 {
                     goto windivert_filter_compile_error;

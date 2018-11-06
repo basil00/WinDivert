@@ -93,6 +93,9 @@ typedef enum
     TOKEN_TCP_DST_PORT,
     TOKEN_TCP_FIN,
     TOKEN_TCP_HDR_LENGTH,
+    TOKEN_TCP_PAYLOAD,
+    TOKEN_TCP_PAYLOAD16,
+    TOKEN_TCP_PAYLOAD32,
     TOKEN_TCP_PAYLOAD_LENGTH,
     TOKEN_TCP_PSH,
     TOKEN_TCP_RST,
@@ -106,10 +109,16 @@ typedef enum
     TOKEN_UDP_CHECKSUM,
     TOKEN_UDP_DST_PORT,
     TOKEN_UDP_LENGTH,
+    TOKEN_UDP_PAYLOAD,
+    TOKEN_UDP_PAYLOAD16,
+    TOKEN_UDP_PAYLOAD32,
     TOKEN_UDP_PAYLOAD_LENGTH,
     TOKEN_UDP_SRC_PORT,
     TOKEN_ZERO,
     TOKEN_EVENT,
+    TOKEN_PACKET,
+    TOKEN_PACKET16,
+    TOKEN_PACKET32,
     TOKEN_TRUE,
     TOKEN_FALSE,
     TOKEN_INBOUND,
@@ -141,6 +150,10 @@ typedef enum
     TOKEN_EVENT_CLOSE,
     TOKEN_OPEN,
     TOKEN_CLOSE,
+    TOKEN_SQUARE_OPEN,
+    TOKEN_SQUARE_CLOSE,
+    TOKEN_MINUS,
+    TOKEN_BYTES,
     TOKEN_EQ,
     TOKEN_NEQ,
     TOKEN_LT,
@@ -239,9 +252,10 @@ typedef UINT64 ERROR, *PERROR;
 #define WINDIVERT_ERROR_BAD_TOKEN               4
 #define WINDIVERT_ERROR_BAD_TOKEN_FOR_LAYER     5
 #define WINDIVERT_ERROR_UNEXPECTED_TOKEN        6
-#define WINDIVERT_ERROR_OUTPUT_TOO_SHORT        7
-#define WINDIVERT_ERROR_BAD_OBJECT              8
-#define WINDIVERT_ERROR_ASSERTION_FAILED        9
+#define WINDIVERT_ERROR_INDEX_OOB               7
+#define WINDIVERT_ERROR_OUTPUT_TOO_SHORT        8
+#define WINDIVERT_ERROR_BAD_OBJECT              9
+#define WINDIVERT_ERROR_ASSERTION_FAILED        10
 
 #define MAKE_ERROR(code, pos)                   \
     (((ERROR)(code) << 32) | (ERROR)(pos));
@@ -603,6 +617,9 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"not",                 TOKEN_NOT,                 LNMFSR},
         {"or",                  TOKEN_OR,                  LNMFSR},
         {"outbound",            TOKEN_OUTBOUND,            LN_F__},
+        {"packet",              TOKEN_PACKET,              LNM___},
+        {"packet16",            TOKEN_PACKET16,            LNM___},
+        {"packet32",            TOKEN_PACKET32,            LNM___},
         {"processId",           TOKEN_PROCESS_ID,          L__FSR},
         {"protocol",            TOKEN_PROTOCOL,            LN_FS_},
         {"remoteAddr",          TOKEN_REMOTE_ADDR,         LN_FS_},
@@ -615,6 +632,9 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"tcp.DstPort",         TOKEN_TCP_DST_PORT,        LNM___},
         {"tcp.Fin",             TOKEN_TCP_FIN,             LNM___},
         {"tcp.HdrLength",       TOKEN_TCP_HDR_LENGTH,      LNM___},
+        {"tcp.Payload",         TOKEN_TCP_PAYLOAD,         LNM___},
+        {"tcp.Payload16",       TOKEN_TCP_PAYLOAD16,       LNM___},
+        {"tcp.Payload32",       TOKEN_TCP_PAYLOAD32,       LNM___},
         {"tcp.PayloadLength",   TOKEN_TCP_PAYLOAD_LENGTH,  LNM___},
         {"tcp.Psh",             TOKEN_TCP_PSH,             LNM___},
         {"tcp.Rst",             TOKEN_TCP_RST,             LNM___},
@@ -629,6 +649,9 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"udp.Checksum",        TOKEN_UDP_CHECKSUM,        LNM___},
         {"udp.DstPort",         TOKEN_UDP_DST_PORT,        LNM___},
         {"udp.Length",          TOKEN_UDP_LENGTH,          LNM___},
+        {"udp.Payload",         TOKEN_UDP_PAYLOAD,         LNM___},
+        {"udp.Payload16",       TOKEN_UDP_PAYLOAD16,       LNM___},
+        {"udp.Payload32",       TOKEN_UDP_PAYLOAD32,       LNM___},
         {"udp.PayloadLength",   TOKEN_UDP_PAYLOAD_LENGTH,  LNM___},
         {"udp.SrcPort",         TOKEN_UDP_SRC_PORT,        LNM___},
         {"zero",                TOKEN_ZERO,                LNMFSR},
@@ -662,6 +685,15 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 continue;
             case ')':
                 tokens[tp++].kind = TOKEN_CLOSE;
+                continue;
+            case '[':
+                tokens[tp++].kind = TOKEN_SQUARE_OPEN;
+                continue;
+            case ']':
+                tokens[tp++].kind = TOKEN_SQUARE_CLOSE;
+                continue;
+            case '-':
+                tokens[tp++].kind = TOKEN_MINUS;
                 continue;
             case '!':
                 if (filter[i] == '=')
@@ -780,16 +812,26 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             }
 
             // Check for base 10 number:
-            if (WinDivertAToI(token, &end, &num) && *end == '\0')
+            if (WinDivertAToI(token, &end, &num))
             {
-                tokens[tp].kind   = TOKEN_NUMBER;
-                tokens[tp].val[0] = num;
-                tp++;
-                continue;
+                BOOL b = (*end == 'b' && *(end+1) == '\0');
+                if (*end == '\0' || b)
+                {
+                    tokens[tp].kind   = TOKEN_NUMBER;
+                    tokens[tp].val[0] = num;
+                    tp++;
+                    if (b)
+                    {
+                        tokens[tp].kind = TOKEN_BYTES;
+                        tp++;
+                    }
+                    continue;
+                }
             }
 
             // Check for base 16 number:
-            if (WinDivertAToX(token, &end, &num) && *end == '\0')
+            if (token[0] == '0' && token[1] == 'x' &&
+                WinDivertAToX(token, &end, &num) && *end == '\0')
             {
                 tokens[tp].kind   = TOKEN_NUMBER;
                 tokens[tp].val[0] = num;
@@ -925,6 +967,23 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
 }
 
 /*
+ * Construct array varable.
+ */
+static PEXPR WinDivertMakeArrayVar(HANDLE pool, KIND kind, INT idx,
+    PERROR error)
+{
+    PEXPR var = (PEXPR)HeapAlloc(pool, HEAP_ZERO_MEMORY, sizeof(EXPR));
+    if (var == NULL)
+    {
+        *error = MAKE_ERROR(WINDIVERT_ERROR_NO_MEMORY, 0);
+        return NULL;
+    }
+    var->kind = kind;
+    var->val[0] = (UINT32)idx;
+    return var;
+}
+
+/*
  * Construct zero.
  */
 static PEXPR WinDivertMakeZero(void)
@@ -938,6 +997,10 @@ static PEXPR WinDivertMakeZero(void)
  */
 static PEXPR WinDivertMakeNumber(HANDLE pool, UINT32 *val, PERROR error)
 {
+    if (val[0] == 0 && val[1] == 0 && val[2] == 0 && val[3] == 0)
+    {
+        return WinDivertMakeZero();
+    }
     PEXPR expr = (PEXPR)HeapAlloc(pool, HEAP_ZERO_MEMORY, sizeof(EXPR));
     if (expr == NULL)
     {
@@ -1001,7 +1064,8 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
 {
     PEXPR var, val;
     KIND kind;
-    BOOL not = FALSE;
+    BOOL not = FALSE, neg;
+    UINT idx, size;
     while (toks[*i].kind == TOKEN_NOT)
     {
         not = !not;
@@ -1079,13 +1143,80 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
         case TOKEN_UDP_LENGTH:
         case TOKEN_UDP_CHECKSUM:
         case TOKEN_UDP_PAYLOAD_LENGTH:
+            var = WinDivertMakeVar(toks[*i].kind, error);
+            *i = *i + 1;
+            break;
+        case TOKEN_PACKET:
+        case TOKEN_TCP_PAYLOAD:
+        case TOKEN_UDP_PAYLOAD:
+            size = sizeof(UINT8);
+            goto array;
+        case TOKEN_PACKET16:
+        case TOKEN_TCP_PAYLOAD16:
+        case TOKEN_UDP_PAYLOAD16:
+            size = sizeof(UINT16);
+            goto array;
+        case TOKEN_PACKET32:
+        case TOKEN_TCP_PAYLOAD32:
+        case TOKEN_UDP_PAYLOAD32:
+            size = sizeof(UINT32);
+        array:
+            kind = toks[*i].kind;
+            *i = *i + 1;
+            if (toks[*i].kind != TOKEN_SQUARE_OPEN)
+            {
+                goto unexpected_token;
+            }
+            *i = *i + 1;
+            neg = FALSE;
+            if (toks[*i].kind == TOKEN_MINUS)
+            {
+                neg = TRUE;
+                *i = *i + 1;
+            }
+            if (toks[*i].kind != TOKEN_NUMBER)
+            {
+                goto unexpected_token;
+            }
+            if (toks[*i].val[3] != 0 || toks[*i].val[2] != 0 ||
+                toks[*i].val[1] != 0 || toks[*i].val[0] > UINT16_MAX)
+            {
+                *error = MAKE_ERROR(WINDIVERT_ERROR_INDEX_OOB, toks[*i].pos);
+                return NULL;
+            }
+            idx = toks[*i].val[0];
+            *i = *i + 1;
+            if (toks[*i].kind == TOKEN_BYTES)
+            {
+                *i = *i + 1;
+            }
+            else
+            {
+                idx *= size;
+            }
+            if ((!neg && idx > UINT16_MAX - size) ||
+                (neg && idx > UINT16_MAX) || (neg && idx < size))
+            {
+                *error = MAKE_ERROR(WINDIVERT_ERROR_INDEX_OOB, toks[*i].pos);
+                return NULL;
+            }
+            var = WinDivertMakeArrayVar(pool, kind, (neg? -(INT)idx: (INT)idx),
+                error);
+            if (var == NULL)
+            {
+                return NULL;
+            }
+            if (toks[*i].kind != TOKEN_SQUARE_CLOSE)
+            {
+                goto unexpected_token;
+            }
+            *i = *i + 1;
             break;
         default:
+        unexpected_token:
             *error = MAKE_ERROR(WINDIVERT_ERROR_UNEXPECTED_TOKEN, toks[*i].pos);
             return NULL;
     }
-    var = WinDivertMakeVar(toks[*i].kind, error);
-    *i = *i + 1;
     switch (toks[*i].kind)
     {
         case TOKEN_EQ:
@@ -1296,6 +1427,9 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_ICMPV6_TYPE:
         case TOKEN_ICMPV6_CODE:
         case TOKEN_PROTOCOL:
+        case TOKEN_PACKET:
+        case TOKEN_TCP_PAYLOAD:
+        case TOKEN_UDP_PAYLOAD:
             lb = 0; ub = 0xFF;
             break;
         case TOKEN_IP_FRAG_OFF:
@@ -1321,6 +1455,9 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_UDP_PAYLOAD_LENGTH:
         case TOKEN_LOCAL_PORT:
         case TOKEN_REMOTE_PORT:
+        case TOKEN_PACKET16:
+        case TOKEN_TCP_PAYLOAD16:
+        case TOKEN_UDP_PAYLOAD16:
             lb = 0; ub = 0xFFFF;
             break;
         case TOKEN_IPV6_FLOW_LABEL:
@@ -1469,6 +1606,7 @@ static INT16 WinDivertFlattenExpr(PEXPR expr, INT16 *label, INT16 succ,
 static void WinDivertEmitTest(PEXPR test, UINT16 offset,
     PWINDIVERT_FILTER object)
 {
+    BOOL big;
     PEXPR var = test->arg[0], val = test->arg[1];
     switch (test->kind)
     {
@@ -1493,6 +1631,8 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
         default:
             return;
     }
+    big = FALSE;
+    object->arg[1] = object->arg[2] = object->arg[3] = 0;
     switch (var->kind)
     {
         case TOKEN_ZERO:
@@ -1500,6 +1640,42 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_EVENT:
             object->field = WINDIVERT_FILTER_FIELD_EVENT;
+            break;
+        case TOKEN_PACKET:
+            object->field = WINDIVERT_FILTER_FIELD_PACKET;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_PACKET16:
+            object->field = WINDIVERT_FILTER_FIELD_PACKET16;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_PACKET32:
+            object->field = WINDIVERT_FILTER_FIELD_PACKET32;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_TCP_PAYLOAD:
+            object->field = WINDIVERT_FILTER_FIELD_TCP_PAYLOAD;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_TCP_PAYLOAD16:
+            object->field = WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_TCP_PAYLOAD32:
+            object->field = WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_UDP_PAYLOAD:
+            object->field = WINDIVERT_FILTER_FIELD_UDP_PAYLOAD;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_UDP_PAYLOAD16:
+            object->field = WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16;
+            object->arg[1] = var->val[0];
+            break;
+        case TOKEN_UDP_PAYLOAD32:
+            object->field = WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32;
+            object->arg[1] = var->val[0];
             break;
         case TOKEN_OUTBOUND:
             object->field = WINDIVERT_FILTER_FIELD_OUTBOUND;
@@ -1524,9 +1700,11 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_LOCAL_ADDR:
             object->field = WINDIVERT_FILTER_FIELD_LOCALADDR;
+            big = TRUE;
             break;
         case TOKEN_REMOTE_ADDR:
             object->field = WINDIVERT_FILTER_FIELD_REMOTEADDR;
+            big = TRUE;
             break;
         case TOKEN_LOCAL_PORT:
             object->field = WINDIVERT_FILTER_FIELD_LOCALPORT;
@@ -1590,9 +1768,11 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_IP_SRC_ADDR:
             object->field = WINDIVERT_FILTER_FIELD_IP_SRCADDR;
+            big = TRUE;
             break;
         case TOKEN_IP_DST_ADDR:
             object->field = WINDIVERT_FILTER_FIELD_IP_DSTADDR;
+            big = TRUE;
             break;
         case TOKEN_IPV6_TRAFFIC_CLASS:
             object->field = WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS;
@@ -1611,9 +1791,11 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_IPV6_SRC_ADDR:
             object->field = WINDIVERT_FILTER_FIELD_IPV6_SRCADDR;
+            big = TRUE;
             break;
         case TOKEN_IPV6_DST_ADDR:
             object->field = WINDIVERT_FILTER_FIELD_IPV6_DSTADDR;
+            big = TRUE;
             break;
         case TOKEN_ICMP_TYPE:
             object->field = WINDIVERT_FILTER_FIELD_ICMP_TYPE;
@@ -1703,9 +1885,12 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             return;
     }
     object->arg[0] = val->val[0];
-    object->arg[1] = val->val[1];
-    object->arg[2] = val->val[2];
-    object->arg[3] = val->val[3];
+    if (big)
+    {
+        object->arg[1] = val->val[1];
+        object->arg[2] = val->val[2];
+        object->arg[3] = val->val[3];
+    }
     switch (test->succ)
     {
         case WINDIVERT_FILTER_RESULT_ACCEPT:
@@ -2021,6 +2206,8 @@ static const char *WinDivertErrorString(UINT code)
             return "Filter expression contains a bad token for layer";
         case WINDIVERT_ERROR_UNEXPECTED_TOKEN:
             return "Filter expression parse error";
+        case WINDIVERT_ERROR_INDEX_OOB:
+            return "Filter expression array index is out-of-bounds";
         case WINDIVERT_ERROR_OUTPUT_TOO_SHORT:
             return "Filter object buffer is too short";
         case WINDIVERT_ERROR_BAD_OBJECT:
@@ -2086,31 +2273,34 @@ extern BOOL WinDivertHelperCompileFilter(const char *filter_str,
 /*
  * Big number comparison.
  */
-static int WinDivertBigNumCompare(const UINT32 *a, const UINT32 *b)
+static int WinDivertBigNumCompare(const UINT32 *a, const UINT32 *b, BOOL big)
 {
-    if (a[3] < b[3])
+    if (big)
     {
-        return -1;
-    }
-    if (a[3] > b[3])
-    {
-        return 1;
-    }
-    if (a[2] < b[2])
-    {
-        return -1;
-    }
-    if (a[2] > b[2])
-    {
-        return 1;
-    }
-    if (a[1] < b[1])
-    {
-        return -1;
-    }
-    if (a[1] > b[1])
-    {
-        return 1;
+        if (a[3] < b[3])
+        {
+            return -1;
+        }
+        if (a[3] > b[3])
+        {
+            return 1;
+        }
+        if (a[2] < b[2])
+        {
+            return -1;
+        }
+        if (a[2] > b[2])
+        {
+            return 1;
+        }
+        if (a[1] < b[1])
+        {
+            return -1;
+        }
+        if (a[1] > b[1])
+        {
+            return 1;
+        }
     }
     if (a[0] < b[0])
     {
@@ -2121,6 +2311,28 @@ static int WinDivertBigNumCompare(const UINT32 *a, const UINT32 *b)
         return 1;
     }
     return 0;
+}
+
+/*
+ * Get packet/payload data.
+ */
+static BOOL WinDivertGetData(PVOID packet, UINT packet_len, UINT offset,
+    INT idx, UINT size, PVOID data)
+{
+    if (idx < 0)
+    {
+        idx += (INT)packet_len;
+    }
+    else
+    {
+        idx += (INT)offset;
+    }
+    if (idx < (INT)offset || idx > (INT)(packet_len - size))
+    {
+        return FALSE;
+    }
+    memcpy(data, (UINT8 *)packet + idx, size);
+    return TRUE;
 }
 
 /*
@@ -2138,9 +2350,12 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
     PWINDIVERT_TCPHDR tcphdr = NULL;
     PWINDIVERT_UDPHDR udphdr = NULL;
     UINT8 protocol = 0;
-    UINT payload_len;
+    UINT header_len = 0, payload_len = 0;
     UINT32 val[4];
-    BOOL pass;
+    UINT8 data8;
+    UINT16 data16;
+    UINT32 data32;
+    BOOL pass, big;
     int cmp;
     WINDIVERT_FILTER object[WINDIVERT_FILTER_MAXLEN];
     UINT obj_len;
@@ -2162,6 +2377,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
             WinDivertParsePacket(packet, packet_len, &iphdr, &ipv6hdr,
                 &icmphdr, &icmpv6hdr, &tcphdr, &udphdr, &protocol, NULL,
                 &payload_len);
+            header_len = packet_len - payload_len;
             if ((addr->IPv6 && ipv6hdr == NULL) ||
                 (!addr->IPv6 && iphdr == NULL))
             {
@@ -2209,6 +2425,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 break;
         }
         pass = TRUE;
+        big  = FALSE;
         switch (object[pc].field)
         {
             case WINDIVERT_FILTER_FIELD_ZERO:
@@ -2232,6 +2449,9 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 break;
             case WINDIVERT_FILTER_FIELD_IFIDX:
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
+            case WINDIVERT_FILTER_FIELD_PACKET:
+            case WINDIVERT_FILTER_FIELD_PACKET16:
+            case WINDIVERT_FILTER_FIELD_PACKET32:
                 pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
                         addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
                 break;
@@ -2309,6 +2529,9 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
             case WINDIVERT_FILTER_FIELD_TCP_WINDOW:
             case WINDIVERT_FILTER_FIELD_TCP_CHECKSUM:
             case WINDIVERT_FILTER_FIELD_TCP_URGPTR:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
             case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
                 pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
                         addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
@@ -2318,6 +2541,9 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
             case WINDIVERT_FILTER_FIELD_UDP_DSTPORT:
             case WINDIVERT_FILTER_FIELD_UDP_LENGTH:
             case WINDIVERT_FILTER_FIELD_UDP_CHECKSUM:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
                 pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
                         addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
@@ -2332,7 +2558,6 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
             pc = object[pc].failure;
             continue;
         }
-        val[1] = val[2] = val[3] = 0;
         switch (object[pc].field)
         {
             case WINDIVERT_FILTER_FIELD_ZERO:
@@ -2340,6 +2565,39 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 break;
             case WINDIVERT_FILTER_FIELD_EVENT:
                 val[0] = addr->Event;
+                break;
+            case WINDIVERT_FILTER_FIELD_PACKET:
+                pass = WinDivertGetData(packet, packet_len, /*offset=*/0,
+                    object[pc].arg[1], sizeof(data8), &data8);
+                val[0] = data8;
+                break;
+            case WINDIVERT_FILTER_FIELD_PACKET16:
+                pass = WinDivertGetData(packet, packet_len, /*offset=*/0,
+                    object[pc].arg[1], sizeof(data16), &data16);
+                val[0] = ntohs(data16);
+                break;
+            case WINDIVERT_FILTER_FIELD_PACKET32:
+                pass = WinDivertGetData(packet, packet_len, /*offset=*/0,
+                    object[pc].arg[1], sizeof(data32), &data32);
+                val[0] = ntohl(data32);
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+                pass = WinDivertGetData(packet, packet_len, header_len,
+                    object[pc].arg[1], sizeof(data8), &data8);
+                val[0] = data8;
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+                pass = WinDivertGetData(packet, packet_len, header_len,
+                    object[pc].arg[1], sizeof(data16), &data16);
+                val[0] = ntohs(data16);
+                break;
+            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
+            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
+                pass = WinDivertGetData(packet, packet_len, header_len,
+                    object[pc].arg[1], sizeof(data32), &data32);
+                val[0] = ntohl(data32);
                 break;
             case WINDIVERT_FILTER_FIELD_INBOUND:
                 val[0] = !addr->Outbound;
@@ -2495,12 +2753,14 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 val[0] = ipv6hdr->HopLimit;
                 break;
             case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
+                big = TRUE;
                 val[3] = ntohl(ipv6hdr->SrcAddr[0]);
                 val[2] = ntohl(ipv6hdr->SrcAddr[1]);
                 val[1] = ntohl(ipv6hdr->SrcAddr[2]);
                 val[0] = ntohl(ipv6hdr->SrcAddr[3]);
                 break;
             case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
+                big = TRUE;
                 val[3] = ntohl(ipv6hdr->DstAddr[0]);
                 val[2] = ntohl(ipv6hdr->DstAddr[1]);
                 val[1] = ntohl(ipv6hdr->DstAddr[2]);
@@ -2591,6 +2851,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 val[0] = payload_len;
                 break;
             case WINDIVERT_FILTER_FIELD_LOCALADDR:
+                big = TRUE;
                 switch (addr->Layer)
                 {
                     case WINDIVERT_LAYER_NETWORK:
@@ -2633,6 +2894,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_REMOTEADDR:
+                big = TRUE;
                 switch (addr->Layer)
                 {
                     case WINDIVERT_LAYER_NETWORK:
@@ -2772,7 +3034,12 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
         }
-        cmp = WinDivertBigNumCompare(val, object[pc].arg);
+        if (!pass)
+        {
+            pc = object[pc].failure;
+            continue;
+        }
+        cmp = WinDivertBigNumCompare(val, object[pc].arg, big);
         switch (object[pc].test)
         {
             case WINDIVERT_FILTER_TEST_EQ:
@@ -2903,6 +3170,22 @@ static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
             filter->arg[1] = 0x0000FFFF;
             filter->arg[2] = filter->arg[3] = 0;
             break;
+        case WINDIVERT_FILTER_FIELD_PACKET:
+        case WINDIVERT_FILTER_FIELD_PACKET16:
+        case WINDIVERT_FILTER_FIELD_PACKET32:
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
+            if (!WinDivertDeserializeNumber(stream, 7, &val))
+            {
+                return FALSE;
+            }
+            filter->arg[1] = (UINT32)((INT)val - UINT16_MAX);
+            filter->arg[2] = filter->arg[3] = 0;
+            break;
         default:
             filter->arg[1] = filter->arg[2] = filter->arg[3] = 0;
             break;
@@ -2994,6 +3277,7 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
 {
     KIND kind;
     PEXPR var, val, expr;
+    UINT32 tmp[4];
     ERROR error;
 
     switch (test->field)
@@ -3002,6 +3286,24 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             kind = TOKEN_ZERO; break;
         case WINDIVERT_FILTER_FIELD_EVENT:
             kind = TOKEN_EVENT; break;
+        case WINDIVERT_FILTER_FIELD_PACKET:
+            kind = TOKEN_PACKET; break;
+        case WINDIVERT_FILTER_FIELD_PACKET16:
+            kind = TOKEN_PACKET16; break;
+        case WINDIVERT_FILTER_FIELD_PACKET32:
+            kind = TOKEN_PACKET32; break;
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+            kind = TOKEN_TCP_PAYLOAD; break;
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+            kind = TOKEN_TCP_PAYLOAD16; break;
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
+            kind = TOKEN_TCP_PAYLOAD32; break;
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+            kind = TOKEN_UDP_PAYLOAD; break;
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+            kind = TOKEN_UDP_PAYLOAD16; break;
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
+            kind = TOKEN_UDP_PAYLOAD32; break;
         case WINDIVERT_FILTER_FIELD_INBOUND:
             kind = TOKEN_INBOUND; break;
         case WINDIVERT_FILTER_FIELD_OUTBOUND:
@@ -3138,15 +3440,42 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             return NULL;
     }
 
-    var = WinDivertMakeVar(kind, &error);
-    if (var == NULL)
+    switch (kind)
     {
-        return NULL;
-    }
-    val = WinDivertMakeNumber(pool, test->arg, &error);
-    if (val == NULL)
-    {
-        return NULL;
+        case TOKEN_PACKET:
+        case TOKEN_PACKET16:
+        case TOKEN_PACKET32:
+        case TOKEN_TCP_PAYLOAD:
+        case TOKEN_TCP_PAYLOAD16:
+        case TOKEN_TCP_PAYLOAD32:
+        case TOKEN_UDP_PAYLOAD:
+        case TOKEN_UDP_PAYLOAD16:
+        case TOKEN_UDP_PAYLOAD32:
+            var = WinDivertMakeArrayVar(pool, kind, test->arg[1], &error);
+            if (var == NULL)
+            {
+                return NULL;
+            }
+            tmp[0] = test->arg[0];
+            tmp[1] = tmp[2] = tmp[3] = 0;
+            val = WinDivertMakeNumber(pool, tmp, &error);
+            if (val == NULL)
+            {
+                return NULL;
+            }
+            break;
+        default:
+            var = WinDivertMakeVar(kind, &error);
+            if (var == NULL)
+            {
+                return NULL;
+            }
+            val = WinDivertMakeNumber(pool, test->arg, &error);
+            if (val == NULL)
+            {
+                return NULL;
+            }
+            break;
     }
     
     switch (test->test)
@@ -3558,7 +3887,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
 {
     PEXPR field = expr->arg[0], val = expr->arg[1];
     BOOL is_ipv4_addr = FALSE, is_ipv6_addr = FALSE, is_layer = FALSE,
-        is_event = FALSE;
+        is_event = FALSE, is_hex = FALSE;
 
     switch (field->kind)
     {
@@ -3617,6 +3946,23 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             break;
         case TOKEN_EVENT:
             is_event = TRUE;
+            break;
+        case TOKEN_PACKET:
+        case TOKEN_PACKET16:
+        case TOKEN_PACKET32:
+        case TOKEN_IP_ID:
+        case TOKEN_IP_CHECKSUM:
+        case TOKEN_TCP_CHECKSUM:
+        case TOKEN_TCP_PAYLOAD:
+        case TOKEN_TCP_PAYLOAD16:
+        case TOKEN_TCP_PAYLOAD32:
+        case TOKEN_UDP_CHECKSUM:
+        case TOKEN_UDP_PAYLOAD:
+        case TOKEN_UDP_PAYLOAD16:
+        case TOKEN_UDP_PAYLOAD32:
+        case TOKEN_ICMP_CHECKSUM:
+        case TOKEN_ICMPV6_CHECKSUM:
+            is_hex = TRUE;
             break;
         default:
             break;
@@ -3723,6 +4069,11 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
                 WinDivertFormatNumber(stream, val->val[0]); break;
         }
     }
+    else if (is_hex)
+    {
+        WinDivertPutString(stream, "0x");
+        WinDivertFormatHexNumber(stream, val->val[0]);
+    }
     else
     {
         WinDivertFormatNumber(stream, val->val[0]);
@@ -3735,6 +4086,8 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
 static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     WINDIVERT_LAYER layer, BOOL top_level, BOOL and)
 {
+    INT idx;
+
     if (stream->pos >= stream->max)
     {
         return;
@@ -3802,6 +4155,24 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             WinDivertPutString(stream, "zero"); return;
         case TOKEN_EVENT:
             WinDivertPutString(stream, "event"); return;
+        case TOKEN_PACKET:
+            WinDivertPutString(stream, "packet"); break;
+        case TOKEN_PACKET16:
+            WinDivertPutString(stream, "packet16"); break;
+        case TOKEN_PACKET32:
+            WinDivertPutString(stream, "packet32"); break;
+        case TOKEN_TCP_PAYLOAD:
+            WinDivertPutString(stream, "tcp.Payload"); break;
+        case TOKEN_TCP_PAYLOAD16:
+            WinDivertPutString(stream, "tcp.Payload16"); break;
+        case TOKEN_TCP_PAYLOAD32:
+            WinDivertPutString(stream, "tcp.Payload32"); break;
+        case TOKEN_UDP_PAYLOAD:
+            WinDivertPutString(stream, "udp.Payload"); break;
+        case TOKEN_UDP_PAYLOAD16:
+            WinDivertPutString(stream, "udp.Payload16"); break;
+        case TOKEN_UDP_PAYLOAD32:
+            WinDivertPutString(stream, "udp.Payload32"); break;
         case TOKEN_INBOUND:
             WinDivertPutString(stream, "inbound"); return;
         case TOKEN_OUTBOUND:
@@ -3935,9 +4306,18 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         case TOKEN_LAYER:
             WinDivertPutString(stream, "layer"); return;
         case TOKEN_NUMBER:
-            WinDivertFormatNumber(stream, expr->val[0]);
-            return;
+            WinDivertFormatNumber(stream, expr->val[0]); return;
     }
+
+    WinDivertPutChar(stream, '[');
+    idx = (INT)expr->val[0];
+    if (idx < 0)
+    {
+        WinDivertPutChar(stream, '-');
+        idx = -idx;
+    }
+    WinDivertFormatNumber(stream, (UINT32)idx);
+    WinDivertPutString(stream, "b]");
 }
 
 /*

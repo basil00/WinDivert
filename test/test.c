@@ -114,6 +114,22 @@ static struct packet pkt_ipv6_exthdrs_udp =
 static struct test tests[] =
 {
     {"event = PACKET",                         &pkt_echo_request, TRUE},
+    {"packet[0] == 0x45",                      &pkt_echo_request, TRUE},
+    {"packet[0] == 0x33",                      &pkt_echo_request, FALSE},
+    {"packet[55] == 0x1b",                     &pkt_echo_request, TRUE},
+    {"packet[55b] == 0x1b",                    &pkt_echo_request, TRUE},
+    {"packet[1000] <= 0 || packet[-1000] = 7", &pkt_echo_request, FALSE},
+    {"packet[-1] == 0x37 && packet[-2] == 0x36 && packet[-3] == 0x35 && "
+     "packet[-4] == 0x34",                     &pkt_echo_request, TRUE},
+    {"packet16[0] == 0x4500",                  &pkt_echo_request, TRUE},
+    {"packet16[0] == 0x0045",                  &pkt_echo_request, FALSE},
+    {"packet16[2b] == 0x0054",                 &pkt_echo_request, TRUE},
+    {"packet16[1] == 0x0054",                  &pkt_echo_request, TRUE},
+    {"packet16[0] == 0x4500 && packet16[1] == 0x0054 && "
+     "packet16[-1] == 0x3637",                 &pkt_echo_request, TRUE},
+    {"packet32[0b] == 0x45000054 && packet32[3b] == 0x54123440 && "
+     "packet32[-4b] == 0x34353637 && packet32[-5b] == 0x33343536",
+                                               &pkt_echo_request, TRUE},
     {"outbound and icmp",                      &pkt_echo_request, TRUE},
     {"outbound",                               &pkt_echo_request, TRUE},
     {"outbound and inbound",                   &pkt_echo_request, FALSE},
@@ -245,6 +261,74 @@ static struct test tests[] =
     {"(ipv6? tcp and tcp.DstPort = 1234 and (tcp.SrcPort = 999? !tcp.UrgPtr: "
      "tcp.Syn) or udp: ip and tcp.DstPort == 80)",
                                                &pkt_http_request, TRUE},
+    {"packet32[0] = 0x45000209 && packet32[1] = 0x482d4000 && "
+     "packet16[8b] = 0x4006 && packet32[3] = 0x0a0a0a0a && "
+     "packet32[4] = 0x5db8d877 && packet32[5] = 0xa31a0050 && "
+     "packet32[6] = 0x5338ccc2 && packet32[7] = 0x5637b355 && "
+     "packet32[8] = 0x80180073 && packet16[38b] = 0x0000 && "
+     "packet32[10] = 0x0101080a && packet32[11] = 0x002c851b && "
+     "packet32[12] = 0x1b7f3a71 && packet32[13] = 0x47455420 && "
+     "packet32[14] = 0x2f204854 && packet32[15] = 0x54502f31 && "
+     "packet32[16] = 0x2e310d0a && packet32[17] = 0x486f7374 && "
+     "packet32[18] = 0x3a207777 && packet32[19] = 0x772e6578 && "
+     "packet32[20] = 0x616d706c && packet32[21] = 0x652e636f && "
+     "packet32[22] = 0x6d0d0a43 && packet32[23] = 0x6f6e6e65 && "
+     "packet32[24] = 0x6374696f && packet32[25] = 0x6e3a206b && "
+     "packet32[26] = 0x6565702d && packet32[27] = 0x616c6976 && "
+     "packet32[28] = 0x650d0a43 && packet32[29] = 0x61636865 && "
+     "packet32[30] = 0x2d436f6e && packet32[31] = 0x74726f6c && "
+     "packet32[32] = 0x3a206d61 && packet32[33] = 0x782d6167 && "
+     "packet32[34] = 0x653d300d && packet32[35] = 0x0a416363 && "
+     "packet32[36] = 0x6570743a && packet32[37] = 0x20746578 && "
+     "packet32[38] = 0x742f6874 && packet32[39] = 0x6d6c2c61 && "
+     "packet32[40] = 0x70706c69 && packet32[41] = 0x63617469 && "
+     "packet32[42] = 0x6f6e2f78 && packet32[43] = 0x68746d6c && "
+     "packet32[44] = 0x2b786d6c && packet32[45] = 0x2c617070 && "
+     "packet32[46] = 0x6c696361 && packet32[47] = 0x74696f6e && "
+     "packet32[48] = 0x2f786d6c && packet32[49] = 0x3b713d30 && "
+     "packet32[50] = 0x2e392c69 && packet32[51] = 0x6d616765 && "
+     "packet32[52] = 0x2f776562 && packet32[53] = 0x702c2a2f && "
+     "packet32[54] = 0x2a3b713d && packet32[55] = 0x302e380d && "
+     "packet32[56] = 0x0a557365 && packet32[57] = 0x722d4167 && "
+     "packet32[58] = 0x656e743a && packet32[59] = 0x20585858 && "
+     "packet32[60] = 0x58585858 && packet32[61] = 0x58585858 && "
+     "packet32[62] = 0x58585858 && packet32[63] = 0x58585858 && "
+     "packet32[64] = 0x58585858 && packet32[65] = 0x58585858 && "
+     "packet32[66] = 0x58585858 && packet32[67] = 0x58585858 && "
+     "packet32[68] = 0x58585858 && packet32[69] = 0x58585858 && "
+     "packet32[70] = 0x58585858 && packet32[71] = 0x58585858 && "
+     "packet32[72] = 0x58585858 && packet32[73] = 0x58585858 && "
+     "packet32[74] = 0x58585858 && packet32[75] = 0x58585858 && "
+     "packet32[76] = 0x58585858 && packet32[77] = 0x58585858 && "
+     "packet32[78] = 0x58585858 && packet32[79] = 0x58585858 && "
+     "packet32[80] = 0x58585858 && packet32[81] = 0x58585858 && "
+     "packet32[82] = 0x58585858 && packet32[83] = 0x58585858 && "
+     "packet32[84] = 0x58585858 && packet32[85] = 0x58585858 && "
+     "packet32[86] = 0x58585858 && packet32[87] = 0x58585858 && "
+     "packet32[88] = 0x58585858 && packet32[89] = 0x58585858 && "
+     "packet32[90] = 0x58585858 && packet32[91] = 0x58585858 && "
+     "packet32[92] = 0x58580d0a && packet32[93] = 0x41636365 && "
+     "packet32[94] = 0x70742d45 && packet32[95] = 0x6e636f64 && "
+     "packet32[96] = 0x696e673a && packet32[97] = 0x20677a69 && "
+     "packet32[98] = 0x702c6465 && packet32[99] = 0x666c6174 && "
+     "packet32[100] = 0x652c7364 && packet32[101] = 0x63680d0a && "
+     "packet32[102] = 0x41636365 && packet32[103] = 0x70742d4c && "
+     "packet32[104] = 0x616e6775 && packet32[105] = 0x6167653a && "
+     "packet32[106] = 0x20656e2d && packet32[107] = 0x55532c65 && "
+     "packet32[108] = 0x6e3b713d && packet32[109] = 0x302e380d && "
+     "packet32[110] = 0x0a49662d && packet32[111] = 0x4e6f6e65 && "
+     "packet32[112] = 0x2d4d6174 && packet32[113] = 0x63683a20 && "
+     "packet32[114] = 0x22333333 && packet32[115] = 0x33333333 && "
+     "packet32[116] = 0x3333220d && packet32[117] = 0x0a49662d && "
+     "packet32[118] = 0x4d6f6469 && packet32[119] = 0x66696564 && "
+     "packet32[120] = 0x2d53696e && packet32[121] = 0x63653a20 && "
+     "packet32[122] = 0x4672692c && packet32[123] = 0x20303320 && "
+     "packet32[124] = 0x41756720 && packet32[125] = 0x32303134 && "
+     "packet32[126] = 0x2031333a && packet32[127] = 0x33333a33 && "
+     "packet32[128] = 0x3320474d && packet32[129] = 0x540d0a0d && "
+     "packet[-1] = 0x0a",                      &pkt_http_request, TRUE},
+    {"tcp.Payload16[-1] == 0x0d0a",            &pkt_http_request, TRUE},
+    {"tcp.Payload32[-2] == 0x20474d54",        &pkt_http_request, TRUE},
     {"udp",                                    &pkt_dns_request, TRUE},
     {"udp && udp.SrcPort > 1 && ipv6",         &pkt_dns_request, FALSE},
     {"udp.DstPort == 53",                      &pkt_dns_request, TRUE},
@@ -260,6 +344,10 @@ static struct test tests[] =
     {"ip.DstAddr == ::ffff:8.8.4.4",           &pkt_dns_request, TRUE},
     {"ip.DstAddr == ::0:ffff:8.8.4.4",         &pkt_dns_request, TRUE},
     {"udp.PayloadLength == 29",                &pkt_dns_request, TRUE},
+    {"udp.Payload16[-1] == 0x0001 && udp.Payload16[-2] == 0x0001",
+                                               &pkt_dns_request, TRUE},
+    {"packet16[-1] == 0x0001 && packet16[-2] == 0x0001",
+                                               &pkt_dns_request, TRUE},
     {"ipv6",                                   &pkt_ipv6_tcp_syn, TRUE},
     {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.Syn",                                &pkt_ipv6_tcp_syn, TRUE},
@@ -351,7 +439,7 @@ int main(void)
         // Run the test:
         BOOL res = run_test(upper_handle, filter, packet, packet_len, match);
 
-        printf("%.2u ", i);
+        printf("%.3u ", i);
         if (res)
         {
             SetConsoleTextAttribute(console, FOREGROUND_GREEN);

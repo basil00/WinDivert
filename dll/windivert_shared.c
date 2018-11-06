@@ -167,6 +167,7 @@ static void WinDivertSerializeNumber(PWINDIVERT_STREAM stream, UINT32 val)
 static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
     PWINDIVERT_FILTER filter)
 {
+    INT idx;
     UINT i;
 
     WinDivertPutChar(stream, '_');
@@ -183,6 +184,19 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
             {
                 WinDivertSerializeNumber(stream, filter->arg[i]);
             }
+            break;
+        case WINDIVERT_FILTER_FIELD_PACKET:
+        case WINDIVERT_FILTER_FIELD_PACKET16:
+        case WINDIVERT_FILTER_FIELD_PACKET32:
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
+        case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+        case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
+            idx = (INT)filter->arg[1];
+            idx += UINT16_MAX;
+            WinDivertSerializeNumber(stream, (UINT32)idx);
             break;
         default:
             break;
