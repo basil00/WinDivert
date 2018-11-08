@@ -220,9 +220,9 @@ extern WINDIVERTEXPORT HANDLE WinDivertOpen(
  */
 extern WINDIVERTEXPORT BOOL WinDivertRecv(
     __in        HANDLE handle,
-    __out       PVOID pPacket,
+    __out       VOID *pPacket,
     __in        UINT packetLen,
-    __out_opt   PWINDIVERT_ADDRESS pAddr,
+    __out_opt   WINDIVERT_ADDRESS *pAddr,
     __out_opt   UINT *pReadLen);
 
 /*
@@ -234,7 +234,7 @@ extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
     __in        UINT packetLen,
     __out_opt   UINT *pReadLen,
     __in        UINT64 flags,
-    __out       PWINDIVERT_ADDRESS pAddr,
+    __out       WINDIVERT_ADDRESS *pAddr,
     __inout_opt UINT *pAddrLen,
     __inout_opt LPOVERLAPPED lpOverlapped);
 
@@ -243,9 +243,9 @@ extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
  */
 extern WINDIVERTEXPORT BOOL WinDivertSend(
     __in        HANDLE handle,
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
-    __in        PWINDIVERT_ADDRESS pAddr,
+    __in        const WINDIVERT_ADDRESS *pAddr,
     __out_opt   UINT *pWriteLen);
 
 /*
@@ -253,11 +253,11 @@ extern WINDIVERTEXPORT BOOL WinDivertSend(
  */
 extern WINDIVERTEXPORT BOOL WinDivertSendEx(
     __in        HANDLE handle,
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
     __out_opt   UINT *pWriteLen,
     __in        UINT64 flags,
-    __in        PWINDIVERT_ADDRESS pAddr,
+    __in        const WINDIVERT_ADDRESS *pAddr,
     __in        UINT addrLen,
     __inout_opt LPOVERLAPPED lpOverlapped);
 
@@ -438,7 +438,7 @@ typedef struct
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
 extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
     __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt   PWINDIVERT_IPV6HDR *ppIpv6Hdr,
@@ -483,9 +483,9 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
 extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
-    __inout     PVOID pPacket, 
+    __inout     VOID *pPacket, 
     __in        UINT packetLen,
-    __in_opt    PWINDIVERT_ADDRESS pAddr,
+    __in_opt    const WINDIVERT_ADDRESS *pAddr,
     __in        UINT64 flags);
 
 /*
@@ -504,9 +504,9 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperCompileFilter(
  */
 extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
     __in        const char *filter,
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
-    __in        PWINDIVERT_ADDRESS pAddr);
+    __in        const WINDIVERT_ADDRESS *pAddr);
 
 /*
  * Format the given filter string.

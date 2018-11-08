@@ -165,7 +165,7 @@ static void WinDivertSerializeNumber(PWINDIVERT_STREAM stream, UINT32 val)
  * Serialize a test.
  */
 static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
-    PWINDIVERT_FILTER filter)
+    const WINDIVERT_FILTER *filter)
 {
     INT idx;
     UINT i;
@@ -209,7 +209,7 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
  * Serialize a test.
  */
 static void WinDivertSerializeFilter(PWINDIVERT_STREAM stream,
-    PWINDIVERT_FILTER filter, UINT8 length)
+    const WINDIVERT_FILTER *filter, UINT8 length)
 {
     UINT8 i;
     WinDivertPutString(stream, "@WinDiv_");     // Magic
@@ -443,7 +443,7 @@ WinDivertHelperParsePacketExit:
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
 extern UINT WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
-    PWINDIVERT_ADDRESS pAddr, UINT64 flags)
+    const WINDIVERT_ADDRESS *pAddr, UINT64 flags)
 {
     UINT8 pseudo_header[
         MAX(sizeof(WINDIVERT_PSEUDOHDR), sizeof(WINDIVERT_PSEUDOV6HDR))];

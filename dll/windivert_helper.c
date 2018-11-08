@@ -282,13 +282,13 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern BOOL WinDivertHelperParsePacket(PVOID pPacket, UINT packetLen,
+extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_IPHDR *ppIpHdr, PWINDIVERT_IPV6HDR *ppIpv6Hdr,
     PWINDIVERT_ICMPHDR *ppIcmpHdr, PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
     PWINDIVERT_TCPHDR *ppTcpHdr, PWINDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
     UINT *pDataLen)
 {
-    return WinDivertParsePacket(pPacket, packetLen, ppIpHdr, ppIpv6Hdr,
+    return WinDivertParsePacket((PVOID)pPacket, packetLen, ppIpHdr, ppIpv6Hdr,
         ppIcmpHdr, ppIcmpv6Hdr, ppTcpHdr, ppUdpHdr, NULL, ppData, pDataLen);
 }
 
@@ -2316,7 +2316,7 @@ static int WinDivertBigNumCompare(const UINT32 *a, const UINT32 *b, BOOL big)
 /*
  * Get packet/payload data.
  */
-static BOOL WinDivertGetData(PVOID packet, UINT packet_len, UINT offset,
+static BOOL WinDivertGetData(const VOID *packet, UINT packet_len, UINT offset,
     INT idx, UINT size, PVOID data)
 {
     if (idx < 0)
@@ -2338,8 +2338,8 @@ static BOOL WinDivertGetData(PVOID packet, UINT packet_len, UINT offset,
 /*
  * Evaluate the given filter with the given packet as input.
  */
-extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
-    UINT packet_len, PWINDIVERT_ADDRESS addr)
+extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
+    UINT packet_len, const WINDIVERT_ADDRESS *addr)
 {
     UINT16 pc;
     ERROR err;
@@ -2374,7 +2374,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, PVOID packet,
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
-            WinDivertParsePacket(packet, packet_len, &iphdr, &ipv6hdr,
+            WinDivertParsePacket((PVOID)packet, packet_len, &iphdr, &ipv6hdr,
                 &icmphdr, &icmpv6hdr, &tcphdr, &udphdr, &protocol, NULL,
                 &payload_len);
             header_len = packet_len - payload_len;

@@ -534,18 +534,18 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
 /*
  * Send a WinDivert packet.
  */
-extern BOOL WinDivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
-    PWINDIVERT_ADDRESS addr, UINT *writelen)
+extern BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
+    const WINDIVERT_ADDRESS *addr, UINT *writelen)
 {
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, (UINT64)addr,
-        sizeof(WINDIVERT_ADDRESS), pPacket, packetLen, writelen);
+        sizeof(WINDIVERT_ADDRESS), (PVOID)pPacket, packetLen, writelen);
 }
 
 /*
  * Send a WinDivert packet.
  */
-extern BOOL WinDivertSendEx(HANDLE handle, PVOID pPacket, UINT packetLen,
-    UINT *writeLen, UINT64 flags, PWINDIVERT_ADDRESS addr, UINT addrLen,
+extern BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
+    UINT *writeLen, UINT64 flags, const WINDIVERT_ADDRESS *addr, UINT addrLen,
     LPOVERLAPPED overlapped)
 {
     if (flags != 0)
@@ -556,12 +556,13 @@ extern BOOL WinDivertSendEx(HANDLE handle, PVOID pPacket, UINT packetLen,
     if (overlapped == NULL)
     {
         return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND,
-            (UINT64)addr, (UINT64)addrLen, pPacket, packetLen, writeLen);
+            (UINT64)addr, (UINT64)addrLen, (PVOID)pPacket, packetLen,
+            writeLen);
     }
     else
     {
         return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_SEND,
-            (UINT64)addr, (UINT64)addrLen, pPacket, packetLen, writeLen,
+            (UINT64)addr, (UINT64)addrLen, (PVOID)pPacket, packetLen, writeLen,
             overlapped);
     }
 }
