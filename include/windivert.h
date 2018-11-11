@@ -135,7 +135,7 @@ typedef struct
 {
     INT64  Timestamp;                   /* Packet's timestamp. */
     UINT64 Layer:8;                     /* Packet's layer. */
-    UINT64 Event:24;                    /* Packet event. */
+    UINT64 Event:8;                     /* Packet event. */
     UINT64 Outbound:1;                  /* Packet is outound? */
     UINT64 Loopback:1;                  /* Packet is loopback? */
     UINT64 Impostor:1;                  /* Packet is impostor? */
@@ -143,8 +143,7 @@ typedef struct
     UINT64 PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
     UINT64 PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
     UINT64 PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
-    UINT64 Final:1;                     /* Packet is final event? */
-    UINT64 Reserved:24;
+    UINT64 Reserved:41;
     union
     {
         WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
@@ -159,26 +158,16 @@ typedef struct
  */
 typedef enum
 {
-    WINDIVERT_EVENT_NETWORK_PACKET = 0x0001,
-                                        /* Network packet. */
-    WINDIVERT_EVENT_FLOW_ESTABLISHED = 0x0002,
+    WINDIVERT_EVENT_NETWORK_PACKET = 0, /* Network packet. */
+    WINDIVERT_EVENT_FLOW_ESTABLISHED = 1,
                                         /* Flow established. */
-    WINDIVERT_EVENT_FLOW_DELETED = 0x0004,
-                                        /* Flow deleted. */
-    WINDIVERT_EVENT_SOCKET_BIND = 0x0008,
-                                        /* Socket bind. */
-    WINDIVERT_EVENT_SOCKET_LISTEN = 0x0010,
-                                        /* Socket listen. */
-    WINDIVERT_EVENT_SOCKET_CONNECT = 0x0020,
-                                        /* Socket connect. */
-    WINDIVERT_EVENT_SOCKET_ACCEPT = 0x0040,
-                                        /* Socket accept. */
-    WINDIVERT_EVENT_REFLECT_ESTABLISHED = 0x0080,
-                                        /* Previously open WinDivert handle. */
-    WINDIVERT_EVENT_REFLECT_OPEN = 0x0100,
-                                        /* Open new WinDivert handle. */
-    WINDIVERT_EVENT_REFLECT_CLOSE = 0x0200,
-                                        /* Close existing WinDivert handle. */
+    WINDIVERT_EVENT_FLOW_DELETED = 2,   /* Flow deleted. */
+    WINDIVERT_EVENT_SOCKET_BIND = 3,    /* Socket bind. */
+    WINDIVERT_EVENT_SOCKET_LISTEN = 4,  /* Socket listen. */
+    WINDIVERT_EVENT_SOCKET_CONNECT = 5, /* Socket connect. */
+    WINDIVERT_EVENT_SOCKET_ACCEPT = 6,  /* Socket accept. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 7,   /* Open new WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 8,  /* Close existing WinDivert handle. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*
@@ -203,6 +192,17 @@ typedef enum
     WINDIVERT_PARAM_QUEUE_SIZE = 2,     /* Packet queue size. */
 } WINDIVERT_PARAM, *PWINDIVERT_PARAM;
 #define WINDIVERT_PARAM_MAX             WINDIVERT_PARAM_QUEUE_SIZE
+
+/*
+ * WinDivert shutdown parameter.
+ */
+typedef enum
+{
+    WINDIVERT_SHUTDOWN_RECV = 0x1,      /* Shutdown recv. */
+    WINDIVERT_SHUTDOWN_SEND = 0x2,      /* Shutdown send. */
+    WINDIVERT_SHUTDOWN_BOTH = 0x3,      /* Shutdown recv and send. */
+} WINDIVERT_SHUTDOWN, *PWINDIVERT_SHUTDOWN;
+#define WINDIVERT_SHUTDOWN_MAX          WINDIVERT_SHUTDOWN_BOTH
 
 #ifndef WINDIVERT_KERNEL
 
@@ -260,6 +260,13 @@ extern WINDIVERTEXPORT BOOL WinDivertSendEx(
     __in        const WINDIVERT_ADDRESS *pAddr,
     __in        UINT addrLen,
     __inout_opt LPOVERLAPPED lpOverlapped);
+
+/*
+ * Shutdown a WinDivert handle.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertShutdown(
+    __in        HANDLE handle,
+    __in        WINDIVERT_SHUTDOWN how);
 
 /*
  * Close a WinDivert handle.

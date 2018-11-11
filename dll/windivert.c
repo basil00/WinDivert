@@ -568,6 +568,15 @@ extern BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
 }
 
 /*
+ * Shutdown a WinDivert handle.
+ */
+extern BOOL WinDivertShutdown(HANDLE handle, WINDIVERT_SHUTDOWN how)
+{
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SHUTDOWN,
+            (UINT64)how, 0, NULL, 0, NULL);
+}
+
+/*
  * Close a WinDivert handle.
  */
 extern BOOL WinDivertClose(HANDLE handle)

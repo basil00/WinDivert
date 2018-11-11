@@ -161,7 +161,8 @@
 /*
  * WinDivert events.
  */
-#define WINDIVERT_EVENT_MAX                         0x8000
+#define WINDIVERT_EVENT_MAX                         \
+    WINDIVERT_EVENT_REFLECT_CLOSE
 
 /*
  * WinDivert flags.
@@ -244,6 +245,9 @@ typedef struct
 /*
  * IOCTL codes.
  */
+#define IOCTL_WINDIVERT_SHUTDOWN                                            \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x917, METHOD_IN_DIRECT, FILE_READ_DATA | \
+        FILE_WRITE_DATA)
 #define IOCTL_WINDIVERT_RECV                                                \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x918, METHOD_OUT_DIRECT, FILE_READ_DATA)
 #define IOCTL_WINDIVERT_SEND                                                \

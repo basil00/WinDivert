@@ -238,6 +238,12 @@ usage:
             GetLastError());
         return EXIT_FAILURE;
     }
+    if (mode != WATCH && !WinDivertShutdown(handle, WINDIVERT_SHUTDOWN_BOTH))
+    {
+        fprintf(stderr, "error: failed to shutdown WinDivert handle (%d)\n",
+            GetLastError());
+        return EXIT_FAILURE;
+    }
 
     // Main loop:
     console = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -245,13 +251,16 @@ usage:
     {
         if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
+            if (mode != WATCH && GetLastError() == ERROR_NO_DATA)
+            {
+                break;
+            }
             fprintf(stderr, "failed to event (%d)\n", GetLastError());
             continue;
         }
 
         switch (addr.Event)
         {
-            case WINDIVERT_EVENT_REFLECT_ESTABLISHED:
             case WINDIVERT_EVENT_REFLECT_OPEN:
                 // Open handle:
                 process = add_process(addr.Reflect.ProcessId);
@@ -395,10 +404,13 @@ usage:
         {
             remove_process(addr.Reflect.ProcessId);
         }
-        if (mode != WATCH && addr.Final)
-        {
-            break;
-        }
+    }
+
+    if (!WinDivertClose(handle))
+    {
+        fprintf(stderr, "error: failed to close WinDivert handle (%d)\n",
+            GetLastError());
+        return EXIT_FAILURE;
     }
 
     return 0;

@@ -158,6 +158,9 @@ struct context_s
     WDFWORKITEM worker;                         // Read worker.
     WINDIVERT_LAYER layer;                      // Context's layer.
     UINT64 flags;                               // Context's flags.
+    BOOL shutdown_recv;                         // Shutdown recv.
+    BOOL shutdown_send;                         // Shutdown send.
+    BOOL shutdown_recv_enabled;                 // Shutdown recv enabled?
     UINT32 priority;                            // Context (internal) priority.
     INT16 priority16;                           // Context (user) priority.
     GUID callout_guid[WINDIVERT_CONTEXT_MAXLAYERS];
@@ -241,7 +244,7 @@ struct packet_s
     LIST_ENTRY entry;                       // Entry for queue.
     LONGLONG timestamp;                     // Packet timestamp.
     UINT64 layer:8;                         // Layer.
-    UINT64 event:24;                        // Event.
+    UINT64 event:8;                         // Event.
     UINT64 outbound:1;                      // Packet is outound?
     UINT64 loopback:1;                      // Packet is loopback?
     UINT64 impostor:1;                      // Packet is impostor?
@@ -249,7 +252,6 @@ struct packet_s
     UINT64 pseudo_ip_checksum:1;            // Packet has pseudo IPv4 check?
     UINT64 pseudo_tcp_checksum:1;           // Packet has pseudo TCP check?
     UINT64 pseudo_udp_checksum:1;           // Packet has pseudo UDP check?
-    UINT64 final:1;                         // Packet is final event?
     UINT64 match:1;                         // Packet matches filter?
     UINT32 priority;                        // Packet priority.
     UINT32 packet_len;                      // Length of the packet.
@@ -448,8 +450,8 @@ static void windivert_network_classify(context_t context,
 static BOOL windivert_queue_work(context_t context, PVOID packet,
     ULONG packet_len, PNET_BUFFER_LIST buffers, WINDIVERT_LAYER layer,
     PVOID layer_data, WINDIVERT_EVENT event, UINT64 flags, UINT32 priority,
-    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor, BOOL final,
-    BOOL match, LONGLONG timestamp);
+    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor, BOOL match,
+    LONGLONG timestamp);
 static void windivert_queue_packet(context_t context, packet_t packet);
 static void windivert_reinject_packet(packet_t packet);
 static void windivert_free_packet(packet_t packet);
@@ -1256,6 +1258,9 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->packet_queue_maxtime = WINDIVERT_PARAM_QUEUE_TIME_DEFAULT;
     context->layer = WINDIVERT_LAYER_DEFAULT;
     context->flags = 0;
+    context->shutdown_recv = FALSE;
+    context->shutdown_recv_enabled = FALSE;
+    context->shutdown_send = FALSE;
     context->priority = windivert_context_priority(WINDIVERT_PRIORITY_DEFAULT);
     context->filter = NULL;
     context->worker = NULL;
@@ -1982,7 +1987,6 @@ static void windivert_read_service_request(context_t context, packet_t packet,
         addr[i].PseudoIPChecksum  = packet->pseudo_ip_checksum;
         addr[i].PseudoTCPChecksum = packet->pseudo_tcp_checksum;
         addr[i].PseudoUDPChecksum = packet->pseudo_udp_checksum;
-        addr[i].Final             = packet->final;
         addr[i].Reserved          = 0;
         layer_data = (PVOID)packet->data;
         switch (packet->layer)
@@ -2114,6 +2118,26 @@ static void windivert_read_service(context_t context)
         timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
+
+    if (context->shutdown_recv && context->shutdown_recv_enabled &&
+            IsListEmpty(&context->packet_queue) &&
+            IsListEmpty(&context->work_queue))
+    {
+        // The handle has shutdown, the queue is empty, and no more packets
+        // will be queued.  Notify any remaining requests.
+        while (context->state == WINDIVERT_CONTEXT_STATE_OPEN)
+        {
+            status = WdfIoQueueRetrieveNextRequest(context->read_queue,
+                &request);
+            if (!NT_SUCCESS(status))
+            {
+                break;
+            }
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
+            WdfRequestComplete(request, STATUS_PIPE_EMPTY);
+            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+        }
+    }
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 }
 
@@ -2147,6 +2171,12 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         status = STATUS_INVALID_DEVICE_STATE;
+        goto windivert_write_hard_error;
+    }
+    if (context->shutdown_send)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        status = STATUS_PIPE_EMPTY;
         goto windivert_write_hard_error;
     }
     layer = context->layer;
@@ -2506,6 +2536,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
             addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
             break;
 
+        case IOCTL_WINDIVERT_SHUTDOWN:
         case IOCTL_WINDIVERT_START_FILTER:
         case IOCTL_WINDIVERT_SET_LAYER:
         case IOCTL_WINDIVERT_SET_PRIORITY:
@@ -2605,7 +2636,43 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 return;
             }
             break;
-        
+
+        case IOCTL_WINDIVERT_SHUTDOWN:
+        {
+            UINT64 how;
+
+            ioctl = (PWINDIVERT_IOCTL)inbuf;
+            how = ioctl->arg1;
+            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+            if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+            {
+                KeReleaseInStackQueuedSpinLock(&lock_handle);
+                status = STATUS_INVALID_DEVICE_STATE;
+                goto windivert_ioctl_exit;
+            }
+            switch (how)
+            {
+                case WINDIVERT_SHUTDOWN_RECV:
+                    context->shutdown_recv = TRUE;
+                    break;
+                case WINDIVERT_SHUTDOWN_SEND:
+                    context->shutdown_send = TRUE;
+                    break;
+                case WINDIVERT_SHUTDOWN_BOTH:
+                    context->shutdown_recv = context->shutdown_send = TRUE;
+                    break;
+                default:
+                    KeReleaseInStackQueuedSpinLock(&lock_handle);
+                    status = STATUS_INVALID_PARAMETER;
+                    DEBUG_ERROR("failed to shutdown handle; invalid how",
+                        status);
+                    goto windivert_ioctl_exit;
+            }
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
+            windivert_read_service(context);
+            break;
+        }
+ 
         case IOCTL_WINDIVERT_START_FILTER:
         {
             BOOL inbound, outbound, ipv4, ipv6;
@@ -2688,6 +2755,8 @@ windivert_ioctl_bad_start_state:
             context->reflect.data.Flags     = context->flags;
             context->reflect.data.Priority  = context->priority16;
             context->reflect.open           = FALSE;
+            context->shutdown_recv_enabled  =
+                (layer != WINDIVERT_LAYER_REFLECT);
             KeReleaseInStackQueuedSpinLock(&lock_handle);
 
             windivert_reflect_open_event(context);
@@ -3197,7 +3266,8 @@ static void windivert_network_classify(context_t context,
     }
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
+        context->shutdown_recv)
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         return;
@@ -3293,7 +3363,7 @@ static void windivert_network_classify(context_t context,
             NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
             (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
             flags, priority, ipv4, outbound, loopback, impostor,
-            /*final=*/FALSE, /*match=*/FALSE, timestamp);
+            /*match=*/FALSE, timestamp);
         if (!ok)
         {
             goto windivert_network_classify_exit;
@@ -3305,8 +3375,8 @@ static void windivert_network_classify(context_t context,
     ok = windivert_queue_work(context, (PVOID)buffer_itr,
         NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
         (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
-        flags, priority, ipv4, outbound, loopback, impostor, /*final=*/FALSE,
-        /*match=*/TRUE, timestamp);
+        flags, priority, ipv4, outbound, loopback, impostor, /*match=*/TRUE,
+        timestamp);
     if (advance != 0)
     {
         // Advance the NET_BUFFER to its original position.  Note that we can
@@ -3330,8 +3400,8 @@ static void windivert_network_classify(context_t context,
         ok = windivert_queue_work(context, (PVOID)buffer_itr,
             NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
             (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
-            flags, priority, ipv4, outbound, loopback, impostor, 
-            /*FINAL=*/FALSE, match, timestamp);
+            flags, priority, ipv4, outbound, loopback, impostor, match,
+            timestamp);
         if (!ok)
         {
             goto windivert_network_classify_exit;
@@ -3458,7 +3528,8 @@ static void windivert_flow_established_classify(context_t context,
     result->actionType = FWP_ACTION_CONTINUE;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
+        context->shutdown_recv)
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         return;
@@ -3483,8 +3554,7 @@ static void windivert_flow_established_classify(context_t context,
         ok = windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
             /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW, (PVOID)flow_data,
             /*event=*/WINDIVERT_EVENT_FLOW_ESTABLISHED, flags, /*priority=*/0,
-            ipv4, outbound, loopback, /*impostor=*/FALSE, /*final=*/FALSE,
-            match, timestamp);
+            ipv4, outbound, loopback, /*impostor=*/FALSE, match, timestamp);
         if (!ok)
         {
             WdfObjectDereference(object);
@@ -3523,7 +3593,8 @@ static void windivert_flow_established_classify(context_t context,
     }
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
+        context->shutdown_recv)
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         windivert_free(flow);
@@ -3578,7 +3649,8 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     }
     flow->deleted = TRUE;
     cleanup = flow->inserted;
-    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
+        context->shutdown_recv)
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         goto windivert_flow_delete_notify_exit;
@@ -3597,7 +3669,7 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
             /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
             (PVOID)&flow->data, /*event=*/WINDIVERT_EVENT_FLOW_DELETED, flags,
             /*priority=*/0, !flow->ipv6, flow->outbound, flow->loopback,
-            /*impostor=*/FALSE, /*final=*/FALSE, match, timestamp);
+            /*impostor=*/FALSE, match, timestamp);
     }
 
 windivert_flow_delete_notify_exit:
@@ -3902,7 +3974,8 @@ static void windivert_socket_classify(context_t context,
     result->actionType = FWP_ACTION_CONTINUE;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
+        context->shutdown_recv)
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         return;
@@ -3921,7 +3994,7 @@ static void windivert_socket_classify(context_t context,
         ok = windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
             /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_SOCKET,
             (PVOID)socket_data, event, flags, /*priority=*/0, ipv4, outbound,
-            loopback, /*impostor=*/FALSE, /*final=*/FALSE, match, timestamp);
+            loopback, /*impostor=*/FALSE, match, timestamp);
         if (!ok)
         {
             WdfObjectDereference(object);
@@ -3970,6 +4043,8 @@ VOID windivert_worker(IN WDFWORKITEM item)
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
     KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+    windivert_read_service(context);
 }
 
 /*
@@ -3978,8 +4053,8 @@ VOID windivert_worker(IN WDFWORKITEM item)
 static BOOL windivert_queue_work(context_t context, PVOID packet,
     ULONG packet_len, PNET_BUFFER_LIST buffers, WINDIVERT_LAYER layer,
     PVOID layer_data, WINDIVERT_EVENT event, UINT64 flags, UINT32 priority,
-    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor, BOOL final,
-    BOOL match, LONGLONG timestamp)
+    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor, BOOL match,
+    LONGLONG timestamp)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PNET_BUFFER buffer;
@@ -4115,7 +4190,6 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
     work->pseudo_ip_checksum  = (pseudo_ip_checksum? 1: 0);
     work->pseudo_tcp_checksum = (pseudo_tcp_checksum? 1: 0);
     work->pseudo_udp_checksum = (pseudo_udp_checksum? 1: 0);
-    work->final               = (final? 1: 0);
     work->match               = match;
     work->priority            = priority;
     work->timestamp           = timestamp;
@@ -4127,6 +4201,16 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         windivert_free_packet(work);
         return FALSE;
+    }
+    if (context->shutdown_recv && context->shutdown_recv_enabled)
+    {
+        if ((flags & WINDIVERT_FLAG_SNIFF) != 0)
+        {
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
+            windivert_free_packet(work);
+            return FALSE;
+        }
+        work->match = FALSE;
     }
     context->work_queue_length++;
     if (context->work_queue_length > WINDIVERT_WORK_QUEUE_LEN_MAX)
@@ -4213,9 +4297,6 @@ static void windivert_queue_packet(context_t context, packet_t packet)
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     DEBUG("PACKET: queued packet (packet=%p)", packet);
-
-    // Service any pending I/O request.
-    windivert_read_service(context);
 
     return;
 }
@@ -5541,8 +5622,7 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
                         }
                         break;
                     case WINDIVERT_LAYER_REFLECT:
-                        if (event != WINDIVERT_EVENT_REFLECT_ESTABLISHED &&
-                            event != WINDIVERT_EVENT_REFLECT_OPEN &&
+                        if (event != WINDIVERT_EVENT_REFLECT_OPEN &&
                             event != WINDIVERT_EVENT_REFLECT_CLOSE)
                         {
                             goto windivert_filter_compile_error;
@@ -5846,7 +5926,7 @@ static void windivert_reflect_event_notify(context_t context,
             /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_REFLECT,
             (PVOID)&context->reflect.data, event, /*flags=*/0, /*priority=*/0,
             /*ipv4=*/TRUE, /*outbound=*/FALSE, /*loopback=*/FALSE,
-            /*impostor=*/FALSE, /*final=*/FALSE, /*match=*/TRUE, timestamp);
+            /*impostor=*/FALSE, /*match=*/TRUE, timestamp);
     }
 }
 
@@ -5858,13 +5938,18 @@ static void windivert_reflect_established_notify(context_t context,
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PLIST_ENTRY entry;
-    BOOL match, ok, final;
+    BOOL match, ok;
     context_t waiter;
     const WINDIVERT_FILTER *filter;
     PWINDIVERT_IPHDR packet;
     ULONG packet_len;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        return;
+    }
     filter = context->filter;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
@@ -5875,26 +5960,36 @@ static void windivert_reflect_established_notify(context_t context,
         entry = entry->Flink;
         match = windivert_filter(/*buffer=*/NULL,
             /*layer=*/WINDIVERT_LAYER_REFLECT, (PVOID)&waiter->reflect.data,
-            /*event=*/WINDIVERT_EVENT_REFLECT_ESTABLISHED, /*ipv4=*/TRUE,
+            /*event=*/WINDIVERT_EVENT_REFLECT_OPEN, /*ipv4=*/TRUE,
             /*outbound=*/FALSE, /*loopback=*/FALSE, /*impostor=*/FALSE, filter);
         if (!match)
         {
             continue;
         }
         packet = windivert_reflect_pseudo_packet(waiter, &packet_len);
-        final = (entry == &reflect_contexts);
         ok = windivert_queue_work(context, (PVOID)packet, packet_len,
             /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_REFLECT,
             (PVOID)&waiter->reflect.data,
-            /*event=*/WINDIVERT_EVENT_REFLECT_ESTABLISHED, /*flags=*/0,
+            /*event=*/WINDIVERT_EVENT_REFLECT_OPEN, /*flags=*/0,
             /*priority=*/0, /*ipv4=*/TRUE, /*outbound=*/FALSE,
-            /*loopback=*/FALSE, /*impostor=*/FALSE, final, /*match=*/TRUE,
-            timestamp);
+            /*loopback=*/FALSE, /*impostor=*/FALSE, /*match=*/TRUE, timestamp);
         if (!ok)
         {
             break;
         }
     }
+
+    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        return;
+    }
+    // REFLECT layer shutdown is disabled until all previously open handles
+    // have been queued.
+    context->shutdown_recv_enabled = TRUE;
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
+    windivert_read_service(context);
 }
 
 /*

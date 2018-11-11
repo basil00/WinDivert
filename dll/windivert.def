@@ -6,6 +6,7 @@ EXPORTS
     WinDivertRecvEx
     WinDivertSend
     WinDivertSendEx
+    WinDivertShutdown
     WinDivertClose
     WinDivertSetParam
     WinDivertGetParam

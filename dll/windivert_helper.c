@@ -514,23 +514,14 @@ static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer,
             *val = WINDIVERT_EVENT_NETWORK_PACKET;
             return (layer == WINDIVERT_LAYER_NETWORK);
         case TOKEN_EVENT_ESTABLISHED:
-            if (layer == WINDIVERT_LAYER_FLOW)
-            {
-                *val = WINDIVERT_EVENT_FLOW_ESTABLISHED;
-                return TRUE;
-            }
-            else if (layer == WINDIVERT_LAYER_REFLECT)
-            {
-                *val = WINDIVERT_EVENT_REFLECT_ESTABLISHED;
-                return TRUE;
-            }
-            return FALSE;
+            *val = WINDIVERT_EVENT_FLOW_ESTABLISHED;
+            return (layer == WINDIVERT_LAYER_FLOW);
         case TOKEN_EVENT_DELETED:
             *val = WINDIVERT_EVENT_FLOW_DELETED;
             return (layer == WINDIVERT_LAYER_FLOW);
         case TOKEN_EVENT_BIND:
             *val = WINDIVERT_EVENT_SOCKET_BIND;
-            return (layer == WINDIVERT_LAYER_FLOW);
+            return (layer == WINDIVERT_LAYER_SOCKET);
         case TOKEN_EVENT_CONNECT:
             *val = WINDIVERT_EVENT_SOCKET_CONNECT;
             return (layer == WINDIVERT_LAYER_SOCKET);
@@ -4055,8 +4046,6 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             case WINDIVERT_LAYER_REFLECT:
                 switch (val->val[0])
                 {
-                    case WINDIVERT_EVENT_REFLECT_ESTABLISHED:
-                        WinDivertPutString(stream, "ESTABLISHED"); break;
                     case WINDIVERT_EVENT_REFLECT_OPEN:
                         WinDivertPutString(stream, "OPEN"); break;
                     case WINDIVERT_EVENT_REFLECT_CLOSE:
