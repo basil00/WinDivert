@@ -1960,7 +1960,8 @@ static void WinDivertEmitFilter(PEXPR *stack, UINT len, UINT16 label,
 /*
  * Analyze a filter object.
  */
-static UINT64 WinDivertAnalyzeFilter(PWINDIVERT_FILTER filter, UINT length)
+static UINT64 WinDivertAnalyzeFilter(WINDIVERT_LAYER layer,
+    PWINDIVERT_FILTER filter, UINT length)
 {
     BOOL result;
     UINT64 flags = 0;
@@ -1973,45 +1974,80 @@ static UINT64 WinDivertAnalyzeFilter(PWINDIVERT_FILTER filter, UINT length)
         return 0;
     }
 
-    // Inbound?
-    result = WinDivertCondExecFilter(filter, length,
-        WINDIVERT_FILTER_FIELD_INBOUND, 1);
-    if (result)
+    if (layer == WINDIVERT_LAYER_NETWORK ||
+        layer == WINDIVERT_LAYER_NETWORK_FORWARD)
     {
+        // Inbound?
         result = WinDivertCondExecFilter(filter, length,
-            WINDIVERT_FILTER_FIELD_OUTBOUND, 0);
-    }
-    flags |= (result? WINDIVERT_FILTER_FLAG_INBOUND: 0);
+            WINDIVERT_FILTER_FIELD_INBOUND, 1);
+        if (result)
+        {
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_OUTBOUND, 0);
+        }
+        flags |= (result? WINDIVERT_FILTER_FLAG_INBOUND: 0);
 
-    // Outbound?
-    result = WinDivertCondExecFilter(filter, length,
-        WINDIVERT_FILTER_FIELD_OUTBOUND, 1);
-    if (result)
+        // Outbound?
+        result = WinDivertCondExecFilter(filter, length,
+            WINDIVERT_FILTER_FIELD_OUTBOUND, 1);
+        if (result)
+        {
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_INBOUND, 0);
+        }
+        flags |= (result? WINDIVERT_FILTER_FLAG_OUTBOUND: 0);
+    }
+
+    if (layer != WINDIVERT_LAYER_REFLECT)
     {
+        // IPv4? 
         result = WinDivertCondExecFilter(filter, length,
-            WINDIVERT_FILTER_FIELD_INBOUND, 0);
-    }
-    flags |= (result? WINDIVERT_FILTER_FLAG_OUTBOUND: 0);
+            WINDIVERT_FILTER_FIELD_IP, 1);
+        if (result)
+        {   
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_IPV6, 0);
+        }
+        flags |= (result? WINDIVERT_FILTER_FLAG_IP: 0);
 
-    // IPv4? 
-    result = WinDivertCondExecFilter(filter, length,
-        WINDIVERT_FILTER_FIELD_IP, 1);
-    if (result)
-    {   
+        // Ipv6? 
         result = WinDivertCondExecFilter(filter, length,
-            WINDIVERT_FILTER_FIELD_IPV6, 0);
+            WINDIVERT_FILTER_FIELD_IPV6, 1);
+        if (result)
+        {   
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_IP, 0);
+        }
+        flags |= (result? WINDIVERT_FILTER_FLAG_IPV6: 0);
     }
-    flags |= (result? WINDIVERT_FILTER_FLAG_IP: 0);
 
-    // Ipv6? 
-    result = WinDivertCondExecFilter(filter, length,
-        WINDIVERT_FILTER_FIELD_IPV6, 1);
-    if (result)
-    {   
-        result = WinDivertCondExecFilter(filter, length,
-            WINDIVERT_FILTER_FIELD_IP, 0);
+    // Events:
+    switch (layer)
+    {
+        case WINDIVERT_LAYER_FLOW:
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_FLOW_DELETED);
+            flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_FLOW_DELETED: 0);
+            break;
+
+        case WINDIVERT_LAYER_SOCKET:
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_SOCKET_BIND);
+            flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_BIND: 0);
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_SOCKET_CONNECT);
+            flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_CONNECT: 0);
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_SOCKET_LISTEN);
+            flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_LISTEN: 0);
+            result = WinDivertCondExecFilter(filter, length,
+                WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_SOCKET_ACCEPT);
+            flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_ACCEPT: 0);
+            break;
+
+        default:
+            break;
     }
-    flags |= (result? WINDIVERT_FILTER_FLAG_IPV6: 0);
 
     return flags;
 }

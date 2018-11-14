@@ -404,7 +404,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
-    filter_flags = WinDivertAnalyzeFilter(object, obj_len);
+    filter_flags = WinDivertAnalyzeFilter(layer, object, obj_len);
 
     // Attempt to open the WinDivert device:
     handle = CreateFile(L"\\\\.\\" WINDIVERT_DEVICE_NAME,
