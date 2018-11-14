@@ -82,6 +82,7 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
     UINT32 src_addr[4], dst_addr[4];
+    UINT64 hash;
     char src_str[INET6_ADDRSTRLEN+1], dst_str[INET6_ADDRSTRLEN+1];
     const char *err_str;
     LARGE_INTEGER base, freq;
@@ -169,10 +170,11 @@ int __cdecl main(int argc, char **argv)
         SetConsoleTextAttribute(console, FOREGROUND_RED);
         time_passed = (double)(addr.Timestamp - base.QuadPart) /
             (double)freq.QuadPart;
+        hash = WinDivertHelperHashPacket(packet, packet_len, 0);
         printf("Packet [Timestamp=%.8g, Direction=%s IfIdx=%u SubIfIdx=%u "
-            "Loopback=%u]\n",
+            "Loopback=%u Hash=0x%.16llX]\n",
             time_passed, (addr.Outbound?  "outbound": "inbound"),
-            addr.Network.IfIdx, addr.Network.SubIfIdx, addr.Loopback);
+            addr.Network.IfIdx, addr.Network.SubIfIdx, addr.Loopback, hash);
         if (ip_header != NULL)
         {
             WinDivertHelperFormatIPv4Address(ntohl(ip_header->SrcAddr),

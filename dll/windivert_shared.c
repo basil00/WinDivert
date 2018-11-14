@@ -50,6 +50,8 @@
 #define ntohl(x)                        BYTESWAP32(x)
 #define htonl(x)                        BYTESWAP32(x)
 
+#include "windivert_hash.c"
+
 /*
  * IPv4/IPv6 pseudo headers.
  */

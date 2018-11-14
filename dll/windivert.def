@@ -11,6 +11,7 @@ EXPORTS
     WinDivertSetParam
     WinDivertGetParam
     WinDivertHelperCalcChecksums
+    WinDivertHelperHashPacket
     WinDivertHelperParsePacket
     WinDivertHelperParseIPv4Address
     WinDivertHelperParseIPv6Address

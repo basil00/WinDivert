@@ -59,7 +59,7 @@ do
     fi
     echo "BUILD MINGW-$CPU"
     CC="$ENV-gcc"
-    COPTS="-shared -Wall -Wno-pointer-to-int-cast -Os -Iinclude/ 
+    COPTS="-fno-ident -shared -Wall -Wno-pointer-to-int-cast -Os -Iinclude/ 
         -Wl,--enable-stdcall-fixup -Wl,--entry=${MANGLE}WinDivertDllEntry"
     CLIBS="-lgcc -lkernel32 -ladvapi32"
     STRIP="$ENV-strip"

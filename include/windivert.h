@@ -166,8 +166,8 @@ typedef enum
     WINDIVERT_EVENT_SOCKET_LISTEN = 4,  /* Socket listen. */
     WINDIVERT_EVENT_SOCKET_CONNECT = 5, /* Socket connect. */
     WINDIVERT_EVENT_SOCKET_ACCEPT = 6,  /* Socket accept. */
-    WINDIVERT_EVENT_REFLECT_OPEN = 7,   /* Open new WinDivert handle. */
-    WINDIVERT_EVENT_REFLECT_CLOSE = 8,  /* Close existing WinDivert handle. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 7,   /* WinDivert handle opened. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 8,  /* WinDivert handle closed. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*
@@ -440,6 +440,18 @@ typedef struct
 #define WINDIVERT_HELPER_NO_UDP_CHECKSUM                    16
 
 #ifndef WINDIVERT_KERNEL
+
+/*
+ * Hash a packet.
+ */
+extern WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
+    __in        const VOID *pPacket,
+    __in        UINT packetLen,
+    __in        UINT64 seed
+#ifdef __cplusplus
+                = 0
+#endif
+);
 
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.

@@ -465,8 +465,9 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_TCPHDR *tcp_header_ptr, PWINDIVERT_UDPHDR *udp_header_ptr,
     UINT8 *proto_ptr, UINT *header_len_ptr, UINT *payload_len_ptr);
 static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
-    const VOID *layer_data, WINDIVERT_EVENT event, BOOL ipv4, BOOL outbound,
-    BOOL loopback, BOOL impostor, const WINDIVERT_FILTER *filter);
+    const VOID *layer_data, LONGLONG timestamp, WINDIVERT_EVENT event,
+    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor,
+    const WINDIVERT_FILTER *filter);
 static const WINDIVERT_FILTER *windivert_filter_compile(
     const WINDIVERT_FILTER *ioctl_filter, size_t ioctl_filter_len,
     WINDIVERT_LAYER layer);
@@ -3330,8 +3331,8 @@ static void windivert_network_classify(context_t context,
     do
     {
         BOOL match = windivert_filter(buffer_fst, layer, (PVOID)network_data,
-            /*event=*/WINDIVERT_EVENT_NETWORK_PACKET, ipv4, outbound, loopback,
-            impostor, filter);
+            timestamp, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET, ipv4,
+            outbound, loopback, impostor, filter);
         if (match)
         {
             break;
@@ -3395,8 +3396,8 @@ static void windivert_network_classify(context_t context,
     while (buffer_itr != NULL)
     {
         BOOL match = windivert_filter(buffer_itr, layer, (PVOID)network_data,
-            /*event=*/WINDIVERT_EVENT_NETWORK_PACKET, ipv4, outbound,
-            loopback, impostor, filter);
+            timestamp, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET, ipv4,
+            outbound, loopback, impostor, filter);
         ok = windivert_queue_work(context, (PVOID)buffer_itr,
             NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
             (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
@@ -3547,8 +3548,9 @@ static void windivert_flow_established_classify(context_t context,
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     match = windivert_filter(/*buffer=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
-        (PVOID)flow_data, /*event=*/WINDIVERT_EVENT_FLOW_ESTABLISHED, ipv4,
-        outbound, loopback, /*impostor=*/FALSE, filter);
+        (PVOID)flow_data, timestamp,
+        /*event=*/WINDIVERT_EVENT_FLOW_ESTABLISHED, ipv4, outbound, loopback,
+        /*impostor=*/FALSE, filter);
     if (match)
     {
         ok = windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
@@ -3660,7 +3662,7 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     match = windivert_filter(/*buffer=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
-        (PVOID)&flow->data, /*event=*/WINDIVERT_EVENT_FLOW_DELETED,
+        (PVOID)&flow->data, timestamp, /*event=*/WINDIVERT_EVENT_FLOW_DELETED,
         !flow->ipv6, flow->outbound, flow->loopback, /*impostor=*/FALSE,
         filter);
     if (match)
@@ -3987,7 +3989,7 @@ static void windivert_socket_classify(context_t context,
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     match = windivert_filter(/*buffer=*/NULL, /*layer=*/WINDIVERT_LAYER_SOCKET,
-        (PVOID)socket_data, event, ipv4, outbound, loopback,
+        (PVOID)socket_data, timestamp, event, ipv4, outbound, loopback,
         /*impostor=*/FALSE, filter);
     if (match)
     {
@@ -4720,8 +4722,9 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
  * Checks if the given network packet is of interest.
  */
 static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
-    const VOID *layer_data, WINDIVERT_EVENT event, BOOL ipv4, BOOL outbound,
-    BOOL loopback, BOOL impostor, const WINDIVERT_FILTER *filter)
+    const VOID *layer_data, LONGLONG timestamp, WINDIVERT_EVENT event,
+    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor,
+    const WINDIVERT_FILTER *filter)
 {
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
@@ -4731,6 +4734,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     PWINDIVERT_UDPHDR udp_header = NULL;
     UINT8 protocol = 0;
     UINT header_len = 0, payload_len = 0;
+    UINT64 random64 = 0;
     UINT16 ip, ttl;
     PWINDIVERT_DATA_NETWORK network_data = NULL;
     PWINDIVERT_DATA_FLOW flow_data = NULL;
@@ -4797,6 +4801,19 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
             case WINDIVERT_FILTER_FIELD_TCP:
             case WINDIVERT_FILTER_FIELD_UDP:
                 result = (layer != WINDIVERT_LAYER_REFLECT);
+                break;
+            case WINDIVERT_FILTER_FIELD_RANDOM8:
+            case WINDIVERT_FILTER_FIELD_RANDOM16:
+            case WINDIVERT_FILTER_FIELD_RANDOM32:
+                result = (layer == WINDIVERT_LAYER_NETWORK ||
+                          layer == WINDIVERT_LAYER_NETWORK_FORWARD);
+                if (result && random64 == 0)
+                {
+                    random64 = WinDivertHashPacket((UINT64)timestamp,
+                        ip_header, ipv6_header, icmp_header, icmpv6_header,
+                        tcp_header, udp_header);
+                    random64 |= 0xFF00000000000000ull;  // Make non-zero.
+                }
                 break;
             case WINDIVERT_FILTER_FIELD_IFIDX:
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
@@ -4912,6 +4929,15 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     break;
                 case WINDIVERT_FILTER_FIELD_EVENT:
                     field[0] = (UINT32)event;
+                    break;
+                case WINDIVERT_FILTER_FIELD_RANDOM8:
+                    field[0] = (UINT32)(random64 >> 48) & 0xFF;
+                    break;
+                case WINDIVERT_FILTER_FIELD_RANDOM16:
+                    field[0] = (UINT32)(random64 >> 32) & 0xFFFF;
+                    break;
+                case WINDIVERT_FILTER_FIELD_RANDOM32:
+                    field[0] = (UINT32)random64;
                     break;
                 case WINDIVERT_FILTER_FIELD_PACKET:
                     result = windivert_get_data(buffer, /*offset=*/0,
@@ -5653,6 +5679,7 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_PACKET:
             case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
+            case WINDIVERT_FILTER_FIELD_RANDOM8:
                 if (ioctl_filter[i].arg[0] > UINT8_MAX)
                 {
                     goto windivert_filter_compile_error;
@@ -5686,6 +5713,7 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_PACKET16:
             case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
+            case WINDIVERT_FILTER_FIELD_RANDOM16:
                 if (ioctl_filter[i].arg[0] > UINT16_MAX)
                 {
                     goto windivert_filter_compile_error;
@@ -5912,8 +5940,8 @@ static void windivert_reflect_event_notify(context_t context,
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         match = windivert_filter(/*buffer=*/NULL,
             /*layer=*/WINDIVERT_LAYER_REFLECT, (PVOID)&context->reflect.data,
-            event, /*ipv4=*/TRUE, /*outbound=*/FALSE, /*loopback=*/FALSE,
-            /*impostor=*/FALSE, filter);
+            timestamp, event, /*ipv4=*/TRUE, /*outbound=*/FALSE,
+            /*loopback=*/FALSE, /*impostor=*/FALSE, filter);
         if (!match)
         {
             continue;
@@ -5960,7 +5988,7 @@ static void windivert_reflect_established_notify(context_t context,
         entry = entry->Flink;
         match = windivert_filter(/*buffer=*/NULL,
             /*layer=*/WINDIVERT_LAYER_REFLECT, (PVOID)&waiter->reflect.data,
-            /*event=*/WINDIVERT_EVENT_REFLECT_OPEN, /*ipv4=*/TRUE,
+            timestamp, /*event=*/WINDIVERT_EVENT_REFLECT_OPEN, /*ipv4=*/TRUE,
             /*outbound=*/FALSE, /*loopback=*/FALSE, /*impostor=*/FALSE, filter);
         if (!match)
         {

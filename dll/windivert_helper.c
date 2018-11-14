@@ -116,6 +116,9 @@ typedef enum
     TOKEN_UDP_SRC_PORT,
     TOKEN_ZERO,
     TOKEN_EVENT,
+    TOKEN_RANDOM8,
+    TOKEN_RANDOM16,
+    TOKEN_RANDOM32,
     TOKEN_PACKET,
     TOKEN_PACKET16,
     TOKEN_PACKET32,
@@ -613,6 +616,9 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"packet32",            TOKEN_PACKET32,            LNM___},
         {"processId",           TOKEN_PROCESS_ID,          L__FSR},
         {"protocol",            TOKEN_PROTOCOL,            LN_FS_},
+        {"random16",            TOKEN_RANDOM16,            LNM___},
+        {"random32",            TOKEN_RANDOM32,            LNM___},
+        {"random8",             TOKEN_RANDOM8,             LNM___},
         {"remoteAddr",          TOKEN_REMOTE_ADDR,         LN_FS_},
         {"remotePort",          TOKEN_REMOTE_PORT,         LN_FS_},
         {"subIfIdx",            TOKEN_SUB_IF_IDX,          LNM___},
@@ -919,6 +925,9 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
         {{{0}}, TOKEN_UDP_SRC_PORT},
         {{{0}}, TOKEN_ZERO},
         {{{0}}, TOKEN_EVENT},
+        {{{0}}, TOKEN_RANDOM8},
+        {{{0}}, TOKEN_RANDOM16},
+        {{{0}}, TOKEN_RANDOM32},
         {{{0}}, TOKEN_TRUE},
         {{{0}}, TOKEN_FALSE},
         {{{0}}, TOKEN_INBOUND},
@@ -1066,6 +1075,9 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
     {
         case TOKEN_ZERO:
         case TOKEN_EVENT:
+        case TOKEN_RANDOM8:
+        case TOKEN_RANDOM16:
+        case TOKEN_RANDOM32:
         case TOKEN_TRUE:
         case TOKEN_FALSE:
         case TOKEN_OUTBOUND:
@@ -1421,6 +1433,7 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_PACKET:
         case TOKEN_TCP_PAYLOAD:
         case TOKEN_UDP_PAYLOAD:
+        case TOKEN_RANDOM8:
             lb = 0; ub = 0xFF;
             break;
         case TOKEN_IP_FRAG_OFF:
@@ -1449,6 +1462,7 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_PACKET16:
         case TOKEN_TCP_PAYLOAD16:
         case TOKEN_UDP_PAYLOAD16:
+        case TOKEN_RANDOM16:
             lb = 0; ub = 0xFFFF;
             break;
         case TOKEN_IPV6_FLOW_LABEL:
@@ -1631,6 +1645,15 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_EVENT:
             object->field = WINDIVERT_FILTER_FIELD_EVENT;
+            break;
+        case TOKEN_RANDOM8:
+            object->field = WINDIVERT_FILTER_FIELD_RANDOM8;
+            break;
+        case TOKEN_RANDOM16:
+            object->field = WINDIVERT_FILTER_FIELD_RANDOM16;
+            break;
+        case TOKEN_RANDOM32:
+            object->field = WINDIVERT_FILTER_FIELD_RANDOM32;
             break;
         case TOKEN_PACKET:
             object->field = WINDIVERT_FILTER_FIELD_PACKET;
@@ -2342,6 +2365,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     PWINDIVERT_UDPHDR udphdr = NULL;
     UINT8 protocol = 0;
     UINT header_len = 0, payload_len = 0;
+    UINT64 random64 = 0;
     UINT32 val[4];
     UINT8 data8;
     UINT16 data16;
@@ -2437,6 +2461,18 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
             case WINDIVERT_FILTER_FIELD_TCP:
             case WINDIVERT_FILTER_FIELD_UDP:
                 pass = (addr->Layer != WINDIVERT_LAYER_REFLECT);
+                break;
+            case WINDIVERT_FILTER_FIELD_RANDOM8:
+            case WINDIVERT_FILTER_FIELD_RANDOM16:
+            case WINDIVERT_FILTER_FIELD_RANDOM32:
+                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
+                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
+                if (pass && random64 == 0)
+                {
+                    random64 = WinDivertHashPacket((UINT64)addr->Timestamp,
+                        iphdr, ipv6hdr, icmphdr, icmpv6hdr, tcphdr, udphdr);
+                    random64 |= 0xFF00000000000000ull;
+                }
                 break;
             case WINDIVERT_FILTER_FIELD_IFIDX:
             case WINDIVERT_FILTER_FIELD_SUBIFIDX:
@@ -2556,6 +2592,15 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 break;
             case WINDIVERT_FILTER_FIELD_EVENT:
                 val[0] = addr->Event;
+                break;
+            case WINDIVERT_FILTER_FIELD_RANDOM8:
+                val[0] = (random64 >> 48) & 0xFF;
+                break;
+            case WINDIVERT_FILTER_FIELD_RANDOM16:
+                val[0] = (random64 >> 32) & 0xFFFF;
+                break;
+            case WINDIVERT_FILTER_FIELD_RANDOM32:
+                val[0] = (UINT32)random64;
                 break;
             case WINDIVERT_FILTER_FIELD_PACKET:
                 pass = WinDivertGetData(packet, packet_len, /*offset=*/0,
@@ -3277,6 +3322,12 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             kind = TOKEN_ZERO; break;
         case WINDIVERT_FILTER_FIELD_EVENT:
             kind = TOKEN_EVENT; break;
+        case WINDIVERT_FILTER_FIELD_RANDOM8:
+            kind = TOKEN_RANDOM8; break;
+        case WINDIVERT_FILTER_FIELD_RANDOM16:
+            kind = TOKEN_RANDOM16; break;
+        case WINDIVERT_FILTER_FIELD_RANDOM32:
+            kind = TOKEN_RANDOM32; break;
         case WINDIVERT_FILTER_FIELD_PACKET:
             kind = TOKEN_PACKET; break;
         case WINDIVERT_FILTER_FIELD_PACKET16:
@@ -4144,6 +4195,12 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             WinDivertPutString(stream, "zero"); return;
         case TOKEN_EVENT:
             WinDivertPutString(stream, "event"); return;
+        case TOKEN_RANDOM8:
+            WinDivertPutString(stream, "random8"); return;
+        case TOKEN_RANDOM16:
+            WinDivertPutString(stream, "random16"); return;
+        case TOKEN_RANDOM32:
+            WinDivertPutString(stream, "random32"); return;
         case TOKEN_PACKET:
             WinDivertPutString(stream, "packet"); break;
         case TOKEN_PACKET16:
@@ -4412,5 +4469,25 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
     }
     SetLastError(ERROR_INSUFFICIENT_BUFFER);
     return FALSE;
+}
+
+/*
+ * WinDivert packet hash function.
+ */
+extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
+    UINT64 seed)
+{
+    PWINDIVERT_IPHDR ip_header = NULL;
+    PWINDIVERT_IPV6HDR ipv6_header = NULL;
+    PWINDIVERT_ICMPHDR icmp_header = NULL;
+    PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
+    PWINDIVERT_TCPHDR tcp_header = NULL;
+    PWINDIVERT_UDPHDR udp_header = NULL;
+
+    WinDivertParsePacket((PVOID)pPacket, packetLen, &ip_header, &ipv6_header,
+        &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
+        NULL, NULL);
+    return WinDivertHashPacket(seed, ip_header, ipv6_header, icmp_header,
+        icmpv6_header, tcp_header, udp_header);
 }
 
