@@ -20,3 +20,11 @@ EXPORTS
     WinDivertHelperCompileFilter
     WinDivertHelperEvalFilter
     WinDivertHelperFormatFilter
+    WinDivertHelperNtohs
+    WinDivertHelperHtons
+    WinDivertHelperNtohl
+    WinDivertHelperHtonl
+    WinDivertHelperNtohll
+    WinDivertHelperHtonll
+    WinDivertHelperNtohIpv6Address
+    WinDivertHelperHtonIpv6Address

@@ -42,12 +42,16 @@
  * blockpage to the browser.
  */
 
-#include <winsock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "windivert.h"
+
+#define ntohs(x)            WinDivertHelperNtohs(x)
+#define ntohl(x)            WinDivertHelperNtohl(x)
+#define htons(x)            WinDivertHelperHtons(x)
+#define htonl(x)            WinDivertHelperHtonl(x)
 
 #define MAXBUF 0xFFFF
 #define MAXURL 4096

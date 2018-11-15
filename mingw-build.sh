@@ -79,19 +79,19 @@ do
             --output-lib install/MINGW/$CPU/WinDivert.lib 2>/dev/null
         echo "\tbuild install/MINGW/$CPU/netdump.exe..."
         $CC -s -O2 -Iinclude/ examples/netdump/netdump.c \
-            -o "install/MINGW/$CPU/netdump.exe" -lWinDivert -lws2_32 \
+            -o "install/MINGW/$CPU/netdump.exe" -lWinDivert \
             -L"install/MINGW/$CPU/"
         echo "\tbuild install/MINGW/$CPU/netfilter.exe..."
         $CC -s -O2 -Iinclude/ examples/netfilter/netfilter.c \
-            -o "install/MINGW/$CPU/netfilter.exe" -lWinDivert -lws2_32 \
+            -o "install/MINGW/$CPU/netfilter.exe" -lWinDivert \
             -L"install/MINGW/$CPU/"
         echo "\tbuild install/MINGW/$CPU/passthru.exe..."
         $CC -s -O2 -Iinclude/ examples/passthru/passthru.c \
-            -o "install/MINGW/$CPU/passthru.exe" -lWinDivert -lws2_32 \
+            -o "install/MINGW/$CPU/passthru.exe" -lWinDivert \
             -L"install/MINGW/$CPU/"
         echo "\tbuild install/MINGW/$CPU/webfilter.exe..."
         $CC -s -O2 -Iinclude/ examples/webfilter/webfilter.c \
-            -o "install/MINGW/$CPU/webfilter.exe" -lWinDivert -lws2_32 \
+            -o "install/MINGW/$CPU/webfilter.exe" -lWinDivert \
             -L"install/MINGW/$CPU/"
         echo "\tbuild install/MINGW/$CPU/streamdump.exe..."
         $CC -s -O2 -Iinclude/ examples/streamdump/streamdump.c \
@@ -99,15 +99,15 @@ do
             -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/flowtrack.exe..."
         $CC -s -O2 -Iinclude/ examples/flowtrack/flowtrack.c \
-            -o "install/MINGW/$CPU/flowtrack.exe" -lWinDivert -lws2_32 -lpsapi \
+            -o "install/MINGW/$CPU/flowtrack.exe" -lWinDivert -lpsapi \
             -lshlwapi -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/windivertctl.exe..."
         $CC -s -O2 -Iinclude/ examples/windivertctl/windivertctl.c \
-            -o "install/MINGW/$CPU/windivertctl.exe" -lWinDivert -lws2_32 \
+            -o "install/MINGW/$CPU/windivertctl.exe" -lWinDivert \
             -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/socketdump.exe..."
         $CC -s -O2 -Iinclude/ examples/socketdump/socketdump.c \
-            -o "install/MINGW/$CPU/socketdump.exe" -lWinDivert -lws2_32 \
+            -o "install/MINGW/$CPU/socketdump.exe" -lWinDivert \
             -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
         echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
         cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU

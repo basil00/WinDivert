@@ -45,6 +45,15 @@
 #define BYTESWAP32(x)                   \
     ((((x) >> 24) & 0x000000FF) | (((x) >> 8) & 0x0000FF00) | \
      (((x) << 8) & 0x00FF0000) | (((x) << 24) & 0xFF000000))
+#define BYTESWAP64(x)                   \
+    ((((x) >> 56) & 0x00000000000000FFull) | \
+     (((x) >> 40) & 0x000000000000FF00ull) | \
+     (((x) >> 24) & 0x0000000000FF0000ull) | \
+     (((x) >> 8)  & 0x00000000FF000000ull) | \
+     (((x) << 8)  & 0x000000FF00000000ull) | \
+     (((x) << 24) & 0x0000FF0000000000ull) | \
+     (((x) << 40) & 0x00FF000000000000ull) | \
+     (((x) << 56) & 0xFF00000000000000ull))
 #define ntohs(x)                        BYTESWAP16(x)
 #define htons(x)                        BYTESWAP16(x)
 #define ntohl(x)                        BYTESWAP32(x)

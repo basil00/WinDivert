@@ -4527,3 +4527,51 @@ extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
         icmpv6_header, tcp_header, udp_header);
 }
 
+/*
+ * Byte ordering.
+ */
+extern UINT16 WinDivertHelperNtohs(UINT16 x)
+{
+    return BYTESWAP16(x);
+}
+extern UINT16 WinDivertHelperHtons(UINT16 x)
+{
+    return BYTESWAP16(x);
+}
+extern UINT32 WinDivertHelperNtohl(UINT32 x)
+{
+    return BYTESWAP32(x);
+}
+extern UINT32 WinDivertHelperHtonl(UINT32 x)
+{
+    return BYTESWAP32(x);
+}
+extern UINT64 WinDivertHelperNtohll(UINT64 x)
+{
+    return BYTESWAP64(x);
+}
+extern UINT64 WinDivertHelperHtonll(UINT64 x)
+{
+    return BYTESWAP64(x);
+}
+static void WinDivertByteSwap128(const UINT *inAddr, UINT *outAddr)
+{
+    UINT32 tmp[4], i;   // tmp[] allows overlapping
+    for (i = 0; i < 4; i++)
+    {
+        tmp[3-i] = BYTESWAP32(inAddr[0]);
+    }
+    for (i = 0; i < 4; i++)
+    {
+        outAddr[i] = tmp[i];
+    }
+}
+extern void WinDivertHelperNtohIpv6Address(const UINT *inAddr, UINT *outAddr)
+{
+    WinDivertByteSwap128(inAddr, outAddr);
+}
+extern void WinDivertHelperHtonIpv6Address(const UINT *inAddr, UINT *outAddr)
+{
+    WinDivertByteSwap128(inAddr, outAddr);
+}
+

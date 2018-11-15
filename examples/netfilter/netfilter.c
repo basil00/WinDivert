@@ -47,7 +47,6 @@
  * This program is similar to Linux's iptables with the "-j REJECT" target.
  */
 
-#include <winsock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,8 +54,14 @@
 
 #include "windivert.h"
 
+#define ntohs(x)            WinDivertHelperNtohs(x)
+#define ntohl(x)            WinDivertHelperNtohl(x)
+#define htons(x)            WinDivertHelperHtons(x)
+#define htonl(x)            WinDivertHelperHtonl(x)
+
 #define MAXBUF              0xFFFF
 #define INET6_ADDRSTRLEN    45
+#define IPPROTO_ICMPV6      58
 
 /*
  * Pre-fabricated packets.
@@ -96,18 +101,6 @@ static void PacketIpIcmpInit(PICMPPACKET packet);
 static void PacketIpv6Init(PWINDIVERT_IPV6HDR packet);
 static void PacketIpv6TcpInit(PTCPV6PACKET packet);
 static void PacketIpv6Icmpv6Init(PICMPV6PACKET packet);
-
-/*
- * IPv6 address byte swap.
- */
-void byteswap128(UINT32 *dst_addr, const UINT32 *src_addr)
-{
-    int i;
-    for (i = 0; i < 4; i++)
-    {
-        dst_addr[i] = ntohl(src_addr[4-i-1]);
-    }
-}
 
 /*
  * Entry.
@@ -230,8 +223,8 @@ int __cdecl main(int argc, char **argv)
         }
         if (ipv6_header != NULL)
         {
-            byteswap128(src_addr, ipv6_header->SrcAddr);
-            byteswap128(dst_addr, ipv6_header->DstAddr);
+            WinDivertHelperNtohIpv6Address(ipv6_header->SrcAddr, src_addr);
+            WinDivertHelperNtohIpv6Address(ipv6_header->DstAddr, dst_addr);
             WinDivertHelperFormatIPv6Address(src_addr, src_str,
                 sizeof(src_str));
             WinDivertHelperFormatIPv6Address(dst_addr, dst_str,

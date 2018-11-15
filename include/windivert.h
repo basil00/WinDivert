@@ -530,11 +530,33 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
 /*
  * Format the given filter string.
  */
-extern BOOL WinDivertHelperFormatFilter(
+extern WINDIVERTEXPORT BOOL WinDivertHelperFormatFilter(
     __in        const char *filter,
     __in        WINDIVERT_LAYER layer,
     __out       char *buffer,
     __in        UINT bufLen);
+
+/*
+ * Byte ordering.
+ */
+extern WINDIVERTEXPORT UINT16 WinDivertHelperNtohs(
+    __in        UINT16 x);
+extern WINDIVERTEXPORT UINT16 WinDivertHelperHtons(
+    __in        UINT16 x);
+extern WINDIVERTEXPORT UINT32 WinDivertHelperNtohl(
+    __in        UINT32 x);
+extern WINDIVERTEXPORT UINT32 WinDivertHelperHtonl(
+    __in        UINT32 x);
+extern WINDIVERTEXPORT UINT64 WinDivertHelperNtohll(
+    __in        UINT64 x);
+extern WINDIVERTEXPORT UINT64 WinDivertHelperHtonll(
+    __in        UINT64 x);
+extern WINDIVERTEXPORT void WinDivertHelperNtohIpv6Address(
+    __in        const UINT *inAddr,
+    __out       UINT *outAddr);
+extern WINDIVERTEXPORT void WinDivertHelperHtonIpv6Address(
+    __in        const UINT *inAddr,
+    __out       UINT *outAddr);
 
 #endif      /* WINDIVERT_KERNEL */
 
