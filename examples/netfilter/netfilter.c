@@ -47,7 +47,6 @@
  * This program is similar to Linux's iptables with the "-j REJECT" target.
  */
 
-#include <winsock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -55,7 +54,14 @@
 
 #include "windivert.h"
 
-#define MAXBUF  0xFFFF
+#define ntohs(x)            WinDivertHelperNtohs(x)
+#define ntohl(x)            WinDivertHelperNtohl(x)
+#define htons(x)            WinDivertHelperHtons(x)
+#define htonl(x)            WinDivertHelperHtonl(x)
+
+#define MAXBUF              0xFFFF
+#define INET6_ADDRSTRLEN    45
+#define IPPROTO_ICMPV6      58
 
 /*
  * Pre-fabricated packets.
@@ -113,6 +119,8 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
+    UINT32 src_addr[4], dst_addr[4];
+    char src_str[INET6_ADDRSTRLEN+1], dst_str[INET6_ADDRSTRLEN+1];
     UINT payload_len;
     const char *err_str;
     
@@ -170,8 +178,8 @@ int __cdecl main(int argc, char **argv)
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER &&
-            !WinDivertHelperCheckFilter(argv[1], WINDIVERT_LAYER_NETWORK,
-                &err_str, NULL))
+            !WinDivertHelperCompileFilter(argv[1], WINDIVERT_LAYER_NETWORK,
+                NULL, 0, &err_str, NULL))
         {
             fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
             exit(EXIT_FAILURE);
@@ -208,28 +216,21 @@ int __cdecl main(int argc, char **argv)
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         if (ip_header != NULL)
         {
-            UINT8 *src_addr = (UINT8 *)&ip_header->SrcAddr;
-            UINT8 *dst_addr = (UINT8 *)&ip_header->DstAddr;
-            printf("ip.SrcAddr=%u.%u.%u.%u ip.DstAddr=%u.%u.%u.%u ",
-                src_addr[0], src_addr[1], src_addr[2], src_addr[3],
-                dst_addr[0], dst_addr[1], dst_addr[2], dst_addr[3]);
+            WinDivertHelperFormatIPv4Address(ntohl(ip_header->SrcAddr),
+                src_str, sizeof(src_str));
+            WinDivertHelperFormatIPv4Address(ntohl(ip_header->DstAddr),
+                dst_str, sizeof(dst_str));
         }
         if (ipv6_header != NULL)
         {
-            UINT16 *src_addr = (UINT16 *)&ipv6_header->SrcAddr;
-            UINT16 *dst_addr = (UINT16 *)&ipv6_header->DstAddr;
-            fputs("ipv6.SrcAddr=", stdout);
-            for (i = 0; i < 8; i++)
-            {
-                printf("%x%c", ntohs(src_addr[i]), (i == 7? ' ': ':'));
-            } 
-            fputs(" ipv6.DstAddr=", stdout);
-            for (i = 0; i < 8; i++)
-            {
-                printf("%x%c", ntohs(dst_addr[i]), (i == 7? ' ': ':'));
-            }
-            putchar(' ');
+            WinDivertHelperNtohIpv6Address(ipv6_header->SrcAddr, src_addr);
+            WinDivertHelperNtohIpv6Address(ipv6_header->DstAddr, dst_addr);
+            WinDivertHelperFormatIPv6Address(src_addr, src_str,
+                sizeof(src_str));
+            WinDivertHelperFormatIPv6Address(dst_addr, dst_str,
+                sizeof(dst_str));
         }
+        printf("ip.SrcAddr=%s ip.DstAddr=%s ", src_str, dst_str);
         if (icmp_header != NULL)
         {
             printf("icmp.Type=%u icmp.Code=%u ",
@@ -287,7 +288,7 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET),
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)reset, sizeof(TCPPACKET),
@@ -314,7 +315,7 @@ int __cdecl main(int argc, char **argv)
                         htonl(ntohl(tcp_header->SeqNum) + payload_len));
 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)resetv6,
                     sizeof(TCPV6PACKET), &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)resetv6, sizeof(TCPV6PACKET),
@@ -340,7 +341,7 @@ int __cdecl main(int argc, char **argv)
                 dnr->ip.DstAddr = ip_header->SrcAddr;
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length,
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
@@ -363,7 +364,7 @@ int __cdecl main(int argc, char **argv)
                     sizeof(dnrv6->ipv6.DstAddr));
                 
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
-                send_addr.Direction = !recv_addr.Direction;
+                send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length,
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnrv6, icmpv6_length,

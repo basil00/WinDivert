@@ -1,10 +1,10 @@
 <!doctype html>
 <html>
 <head>
-    <title>WinDivert 1.4 Documentation</title>
+    <title>WinDivert 2.0 Documentation</title>
 </head>
 <body>
-<h1>WinDivert 1.4: Windows Packet Divert</h1>
+<h1>WinDivert 2.0: Windows Packet Divert</h1>
 <h2>Table of Contents</h2>
 <ul>
 <li><a href="#introduction">1. Introduction</a></li>
@@ -217,8 +217,8 @@ uninstalled during the next machine reboot.
 The WinDivert driver can also be manually removed by issuing the following
 commands at the command prompt
 <pre>
-sc stop WinDivert1.4
-sc delete WinDivert1.4
+sc stop WinDivert2.0
+sc delete WinDivert2.0
 </pre>
 Note that this is not recommended as it will interfere with other
 applications that depend on WinDivert.
@@ -1260,8 +1260,8 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Parses an IPv4 address stored in <tt>addrStr</tt>.
-If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>
-in host-byte-order.
+If <tt>pAddr</tt> is non-<tt>NULL</tt>, the is be stored in
+host-byte-order.
 Use <tt>htonl()</tt> to convert the result into network-byte-order.
 </p>
 <dd></dl>
@@ -1289,21 +1289,22 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Parses an IPv6 address stored in <tt>addrStr</tt>.
-If non-<tt>NULL</tt>, the result is stored in <tt>pAddr</tt>.
-The <tt>pAddr</tt> parameter is assumed to point to a buffer large enough
-to hold a 16-byte IPv6 address.
-Given an IPv6 address of the form
+If <tt>pAddr</tt> is non-<tt>NULL</tt>, the buffer assumed 
+to be large enough to hold a 16-byte IPv6 address.
+The result is stored in host-byte-order.
+For example, given an IPv6 address of the form
 <tt>0011:2233:4455:6677:8899:aabb:ccdd:eeff</tt>, then
 the result is ordered as follows:
 <pre>
-pAddr[0] = 0x00112233
-pAddr[1] = 0x44556677
-pAddr[2] = 0x8899aabb
-pAddr[3] = 0xccddeeff
+pAddr[0] = 0xccddeeff
+pAddr[1] = 0x8899aabb
+pAddr[2] = 0x44556677
+pAddr[3] = 0x00112233
 </pre>
 where each <tt>pAddr[i]</tt> is in host-byte-order.
 The result can be converted into network-byte-order by setting
-<tt>pAddr[i] = htonl(pAddr[i])</tt> for each <tt>i</tt>.
+<tt>pAddr[i] = htonl(pAddr[i])</tt> for each <tt>i</tt> and
+swapping the array indexes.
 </p>
 <dd></dl>
 

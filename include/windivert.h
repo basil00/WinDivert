@@ -70,51 +70,139 @@ extern "C" {
 /****************************************************************************/
 
 /*
- * Divert address.
- */
-typedef struct
-{
-    INT64  Timestamp;                   /* Packet's timestamp. */
-    UINT32 IfIdx;                       /* Packet's interface index. */
-    UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
-    UINT8  Direction:1;                 /* Packet's direction. */
-    UINT8  Loopback:1;                  /* Packet is loopback? */
-    UINT8  Impostor:1;                  /* Packet is impostor? */
-    UINT8  PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
-    UINT8  PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
-    UINT8  PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
-    UINT8  Reserved:2;
-} WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
-
-#define WINDIVERT_DIRECTION_OUTBOUND    0
-#define WINDIVERT_DIRECTION_INBOUND     1
-
-/*
- * Divert layers.
+ * WinDivert layers.
  */
 typedef enum
 {
     WINDIVERT_LAYER_NETWORK = 0,        /* Network layer. */
-    WINDIVERT_LAYER_NETWORK_FORWARD = 1 /* Network layer (forwarded packets) */
+    WINDIVERT_LAYER_NETWORK_FORWARD = 1,/* Network layer (forwarded packets) */
+    WINDIVERT_LAYER_FLOW = 2,           /* Flow layer. */
+    WINDIVERT_LAYER_SOCKET = 3,         /* Socket layer. */
+    WINDIVERT_LAYER_REFLECT = 4,        /* Reflect layer. */
 } WINDIVERT_LAYER, *PWINDIVERT_LAYER;
 
 /*
- * Divert flags.
+ * WinDivert NETWORK and NETWORK_FORWARD layer data.
  */
-#define WINDIVERT_FLAG_SNIFF            1
-#define WINDIVERT_FLAG_DROP             2
-#define WINDIVERT_FLAG_DEBUG            4
+typedef struct
+{
+    UINT32 IfIdx;                       /* Packet's interface index. */
+    UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
+} WINDIVERT_DATA_NETWORK, *PWINDIVERT_DATA_NETWORK;
 
 /*
- * Divert parameters.
+ * WinDivert FLOW layer data.
+ */
+typedef struct
+{
+    UINT32 ProcessId;                   /* Process ID. */
+    UINT32 LocalAddr[4];                /* Local address. */
+    UINT32 RemoteAddr[4];               /* Remote address. */
+    UINT16 LocalPort;                   /* Local port. */
+    UINT16 RemotePort;                  /* Remote port. */
+    UINT8  Protocol;                    /* Protocol. */
+} WINDIVERT_DATA_FLOW, *PWINDIVERT_DATA_FLOW;
+
+/*
+ * WinDivert SOCKET layer data.
+ */
+typedef struct
+{
+    UINT32 ProcessId;                   /* Process ID. */
+    UINT32 LocalAddr[4];                /* Local address. */
+    UINT32 RemoteAddr[4];               /* Remote address. */
+    UINT16 LocalPort;                   /* Local port. */
+    UINT16 RemotePort;                  /* Remote port. */
+    UINT8  Protocol;                    /* Protocol. */
+} WINDIVERT_DATA_SOCKET, *PWINDIVERT_DATA_SOCKET;
+
+/*
+ * WinDivert REFLECTION layer data.
+ */
+typedef struct
+{
+    INT64  Timestamp;                   /* Handle open time. */
+    UINT32 ProcessId;                   /* Handle process ID. */
+    WINDIVERT_LAYER Layer;              /* Handle layer. */
+    UINT64 Flags;                       /* Handle flags. */
+    INT16  Priority;                    /* Handle priority. */
+} WINDIVERT_DATA_REFLECT, *PWINDIVERT_DATA_REFLECT;
+
+/*
+ * WinDivert address.
+ */
+typedef struct
+{
+    INT64  Timestamp;                   /* Packet's timestamp. */
+    UINT64 Layer:8;                     /* Packet's layer. */
+    UINT64 Event:8;                     /* Packet event. */
+    UINT64 Outbound:1;                  /* Packet is outound? */
+    UINT64 Loopback:1;                  /* Packet is loopback? */
+    UINT64 Impostor:1;                  /* Packet is impostor? */
+    UINT64 IPv6:1;                      /* Packet is IPv6? */
+    UINT64 PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
+    UINT64 PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
+    UINT64 PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
+    UINT64 Reserved:41;
+    union
+    {
+        WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
+        WINDIVERT_DATA_FLOW Flow;       /* Flow layer data. */
+        WINDIVERT_DATA_SOCKET Socket;   /* Socket layer data. */
+        WINDIVERT_DATA_REFLECT Reflect; /* Reflect layer data. */
+    };
+} WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
+
+/*
+ * WinDivert events.
+ */
+typedef enum
+{
+    WINDIVERT_EVENT_NETWORK_PACKET = 0, /* Network packet. */
+    WINDIVERT_EVENT_FLOW_ESTABLISHED = 1,
+                                        /* Flow established. */
+    WINDIVERT_EVENT_FLOW_DELETED = 2,   /* Flow deleted. */
+    WINDIVERT_EVENT_SOCKET_BIND = 3,    /* Socket bind. */
+    WINDIVERT_EVENT_SOCKET_LISTEN = 4,  /* Socket listen. */
+    WINDIVERT_EVENT_SOCKET_CONNECT = 5, /* Socket connect. */
+    WINDIVERT_EVENT_SOCKET_ACCEPT = 6,  /* Socket accept. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 7,   /* WinDivert handle opened. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 8,  /* WinDivert handle closed. */
+} WINDIVERT_EVENT, *PWINDIVERT_EVENT;
+
+/*
+ * WinDivert flags.
+ */
+#define WINDIVERT_FLAG_SNIFF            0x0001
+#define WINDIVERT_FLAG_DROP             0x0002
+#define WINDIVERT_FLAG_RECV_ONLY        0x0004
+#define WINDIVERT_FLAG_READ_ONLY        WINDIVERT_FLAG_RECV_ONLY
+#define WINDIVERT_FLAG_SEND_ONLY        0x0008
+#define WINDIVERT_FLAG_WRITE_ONLY       WINDIVERT_FLAG_SEND_ONLY
+#define WINDIVERT_FLAG_RECV_PARTIAL     0x0010
+#define WINDIVERT_FLAG_NO_INSTALL       0x0020
+
+/*
+ * WinDivert parameters.
  */
 typedef enum
 {
     WINDIVERT_PARAM_QUEUE_LEN  = 0,     /* Packet queue length. */
     WINDIVERT_PARAM_QUEUE_TIME = 1,     /* Packet queue time. */
-    WINDIVERT_PARAM_QUEUE_SIZE = 2      /* Packet queue size. */
+    WINDIVERT_PARAM_QUEUE_SIZE = 2,     /* Packet queue size. */
 } WINDIVERT_PARAM, *PWINDIVERT_PARAM;
 #define WINDIVERT_PARAM_MAX             WINDIVERT_PARAM_QUEUE_SIZE
+
+/*
+ * WinDivert shutdown parameter.
+ */
+typedef enum
+{
+    WINDIVERT_SHUTDOWN_RECV = 0x1,      /* Shutdown recv. */
+    WINDIVERT_SHUTDOWN_SEND = 0x2,      /* Shutdown send. */
+    WINDIVERT_SHUTDOWN_BOTH = 0x3,      /* Shutdown recv and send. */
+} WINDIVERT_SHUTDOWN, *PWINDIVERT_SHUTDOWN;
+#define WINDIVERT_SHUTDOWN_MAX          WINDIVERT_SHUTDOWN_BOTH
 
 #ifndef WINDIVERT_KERNEL
 
@@ -132,10 +220,10 @@ extern WINDIVERTEXPORT HANDLE WinDivertOpen(
  */
 extern WINDIVERTEXPORT BOOL WinDivertRecv(
     __in        HANDLE handle,
-    __out       PVOID pPacket,
+    __out       VOID *pPacket,
     __in        UINT packetLen,
-    __out_opt   PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *readLen);
+    __out_opt   WINDIVERT_ADDRESS *pAddr,
+    __out_opt   UINT *pReadLen);
 
 /*
  * Receive (read) a packet from a WinDivert handle.
@@ -144,9 +232,10 @@ extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
     __in        HANDLE handle,
     __out       PVOID pPacket,
     __in        UINT packetLen,
+    __out_opt   UINT *pReadLen,
     __in        UINT64 flags,
-    __out_opt   PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *readLen,
+    __out       WINDIVERT_ADDRESS *pAddr,
+    __inout_opt UINT *pAddrLen,
     __inout_opt LPOVERLAPPED lpOverlapped);
 
 /*
@@ -154,22 +243,30 @@ extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
  */
 extern WINDIVERTEXPORT BOOL WinDivertSend(
     __in        HANDLE handle,
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
-    __in        PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *writeLen);
+    __in        const WINDIVERT_ADDRESS *pAddr,
+    __out_opt   UINT *pWriteLen);
 
 /*
  * Send (write/inject) a packet to a WinDivert handle.
  */
 extern WINDIVERTEXPORT BOOL WinDivertSendEx(
     __in        HANDLE handle,
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
+    __out_opt   UINT *pWriteLen,
     __in        UINT64 flags,
-    __in        PWINDIVERT_ADDRESS pAddr,
-    __out_opt   UINT *writeLen,
+    __in        const WINDIVERT_ADDRESS *pAddr,
+    __in        UINT addrLen,
     __inout_opt LPOVERLAPPED lpOverlapped);
+
+/*
+ * Shutdown a WinDivert handle.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertShutdown(
+    __in        HANDLE handle,
+    __in        WINDIVERT_SHUTDOWN how);
 
 /*
  * Close a WinDivert handle.
@@ -333,8 +430,6 @@ typedef struct
     UINT16 Checksum;
 } WINDIVERT_UDPHDR, *PWINDIVERT_UDPHDR;
 
-#ifndef WINDIVERT_KERNEL
-
 /*
  * Flags for WinDivertHelperCalcChecksums()
  */
@@ -344,11 +439,25 @@ typedef struct
 #define WINDIVERT_HELPER_NO_TCP_CHECKSUM                    8
 #define WINDIVERT_HELPER_NO_UDP_CHECKSUM                    16
 
+#ifndef WINDIVERT_KERNEL
+
+/*
+ * Hash a packet.
+ */
+extern WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
+    __in        const VOID *pPacket,
+    __in        UINT packetLen,
+    __in        UINT64 seed
+#ifdef __cplusplus
+                = 0
+#endif
+);
+
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
 extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
     __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt   PWINDIVERT_IPV6HDR *ppIpv6Hdr,
@@ -374,20 +483,38 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
     __out_opt   UINT32 *pAddr);
 
 /*
+ * Format an IPv4 address.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv4Address(
+    __in        UINT32 addr,
+    __out       char *buffer,
+    __in        UINT bufLen);
+
+/*
+ * Format an IPv6 address.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
+    __in        const UINT32 *pAddr,
+    __out       char *buffer,
+    __in        UINT bufLen);
+
+/*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
 extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
-    __inout     PVOID pPacket, 
+    __inout     VOID *pPacket, 
     __in        UINT packetLen,
-    __in_opt    PWINDIVERT_ADDRESS pAddr,
+    __in_opt    const WINDIVERT_ADDRESS *pAddr,
     __in        UINT64 flags);
 
 /*
- * Check the given filter string.
+ * Compile the given filter string.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperCheckFilter(
+extern WINDIVERTEXPORT BOOL WinDivertHelperCompileFilter(
     __in        const char *filter,
     __in        WINDIVERT_LAYER layer,
+    __out_opt   char *object,
+    __in        UINT objLen,
     __out_opt   const char **errorStr,
     __out_opt   UINT *errorPos);
 
@@ -396,10 +523,40 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperCheckFilter(
  */
 extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
     __in        const char *filter,
-    __in        WINDIVERT_LAYER layer,
-    __in        PVOID pPacket,
+    __in        const VOID *pPacket,
     __in        UINT packetLen,
-    __in        PWINDIVERT_ADDRESS pAddr);
+    __in        const WINDIVERT_ADDRESS *pAddr);
+
+/*
+ * Format the given filter string.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperFormatFilter(
+    __in        const char *filter,
+    __in        WINDIVERT_LAYER layer,
+    __out       char *buffer,
+    __in        UINT bufLen);
+
+/*
+ * Byte ordering.
+ */
+extern WINDIVERTEXPORT UINT16 WinDivertHelperNtohs(
+    __in        UINT16 x);
+extern WINDIVERTEXPORT UINT16 WinDivertHelperHtons(
+    __in        UINT16 x);
+extern WINDIVERTEXPORT UINT32 WinDivertHelperNtohl(
+    __in        UINT32 x);
+extern WINDIVERTEXPORT UINT32 WinDivertHelperHtonl(
+    __in        UINT32 x);
+extern WINDIVERTEXPORT UINT64 WinDivertHelperNtohll(
+    __in        UINT64 x);
+extern WINDIVERTEXPORT UINT64 WinDivertHelperHtonll(
+    __in        UINT64 x);
+extern WINDIVERTEXPORT void WinDivertHelperNtohIpv6Address(
+    __in        const UINT *inAddr,
+    __out       UINT *outAddr);
+extern WINDIVERTEXPORT void WinDivertHelperHtonIpv6Address(
+    __in        const UINT *inAddr,
+    __out       UINT *outAddr);
 
 #endif      /* WINDIVERT_KERNEL */
 

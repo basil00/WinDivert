@@ -37,6 +37,6 @@
 
 CC=x86_64-w64-mingw32-gcc
 
-$CC -s -O2 -I../include/ test.c -o test.exe -lWinDivert \
+$CC -fno-ident -s -O2 -I../include/ test.c -o test.exe -lWinDivert \
     -L"../install/MINGW/amd64/"
 

@@ -41,7 +41,6 @@
  *
  */
 
-#include <winsock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,7 +48,11 @@
 
 #include "windivert.h"
 
-#define MAXBUF  0xFFFF
+#define ntohs(x)            WinDivertHelperNtohs(x)
+#define ntohl(x)            WinDivertHelperNtohl(x)
+
+#define MAXBUF              0xFFFF
+#define INET6_ADDRSTRLEN    45
 
 /*
  * Entry.
@@ -68,6 +71,9 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
+    UINT32 src_addr[4], dst_addr[4];
+    UINT64 hash;
+    char src_str[INET6_ADDRSTRLEN+1], dst_str[INET6_ADDRSTRLEN+1];
     const char *err_str;
     LARGE_INTEGER base, freq;
     double time_passed;
@@ -100,8 +106,8 @@ int __cdecl main(int argc, char **argv)
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER &&
-            !WinDivertHelperCheckFilter(argv[1], WINDIVERT_LAYER_NETWORK,
-                &err_str, NULL))
+            !WinDivertHelperCompileFilter(argv[1], WINDIVERT_LAYER_NETWORK,
+                NULL, 0, &err_str, NULL))
         {
             fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
             exit(EXIT_FAILURE);
@@ -154,57 +160,49 @@ int __cdecl main(int argc, char **argv)
         SetConsoleTextAttribute(console, FOREGROUND_RED);
         time_passed = (double)(addr.Timestamp - base.QuadPart) /
             (double)freq.QuadPart;
+        hash = WinDivertHelperHashPacket(packet, packet_len, 0);
         printf("Packet [Timestamp=%.8g, Direction=%s IfIdx=%u SubIfIdx=%u "
-            "Loopback=%u]\n",
-            time_passed, (addr.Direction == WINDIVERT_DIRECTION_OUTBOUND?
-                "outbound": "inbound"), addr.IfIdx, addr.SubIfIdx,
-                addr.Loopback);
+            "Loopback=%u Hash=0x%.16llX]\n",
+            time_passed, (addr.Outbound?  "outbound": "inbound"),
+            addr.Network.IfIdx, addr.Network.SubIfIdx, addr.Loopback, hash);
         if (ip_header != NULL)
         {
-            UINT8 *src_addr = (UINT8 *)&ip_header->SrcAddr;
-            UINT8 *dst_addr = (UINT8 *)&ip_header->DstAddr;
+            WinDivertHelperFormatIPv4Address(ntohl(ip_header->SrcAddr),
+                src_str, sizeof(src_str));
+            WinDivertHelperFormatIPv4Address(ntohl(ip_header->DstAddr),
+                dst_str, sizeof(dst_str));
             SetConsoleTextAttribute(console,
                 FOREGROUND_GREEN | FOREGROUND_RED);
             printf("IPv4 [Version=%u HdrLength=%u TOS=%u Length=%u Id=0x%.4X "
                 "Reserved=%u DF=%u MF=%u FragOff=%u TTL=%u Protocol=%u "
-                "Checksum=0x%.4X SrcAddr=%u.%u.%u.%u DstAddr=%u.%u.%u.%u]\n",
+                "Checksum=0x%.4X SrcAddr=%s DstAddr=%s]\n",
                 ip_header->Version, ip_header->HdrLength,
                 ntohs(ip_header->TOS), ntohs(ip_header->Length),
                 ntohs(ip_header->Id), WINDIVERT_IPHDR_GET_RESERVED(ip_header),
                 WINDIVERT_IPHDR_GET_DF(ip_header),
                 WINDIVERT_IPHDR_GET_MF(ip_header),
                 ntohs(WINDIVERT_IPHDR_GET_FRAGOFF(ip_header)), ip_header->TTL,
-                ip_header->Protocol, ntohs(ip_header->Checksum),
-                src_addr[0], src_addr[1], src_addr[2], src_addr[3],
-                dst_addr[0], dst_addr[1], dst_addr[2], dst_addr[3]);
+                ip_header->Protocol, ntohs(ip_header->Checksum), src_str,
+                dst_str);
+
         }
         if (ipv6_header != NULL)
         {
-            UINT16 *src_addr = (UINT16 *)&ipv6_header->SrcAddr;
-            UINT16 *dst_addr = (UINT16 *)&ipv6_header->DstAddr;
+            WinDivertHelperNtohIpv6Address(ipv6_header->SrcAddr, src_addr);
+            WinDivertHelperNtohIpv6Address(ipv6_header->DstAddr, dst_addr);
+            WinDivertHelperFormatIPv6Address(src_addr, src_str,
+                sizeof(src_str));
+            WinDivertHelperFormatIPv6Address(dst_addr, dst_str,
+                sizeof(dst_str));
             SetConsoleTextAttribute(console,
                 FOREGROUND_GREEN | FOREGROUND_RED);
             printf("IPv6 [Version=%u TrafficClass=%u FlowLabel=%u Length=%u "
-                "NextHdr=%u HopLimit=%u SrcAddr=",
+                "NextHdr=%u HopLimit=%u SrcAddr=%s DstAddr=%s]\n",
                 ipv6_header->Version,
                 WINDIVERT_IPV6HDR_GET_TRAFFICCLASS(ipv6_header),
                 ntohl(WINDIVERT_IPV6HDR_GET_FLOWLABEL(ipv6_header)),
                 ntohs(ipv6_header->Length), ipv6_header->NextHdr,
-                ipv6_header->HopLimit);
-            for (i = 0; i < 8; i++)
-            {
-                printf("%x%c", ntohs(src_addr[i]), (i == 7? ' ': ':'));
-            } 
-            fputs("DstAddr=", stdout);
-            for (i = 0; i < 8; i++)
-            {
-                printf("%x", ntohs(dst_addr[i]));
-                if (i != 7)
-                {
-                    putchar(':');
-                }
-            }
-            fputs("]\n", stdout);
+                ipv6_header->HopLimit, src_str, dst_str);
         }
         if (icmp_header != NULL)
         {

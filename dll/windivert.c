@@ -51,19 +51,6 @@
 #define WINDIVERT_DRIVER32_SYS          L"\\" WINDIVERT_DRIVER_NAME L"32.sys"
 #define WINDIVERT_DRIVER64_SYS          L"\\" WINDIVERT_DRIVER_NAME L"64.sys"
 
-/*
- * Definitions to remove (some) external dependencies:
- */
-#define BYTESWAP16(x)                   \
-    ((((x) >> 8) & 0x00FF) | (((x) << 8) & 0xFF00))
-#define BYTESWAP32(x)                   \
-    ((((x) >> 24) & 0x000000FF) | (((x) >> 8) & 0x0000FF00) | \
-     (((x) << 8) & 0x00FF0000) | (((x) << 24) & 0xFF000000))
-#define ntohs(x)                        BYTESWAP16(x)
-#define htons(x)                        BYTESWAP16(x)
-#define ntohl(x)                        BYTESWAP32(x)
-#define htonl(x)                        BYTESWAP32(x)
-
 static BOOLEAN WinDivertIsXDigit(char c);
 static BOOLEAN WinDivertIsSpace(char c);
 static BOOLEAN WinDivertIsAlNum(char c);
@@ -75,27 +62,6 @@ static BOOLEAN WinDivertStrCpy(wchar_t *dst, size_t dstlen,
 static int WinDivertStrCmp(const char *s, const char *t);
 static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr);
 static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr);
-
-/*
- * IPv4/IPv6 pseudo headers.
- */
-typedef struct
-{
-    UINT32 SrcAddr;
-    UINT32 DstAddr;
-    UINT8  Zero;
-    UINT8  Protocol;
-    UINT16 Length;
-} WINDIVERT_PSEUDOHDR, *PWINDIVERT_PSEUDOHDR;
-
-typedef struct
-{
-    UINT32 SrcAddr[4];
-    UINT32 DstAddr[4];
-    UINT32 Length;
-    UINT32 Zero:24;
-    UINT32 NextHdr:8;
-} WINDIVERT_PSEUDOV6HDR, *PWINDIVERT_PSEUDOV6HDR;
 
 /*
  * Misc.
@@ -113,19 +79,16 @@ typedef struct
 static BOOLEAN WinDivertUse32Bit(void);
 static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str);
 static SC_HANDLE WinDivertDriverInstall(VOID);
-static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen);
-static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped);
+static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen);
+static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped);
 static UINT8 WinDivertSkipExtHeaders(UINT8 proto, UINT8 **header, UINT *len);
-
-#ifdef WINDIVERT_DEBUG
-static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len);
-#endif
 
 /*
  * Include the helper API implementation.
  */
+#include "windivert_shared.c"
 #include "windivert_helper.c"
 
 /*
@@ -337,8 +300,8 @@ WinDivertDriverInstallExit:
 /*
  * Perform a DeviceIoControl.
  */
-static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen)
+static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen)
 {
     OVERLAPPED overlapped;
     DWORD iolen0;
@@ -357,7 +320,7 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
 
     memset(&overlapped, 0, sizeof(overlapped));
     overlapped.hEvent = event;
-    if (!WinDivertIoControlEx(handle, code, arg8, arg, buf, len, iolen,
+    if (!WinDivertIoControlEx(handle, code, arg1, arg2, buf, len, iolen,
             &overlapped))
     {
         if (GetLastError() != ERROR_IO_PENDING ||
@@ -376,17 +339,15 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code, UINT8 arg8,
 /*
  * Perform an (overlapped) DeviceIoControl.
  */
-static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
-    UINT64 arg, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped)
+static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT64 arg1,
+    UINT64 arg2, PVOID buf, UINT len, UINT *iolen, LPOVERLAPPED overlapped)
 {
-    struct windivert_ioctl_s ioctl;
+    WINDIVERT_IOCTL ioctl;
     BOOL result;
     DWORD iolen0;
 
-    ioctl.version = WINDIVERT_IOCTL_VERSION;
-    ioctl.magic   = WINDIVERT_IOCTL_MAGIC;
-    ioctl.arg8    = arg8;
-    ioctl.arg     = arg;
+    ioctl.arg1 = arg1;
+    ioctl.arg2 = arg2;
     result = DeviceIoControl(handle, code, &ioctl, sizeof(ioctl), buf,
         (DWORD)len, &iolen0, overlapped);
     if (result && iolen != NULL)
@@ -402,39 +363,48 @@ static BOOL WinDivertIoControlEx(HANDLE handle, DWORD code, UINT8 arg8,
 extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     INT16 priority, UINT64 flags)
 {
-    struct windivert_ioctl_filter_s object[WINDIVERT_FILTER_MAXLEN];
+    WINDIVERT_FILTER object[WINDIVERT_FILTER_MAXLEN];
     UINT obj_len;
     ERROR comp_err;
     DWORD err;
     HANDLE handle;
     SC_HANDLE service;
-    UINT32 priority32;
-
+    UINT64 priority64, filter_flags;
+ 
     // Parameter checking.
-    if (!WINDIVERT_FLAGS_VALID(flags) || layer > WINDIVERT_LAYER_MAX)
+    switch (layer)
     {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return INVALID_HANDLE_VALUE;
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+        case WINDIVERT_LAYER_FLOW:
+        case WINDIVERT_LAYER_SOCKET:
+        case WINDIVERT_LAYER_REFLECT:
+            break;
+        default:
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return INVALID_HANDLE_VALUE;
     }
-    priority32 = WINDIVERT_PRIORITY(priority);
-    if (priority32 < WINDIVERT_PRIORITY_MIN ||
-        priority32 > WINDIVERT_PRIORITY_MAX)
+    if (!WINDIVERT_FLAGS_VALID(flags))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
 
-    // Compile the filter:
+    if (priority < WINDIVERT_PRIORITY_MIN ||
+        priority > WINDIVERT_PRIORITY_MAX)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return INVALID_HANDLE_VALUE;
+    }
+
+    // Compile & analyze the filter:
     comp_err = WinDivertCompileFilter(filter, layer, object, &obj_len);
     if (IS_ERROR(comp_err))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
-
-#ifdef WINDIVERT_DEBUG
-    WinDivertFilterDump(object, obj_len);
-#endif
+    filter_flags = WinDivertAnalyzeFilter(layer, object, obj_len);
 
     // Attempt to open the WinDivert device:
     handle = CreateFile(L"\\\\.\\" WINDIVERT_DEVICE_NAME,
@@ -449,6 +419,11 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         }
 
         // Open failed because the device isn't installed; install it now.
+        if ((flags & WINDIVERT_FLAG_NO_INSTALL) != 0)
+        {
+            SetLastError(ERROR_SERVICE_DOES_NOT_EXIST);
+            return INVALID_HANDLE_VALUE;
+        }
         SetLastError(0);
         service = WinDivertDriverInstall();
         if (service == NULL)
@@ -477,8 +452,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     // Set the layer:
     if (layer != WINDIVERT_LAYER_DEFAULT)
     {
-        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_LAYER, 0,
-                (UINT64)layer, NULL, 0, NULL))
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_LAYER,
+                (UINT64)layer, 0, NULL, 0, NULL))
         {
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
@@ -488,8 +463,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     // Set the flags:
     if (flags != 0)
     {
-        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_FLAGS, 0,
-                (UINT64)flags, NULL, 0, NULL))
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_FLAGS, flags, 0,
+                NULL, 0, NULL))
         {
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
@@ -497,10 +472,12 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     }
 
     // Set the priority:
-    if (priority32 != WINDIVERT_PRIORITY_DEFAULT)
+    if (priority != WINDIVERT_PRIORITY_DEFAULT)
     {
-        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PRIORITY, 0,
-                (UINT64)priority32, NULL, 0, NULL))
+        // Make positive:
+        priority64 = (UINT64)((INT64)priority + WINDIVERT_PRIORITY_MAX);
+        if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PRIORITY,
+                priority64, 0, NULL, 0, NULL))
         {
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
@@ -508,8 +485,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     }
 
     // Start the filter:
-    if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_START_FILTER, 0, 0,
-            object, obj_len*sizeof(struct windivert_ioctl_filter_s), NULL))
+    if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_START_FILTER,
+            filter_flags, 0, object, obj_len * sizeof(WINDIVERT_FILTER), NULL))
     {
         CloseHandle(handle);
         return INVALID_HANDLE_VALUE;
@@ -520,55 +497,20 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 }
 
 /*
- * Workaround for #134
- */
-static void WinDivertFixChecksums(PVOID pPacket, UINT packetLen,
-    PWINDIVERT_ADDRESS addr)
-{
-    UINT64 flags =
-        WINDIVERT_HELPER_NO_IP_CHECKSUM |
-        WINDIVERT_HELPER_NO_TCP_CHECKSUM |
-        WINDIVERT_HELPER_NO_UDP_CHECKSUM;
-    BOOL calc = FALSE;
-    if (addr->PseudoIPChecksum != 0)
-    {
-        addr->PseudoIPChecksum = 0;
-        flags &= ~WINDIVERT_HELPER_NO_IP_CHECKSUM;
-        calc = TRUE;
-    }
-    if (addr->PseudoTCPChecksum != 0)
-    {
-        addr->PseudoTCPChecksum = 0;
-        flags &= ~WINDIVERT_HELPER_NO_TCP_CHECKSUM;
-        calc = TRUE;
-    }
-    if (addr->PseudoUDPChecksum != 0)
-    {
-        addr->PseudoUDPChecksum = 0;
-        flags &= ~WINDIVERT_HELPER_NO_UDP_CHECKSUM;
-        calc = TRUE;
-    }
-    if (calc)
-    {
-        WinDivertHelperCalcChecksums(pPacket, packetLen, addr, flags);
-    }
-}
-
-/*
  * Receive a WinDivert packet.
  */
 extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
     PWINDIVERT_ADDRESS addr, UINT *readlen)
 {
-    return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, 0, (UINT64)addr,
-        pPacket, packetLen, readlen);
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, (UINT64)addr,
+        (UINT64)NULL, pPacket, packetLen, readlen);
 }
 
 /*
  * Receive a WinDivert packet.
  */
 extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
-    UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *readlen,
+    UINT *readLen, UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *pAddrLen,
     LPOVERLAPPED overlapped)
 {
     if (flags != 0)
@@ -578,55 +520,60 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
     }
     if (overlapped == NULL)
     {
-        return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, 0,
-            (UINT64)addr, pPacket, packetLen, readlen);
+        return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV,
+            (UINT64)addr, (UINT64)pAddrLen, pPacket, packetLen, readLen);
     }
     else
     {
-        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_RECV, 0,
-            (UINT64)addr, pPacket, packetLen, readlen, overlapped);
+        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_RECV,
+            (UINT64)addr, (UINT64)pAddrLen, pPacket, packetLen, readLen,
+            overlapped);
     }
 }
 
 /*
  * Send a WinDivert packet.
  */
-extern BOOL WinDivertSend(HANDLE handle, PVOID pPacket, UINT packetLen,
-    PWINDIVERT_ADDRESS addr, UINT *writelen)
+extern BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
+    const WINDIVERT_ADDRESS *addr, UINT *writelen)
 {
-    if (addr == NULL)
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-    WinDivertFixChecksums(pPacket, packetLen, addr);
-    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0, (UINT64)addr,
-        pPacket, packetLen, writelen);
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, (UINT64)addr,
+        sizeof(WINDIVERT_ADDRESS), (PVOID)pPacket, packetLen, writelen);
 }
 
 /*
  * Send a WinDivert packet.
  */
-extern BOOL WinDivertSendEx(HANDLE handle, PVOID pPacket, UINT packetLen,
-    UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *writelen,
+extern BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
+    UINT *writeLen, UINT64 flags, const WINDIVERT_ADDRESS *addr, UINT addrLen,
     LPOVERLAPPED overlapped)
 {
-    if (flags != 0 || addr == NULL)
+    if (flags != 0)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    WinDivertFixChecksums(pPacket, packetLen, addr);
     if (overlapped == NULL)
     {
-        return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, 0,
-            (UINT64)addr, pPacket, packetLen, writelen);
+        return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND,
+            (UINT64)addr, (UINT64)addrLen, (PVOID)pPacket, packetLen,
+            writeLen);
     }
     else
     {
-        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_SEND, 0,
-            (UINT64)addr, pPacket, packetLen, writelen, overlapped);
+        return WinDivertIoControlEx(handle, IOCTL_WINDIVERT_SEND,
+            (UINT64)addr, (UINT64)addrLen, (PVOID)pPacket, packetLen, writeLen,
+            overlapped);
     }
+}
+
+/*
+ * Shutdown a WinDivert handle.
+ */
+extern BOOL WinDivertShutdown(HANDLE handle, WINDIVERT_SHUTDOWN how)
+{
+    return WinDivertIoControl(handle, IOCTL_WINDIVERT_SHUTDOWN,
+            (UINT64)how, 0, NULL, 0, NULL);
 }
 
 /*
@@ -840,254 +787,4 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
     *intptr = num;
     return TRUE;
 }
-
-/***************************************************************************/
-/* DEBUGGING                                                               */
-/***************************************************************************/
-
-#ifdef WINDIVERT_DEBUG
-/*
- * Print a filter (debugging).
- */
-static void WinDivertFilterDump(windivert_ioctl_filter_t filter, UINT16 len)
-{
-    UINT16 i;
-
-    for (i = 0; i < len; i++)
-    {
-        printf("label_%u:\n\tif (", i);
-        switch (filter[i].field)
-        {
-            case WINDIVERT_FILTER_FIELD_ZERO:
-                printf("zero ");
-                break;
-            case WINDIVERT_FILTER_FIELD_INBOUND:
-                printf("inbound ");
-                break;
-            case WINDIVERT_FILTER_FIELD_OUTBOUND:
-                printf("outbound ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IFIDX:
-                printf("ifIdx ");
-                break;
-            case WINDIVERT_FILTER_FIELD_SUBIFIDX:
-                printf("subIfIdx ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP:
-                printf("ip ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6:
-                printf("ipv6 ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP:
-                printf("icmp ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6:
-                printf("icmpv6 ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP:
-                printf("tcp ");
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP:
-                printf("udp ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
-                printf("ip.HdrLength ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_TOS:
-                printf("ip.TOS ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_LENGTH:
-                printf("ip.Length ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_ID:
-                printf("ip.Id ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_DF:
-                printf("ip.DF ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_MF:
-                printf("ip.MF ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_FRAGOFF:
-                printf("ip.FragOff ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_TTL:
-                printf("ip.TTL ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_PROTOCOL:
-                printf("ip.Protocol ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_CHECKSUM:
-                printf("ip.Checksum ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_SRCADDR:
-                printf("ip.SrcAddr ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_DSTADDR:
-                printf("ip.DstAddr ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
-                printf("ipv6.TrafficClass ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
-                printf("ipv6.FlowLabel ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_LENGTH:
-                printf("ipv6.Length ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR:
-                printf("ipv6.NextHdr ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT:
-                printf("ipv6.HopLimit ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
-                printf("ipv6.SrcAddr ");
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
-                printf("ipv6.DstAddr ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_TYPE:
-                printf("icmp.Type ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_CODE:
-                printf("icmp.Code ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM:
-                printf("icmp.Checksum ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_BODY:
-                printf("icmp.Body ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_TYPE:
-                printf("icmpv6.Type ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_CODE:
-                printf("icmpv6.Code ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM:
-                printf("icmpv6.Checksum ");
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_BODY:
-                printf("icmpv6.Body ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_SRCPORT:
-                printf("tcp.SrcPort ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_DSTPORT:
-                printf("tcp.DstPort ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_SEQNUM:
-                printf("tcp.SeqNum ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_ACKNUM:
-                printf("tcp.AckNum ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH:
-                printf("tcp.HdrLength ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_URG:
-                printf("tcp.Urg ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_ACK:
-                printf("tcp.Ack ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_PSH:
-                printf("tcp.Psh ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_RST:
-                printf("tcp.Rst ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_SYN:
-                printf("tcp.Syn ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_FIN:
-                printf("tcp.Fin ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_WINDOW:
-                printf("tcp.Window ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_CHECKSUM:
-                printf("tcp.Checksum ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_URGPTR:
-                printf("tcp.UrgPtr ");
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
-                printf("tcp.PayloadLength " );
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_SRCPORT:
-                printf("udp.SrcPort ");
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_DSTPORT:
-                printf("udp.DstPort ");
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_LENGTH:
-                printf("udp.Length ");
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_CHECKSUM:
-                printf("udp.Checksum ");
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
-                printf("udp.PayloadLength ");
-                break;
-            default:
-                printf("unknown.Field ");       
-                break;
-        }
-        switch (filter[i].test)
-        {
-            case WINDIVERT_FILTER_TEST_EQ:
-                printf("== ");
-                break;
-            case WINDIVERT_FILTER_TEST_NEQ:
-                printf("!= ");
-                break;
-            case WINDIVERT_FILTER_TEST_LT:
-                printf("< ");
-                break;
-            case WINDIVERT_FILTER_TEST_LEQ:
-                printf("<= ");
-                break;
-            case WINDIVERT_FILTER_TEST_GT:
-                printf("> ");
-                break;
-            case WINDIVERT_FILTER_TEST_GEQ:
-                printf(">= ");
-                break;
-            default:
-                printf("?? ");
-                break;
-        }
-        printf("%u)\n", filter[i].arg[0]);
-        switch (filter[i].success)
-        {
-            case WINDIVERT_FILTER_RESULT_ACCEPT:
-                printf("\t\treturn ACCEPT;\n");
-                break;
-            case WINDIVERT_FILTER_RESULT_REJECT:
-                printf("\t\treturn REJECT;\n");
-                break;
-            default:
-                printf("\t\tgoto label_%u;\n", filter[i].success);
-                break;
-        }
-        printf("\telse\n");
-        switch (filter[i].failure)
-        {
-            case WINDIVERT_FILTER_RESULT_ACCEPT:
-                printf("\t\treturn ACCEPT;\n");
-                break;
-            case WINDIVERT_FILTER_RESULT_REJECT:
-                printf("\t\treturn REJECT;\n");
-                break;
-            default:
-                printf("\t\tgoto label_%u;\n", filter[i].failure);
-                break;
-        }
-    }
-}
-
-#endif      /* WINDIVERT_DEBUG */
 

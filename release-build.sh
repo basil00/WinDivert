@@ -90,6 +90,8 @@ do
     cp install/$TARGET/i386/webfilter.exe $INSTALL/x86
     echo "\tcopy $INSTALL/x86/streamdump.exe..."
     cp install/$TARGET/i386/streamdump.exe $INSTALL/x86
+    echo "\tcopy $INSTALL/i386/flowtrack.exe..."
+    cp install/$TARGET/i386/flowtrack.exe $INSTALL/amd64
     if [ -d "install/$TARGET/amd64" ]
     then
         echo "\tmake $INSTALL/amd64..."
@@ -115,6 +117,8 @@ do
         cp install/$TARGET/amd64/webfilter.exe $INSTALL/amd64
         echo "\tcopy $INSTALL/amd64/streamdump.exe..."
         cp install/$TARGET/amd64/streamdump.exe $INSTALL/amd64
+        echo "\tcopy $INSTALL/amd64/flowtrack.exe..."
+        cp install/$TARGET/amd64/flowtrack.exe $INSTALL/amd64
     else
         echo "\tWARNING: skipping missing AMD64 build..."
     fi

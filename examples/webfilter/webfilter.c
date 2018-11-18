@@ -42,12 +42,16 @@
  * blockpage to the browser.
  */
 
-#include <winsock2.h>
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 #include "windivert.h"
+
+#define ntohs(x)            WinDivertHelperNtohs(x)
+#define ntohl(x)            WinDivertHelperNtohl(x)
+#define htons(x)            WinDivertHelperHtons(x)
+#define htonl(x)            WinDivertHelperHtonl(x)
 
 #define MAXBUF 0xFFFF
 #define MAXURL 4096
@@ -238,7 +242,7 @@ int __cdecl main(int argc, char **argv)
         blockpage->header.tcp.SeqNum       = tcp_header->AckNum;
         blockpage->header.tcp.AckNum       =
             htonl(ntohl(tcp_header->SeqNum) + payload_len);
-        addr.Direction = !addr.Direction;     // Reverse direction.
+        addr.Outbound = !addr.Outbound;     // Reverse direction.
         WinDivertHelperCalcChecksums((PVOID)blockpage, blockpage_len, &addr, 0);
         if (!WinDivertSend(handle, (PVOID)blockpage, blockpage_len, &addr,
                 NULL))

@@ -227,8 +227,8 @@ int __cdecl main(int argc, char **argv)
         memset(&overlapped, 0, sizeof(overlapped));
         ResetEvent(event);
         overlapped.hEvent = event;
-        if (!WinDivertRecvEx(handle, packet, sizeof(packet), 0, &addr,
-                &packet_len, &overlapped))
+        if (!WinDivertRecvEx(handle, packet, sizeof(packet), &packet_len, 0,
+                &addr, NULL, &overlapped))
         {
             if (GetLastError() != ERROR_IO_PENDING)
             {
@@ -257,41 +257,39 @@ read_failed:
             continue;
         }
 
-        switch (addr.Direction)
+        if (addr.Outbound)
         {
-            case WINDIVERT_DIRECTION_OUTBOUND:
-                if (tcp_header->DstPort == htons(port))
-                {
-                    // Reflect: PORT ---> PROXY
-                    UINT32 dst_addr = ip_header->DstAddr;
-                    tcp_header->DstPort = htons(proxy_port);
-                    ip_header->DstAddr = ip_header->SrcAddr;
-                    ip_header->SrcAddr = dst_addr;
-                    addr.Direction = WINDIVERT_DIRECTION_INBOUND;
-                }
-                else if (tcp_header->SrcPort == htons(proxy_port))
-                {
-                    // Reflect: PROXY ---> PORT
-                    UINT32 dst_addr = ip_header->DstAddr;
-                    tcp_header->SrcPort = htons(port);
-                    ip_header->DstAddr = ip_header->SrcAddr;
-                    ip_header->SrcAddr = dst_addr;
-                    addr.Direction = WINDIVERT_DIRECTION_INBOUND;
-                }
-                else if (tcp_header->DstPort == htons(alt_port))
-                {
-                    // Redirect: ALT ---> PORT
-                    tcp_header->DstPort = htons(port);
-                }
-                break;
-            
-            case WINDIVERT_DIRECTION_INBOUND:
-                if (tcp_header->SrcPort == htons(port))
-                {
-                    // Redirect: PORT ---> ALT
-                    tcp_header->SrcPort = htons(alt_port);
-                }
-                break;
+            if (tcp_header->DstPort == htons(port))
+            {
+                // Reflect: PORT ---> PROXY
+                UINT32 dst_addr = ip_header->DstAddr;
+                tcp_header->DstPort = htons(proxy_port);
+                ip_header->DstAddr = ip_header->SrcAddr;
+                ip_header->SrcAddr = dst_addr;
+                addr.Outbound = FALSE;
+            }
+            else if (tcp_header->SrcPort == htons(proxy_port))
+            {
+                // Reflect: PROXY ---> PORT
+                UINT32 dst_addr = ip_header->DstAddr;
+                tcp_header->SrcPort = htons(port);
+                ip_header->DstAddr = ip_header->SrcAddr;
+                ip_header->SrcAddr = dst_addr;
+                addr.Outbound = FALSE;
+            }
+            else if (tcp_header->DstPort == htons(alt_port))
+            {
+                // Redirect: ALT ---> PORT
+                tcp_header->DstPort = htons(port);
+            }
+        }
+        else
+        {
+            if (tcp_header->SrcPort == htons(port))
+            {
+                // Redirect: PORT ---> ALT
+                tcp_header->SrcPort = htons(alt_port);
+            }
         }
 
         WinDivertHelperCalcChecksums(packet, packet_len, &addr, 0);
@@ -301,8 +299,8 @@ read_failed:
             error("failed to allocate memory");
         }
         memset(poverlapped, 0, sizeof(OVERLAPPED));
-        if (WinDivertSendEx(handle, packet, packet_len, 0, &addr, NULL,
-                poverlapped))
+        if (WinDivertSendEx(handle, packet, packet_len, NULL, 0, &addr,
+                sizeof(WINDIVERT_ADDRESS), poverlapped))
         {
             continue;
         }

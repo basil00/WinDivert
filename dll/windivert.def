@@ -6,12 +6,25 @@ EXPORTS
     WinDivertRecvEx
     WinDivertSend
     WinDivertSendEx
+    WinDivertShutdown
     WinDivertClose
     WinDivertSetParam
     WinDivertGetParam
     WinDivertHelperCalcChecksums
+    WinDivertHelperHashPacket
     WinDivertHelperParsePacket
     WinDivertHelperParseIPv4Address
     WinDivertHelperParseIPv6Address
-    WinDivertHelperCheckFilter
+    WinDivertHelperFormatIPv4Address
+    WinDivertHelperFormatIPv6Address
+    WinDivertHelperCompileFilter
     WinDivertHelperEvalFilter
+    WinDivertHelperFormatFilter
+    WinDivertHelperNtohs
+    WinDivertHelperHtons
+    WinDivertHelperNtohl
+    WinDivertHelperHtonl
+    WinDivertHelperNtohll
+    WinDivertHelperHtonll
+    WinDivertHelperNtohIpv6Address
+    WinDivertHelperHtonIpv6Address
