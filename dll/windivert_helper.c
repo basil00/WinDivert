@@ -2630,10 +2630,10 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 val[0] = addr->Event;
                 break;
             case WINDIVERT_FILTER_FIELD_RANDOM8:
-                val[0] = (random64 >> 48) & 0xFF;
+                val[0] = (UINT32)((random64 >> 48) & 0xFF);
                 break;
             case WINDIVERT_FILTER_FIELD_RANDOM16:
-                val[0] = (random64 >> 32) & 0xFFFF;
+                val[0] = (UINT32)((random64 >> 32) & 0xFFFF);
                 break;
             case WINDIVERT_FILTER_FIELD_RANDOM32:
                 val[0] = (UINT32)random64;

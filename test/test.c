@@ -54,15 +54,15 @@
  */
 struct packet
 {
-    char *packet;
+    const char *packet;
     size_t packet_len;
     char *name;
 };
 
 struct test
 {
-    char *filter;
-    struct packet *packet;
+    const char *filter;
+    const struct packet *packet;
     BOOL match;
 };
 
@@ -70,48 +70,48 @@ struct test
  * Prototypes.
  */
 static BOOL run_test(HANDLE inject_handle, const char *filter,
-    const char *packet, const size_t packet_len, BOOL match);
+    const char *packet, const size_t packet_len, BOOL match, INT64 *diff);
 
 /*
  * Test data.
  */
-static struct packet pkt_echo_request =
+static const struct packet pkt_echo_request =
 {
     echo_request,
     sizeof(echo_request),
     "ipv4_icmp_echo_req"
 };
-static struct packet pkt_http_request =
+static const struct packet pkt_http_request =
 {
     http_request,
     sizeof(http_request),
     "ipv4_tcp_http_req"
 };
-static struct packet pkt_dns_request =
+static const struct packet pkt_dns_request =
 {
     dns_request,
     sizeof(dns_request),
     "ipv4_udp_dns_req"
 };
-static struct packet pkt_ipv6_tcp_syn =
+static const struct packet pkt_ipv6_tcp_syn =
 {
     ipv6_tcp_syn,
     sizeof(ipv6_tcp_syn),
     "ipv6_tcp_syn"
 };
-static struct packet pkt_ipv6_echo_reply =
+static const struct packet pkt_ipv6_echo_reply =
 {
     ipv6_echo_reply,
     sizeof(ipv6_echo_reply),
     "ipv6_icmpv6_echo_rep"
 };
-static struct packet pkt_ipv6_exthdrs_udp =
+static const struct packet pkt_ipv6_exthdrs_udp =
 {
     ipv6_exthdrs_udp,
     sizeof(ipv6_exthdrs_udp),
     "ipv6_exthdrs_udp"
 };
-static struct test tests[] =
+static const struct test tests[] =
 {
     {"event = PACKET",                         &pkt_echo_request, TRUE},
     {"packet[0] == 0x45",                      &pkt_echo_request, TRUE},
@@ -129,6 +129,18 @@ static struct test tests[] =
      "packet16[-1] == 0x3637",                 &pkt_echo_request, TRUE},
     {"packet32[0b] == 0x45000054 && packet32[3b] == 0x54123440 && "
      "packet32[-4b] == 0x34353637 && packet32[-5b] == 0x33343536",
+                                               &pkt_echo_request, TRUE},
+    {"random8 < 10",                           &pkt_echo_request, TRUE},
+    {"random16 >= 2222",                       &pkt_echo_request, TRUE},
+    {"random32 <= 0x80000000",                 &pkt_echo_request, TRUE},
+    {"(random8 < 128? icmp: udp)",             &pkt_echo_request, TRUE},
+    {"(random8 <= 128? "
+        "(random16 <= 0x8000?"
+            "(random32 <= 0x80000000? ip: ipv6): "
+            "(random32 <= 0x80000000? icmpv6: icmp)): "
+        "(random16 <= 0x8000?"
+            "(random32 <= 0x80000000? tcp: icmp.Type >= 8): "
+            "(random32 <= 0x80000000? outbound: loopback)))",
                                                &pkt_echo_request, TRUE},
     {"outbound and icmp",                      &pkt_echo_request, TRUE},
     {"outbound",                               &pkt_echo_request, TRUE},
@@ -329,6 +341,11 @@ static struct test tests[] =
      "packet[-1] = 0x0a",                      &pkt_http_request, TRUE},
     {"tcp.Payload16[-1] == 0x0d0a",            &pkt_http_request, TRUE},
     {"tcp.Payload32[-2] == 0x20474d54",        &pkt_http_request, TRUE},
+    {"random8 < 128",                          &pkt_http_request, TRUE},
+    {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
+                                               &pkt_http_request, TRUE},
+    {"(random32 < 0x22223333? packet32[72] == 0x58585858: udp)",
+                                               &pkt_http_request, TRUE},
     {"udp",                                    &pkt_dns_request, TRUE},
     {"udp && udp.SrcPort > 1 && ipv6",         &pkt_dns_request, FALSE},
     {"udp.DstPort == 53",                      &pkt_dns_request, TRUE},
@@ -348,6 +365,11 @@ static struct test tests[] =
                                                &pkt_dns_request, TRUE},
     {"packet16[-1] == 0x0001 && packet16[-2] == 0x0001",
                                                &pkt_dns_request, TRUE},
+    {"tcp.Payload32[0] > 0",                   &pkt_dns_request, FALSE},
+    {"udp.Payload32[1] > 0",                   &pkt_dns_request, TRUE},
+    {"random8 < 128",                          &pkt_dns_request, TRUE},
+    {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
+                                               &pkt_dns_request, TRUE},
     {"ipv6",                                   &pkt_ipv6_tcp_syn, TRUE},
     {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.Syn",                                &pkt_ipv6_tcp_syn, TRUE},
@@ -361,6 +383,15 @@ static struct test tests[] =
     {"ipv6.SrcAddr == aabb:5678:1::1234:ccdd", &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.SrcPort == 50046",                   &pkt_ipv6_tcp_syn, TRUE},
     {"tcp.SrcPort == 0x0000C37E",              &pkt_ipv6_tcp_syn, TRUE},
+    {"packet32[0b] == 0x60000000 && packet32[1b] == 0x00000000 && "
+     "packet32[2b] == 0x00000028 && packet32[3b] == 0x00002806 && "
+     "packet32[4b] == 0x00280640 && packet32[5b] == 0x28064012 && "
+     "packet32[-4b] == 0x01030307 && packet32[-5b] == 0x00010303",
+                                               &pkt_ipv6_tcp_syn, TRUE},
+    {"tcp.Payload32[0] > 0",                   &pkt_ipv6_tcp_syn, FALSE},
+    {"random8 < 128",                          &pkt_ipv6_tcp_syn, TRUE},
+    {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
+                                               &pkt_ipv6_tcp_syn, TRUE},
     {"icmpv6",                                 &pkt_ipv6_echo_reply, TRUE},
     {"icmp",                                   &pkt_ipv6_echo_reply, FALSE},
     {"icmp or icmpv6",                         &pkt_ipv6_echo_reply, TRUE},
@@ -370,6 +401,9 @@ static struct test tests[] =
     {"icmpv6.Body == 0x10720003",              &pkt_ipv6_echo_reply, TRUE},
     {"ipv6.DstAddr >= 1000",                   &pkt_ipv6_echo_reply, FALSE},
     {"ipv6.DstAddr <= 1",                      &pkt_ipv6_echo_reply, TRUE},
+    {"random8 < 128",                          &pkt_ipv6_echo_reply, TRUE},
+    {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
+                                               &pkt_ipv6_echo_reply, TRUE},
     {"true",                                   &pkt_ipv6_exthdrs_udp, TRUE},
     {"false",                                  &pkt_ipv6_exthdrs_udp, FALSE},
     {"udp",                                    &pkt_ipv6_exthdrs_udp, TRUE},
@@ -392,6 +426,14 @@ static struct test tests[] =
      "(inbound and tcp? tcp.SrcPort == 0xABAB: false) or "
      "(inbound and udp? udp.SrcPort == 0xAAAA: false)",
                                                &pkt_ipv6_exthdrs_udp, TRUE},
+    {"(tcp or udp) and (ip or ipv6) and (icmp or !icmpv6) and "
+     "(tcp.Payload16[-1] == 0x1234 or udp.Payload16[-1] == 0x2101)",
+                                               &pkt_ipv6_exthdrs_udp, TRUE},
+    {"(tcp or icmp or icmpv6 or ip or !udp or ipv6? udp.PayloadLength > 0: "
+        "udp.DstPort == 39482)",               &pkt_ipv6_exthdrs_udp, TRUE},
+    {"random8 < 128",                          &pkt_ipv6_exthdrs_udp, TRUE},
+    {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
+                                               &pkt_ipv6_exthdrs_udp, TRUE},
 };
 
 /*
@@ -401,14 +443,16 @@ int main(void)
 {
     HANDLE upper_handle, lower_handle;
     HANDLE console;
+    LARGE_INTEGER freq;
+    UINT64 diff;
     size_t i;
 
     // Open handles to:
     // (1) stop normal traffic from interacting with the tests; and
     // (2) stop test packets escaping to the Internet or TCP/IP stack.
-    upper_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, -510,
+    upper_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, -999,
         WINDIVERT_FLAG_DROP);
-    lower_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 510,
+    lower_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 999,
         WINDIVERT_FLAG_DROP);
     if (upper_handle == INVALID_HANDLE_VALUE ||
         lower_handle == INVALID_HANDLE_VALUE)
@@ -419,26 +463,25 @@ int main(void)
     }
 
     console = GetStdHandle(STD_OUTPUT_HANDLE);
+    QueryPerformanceFrequency(&freq);
 
     // Wait for existing packets to flush:
-    Sleep(100);
+    Sleep(150);
 
     // Run tests:
     size_t num_tests = sizeof(tests) / sizeof(struct test), passed_tests = 0;
     for (i = 0; i < num_tests; i++)
     {
-        char *filter = tests[i].filter;
-        char *packet = tests[i].packet->packet;
+        const char *filter = tests[i].filter;
+        const char *packet = tests[i].packet->packet;
         size_t packet_len = tests[i].packet->packet_len;
         char *name = tests[i].packet->name;
         BOOL match = tests[i].match;
 
-        // Ensure the correct checksum:
-        WinDivertHelperCalcChecksums(packet, packet_len, NULL, 0);
-
         // Run the test:
-        BOOL res = run_test(upper_handle, filter, packet, packet_len, match);
-
+        BOOL res = run_test(upper_handle, filter, packet, packet_len, match,
+            &diff);
+        diff = 1000000 * diff / freq.QuadPart;
         printf("%.3u ", i);
         if (res)
         {
@@ -453,7 +496,7 @@ int main(void)
         }
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
             FOREGROUND_BLUE);
-        printf(" p=[");
+        printf(" %.5llu p=[", diff);
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
         printf("%s", name);
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
@@ -479,66 +522,82 @@ int main(void)
  * Run a test case.
  */
 static BOOL run_test(HANDLE inject_handle, const char *filter,
-    const char *packet, const size_t packet_len, BOOL match)
+    const char *packet, const size_t packet_len, BOOL match, INT64 *diff)
 {
-    char buf[MAX_PACKET];
-    UINT buf_len, i;
+    static char object[8192];
+    char buf[2][MAX_PACKET];
+    UINT buf_len[2], i, idx;
     DWORD iolen;
-    WINDIVERT_ADDRESS addr;
-    OVERLAPPED overlapped;
+    WINDIVERT_ADDRESS addr[2], addr_send;
+    OVERLAPPED overlapped[2];
     const char *err_str;
     UINT err_pos;
     PWINDIVERT_IPHDR iphdr = NULL;
-    HANDLE handle = INVALID_HANDLE_VALUE, handle0 = INVALID_HANDLE_VALUE,
-        event = NULL;
+    HANDLE handle[2] = {INVALID_HANDLE_VALUE, INVALID_HANDLE_VALUE};
+    HANDLE event[2] = {NULL, NULL};
+    BOOL random, result, ipv4;
+    LARGE_INTEGER end;
+
+    *diff = 0;
 
     // (0) Verify the test data:
     if (!WinDivertHelperCompileFilter(filter, WINDIVERT_LAYER_NETWORK,
-            NULL, 0, &err_str, &err_pos))
+            object, sizeof(object), &err_str, &err_pos))
     {
         fprintf(stderr, "error: filter string \"%s\" is invalid with error "
             "\"%s\" (position=%u)\n", filter, err_str, err_pos);
         goto failed;
     }
-    WinDivertHelperParsePacket((PVOID)packet, packet_len, &iphdr, NULL,
-        NULL, NULL, NULL, NULL, NULL, NULL);
-    memset(&addr, 0, sizeof(addr));
-    addr.Outbound = TRUE;
-    addr.Layer    = WINDIVERT_LAYER_NETWORK;
-    addr.IPv6     = (iphdr == NULL);
-    addr.Event    = WINDIVERT_EVENT_NETWORK_PACKET;
-    if (WinDivertHelperEvalFilter(filter, (PVOID)packet, packet_len, &addr)
-            != match)
-    {
-        fprintf(stderr, "error: filter \"%s\" does not match the given "
-            "packet\n", filter);
-        goto failed;
-    }
 
-    // (1) Open a WinDivert handle to the given filter:
-    handle = WinDivertOpen(filter, WINDIVERT_LAYER_NETWORK, 0, 0);
-    if (handle == INVALID_HANDLE_VALUE)
+    // (1) Open WinDivert handles:
+    handle[0] = WinDivertOpen(object, WINDIVERT_LAYER_NETWORK, 777, 0);
+    if (handle[0] == INVALID_HANDLE_VALUE)
     {
         fprintf(stderr, "error: failed to open WinDivert handle for filter "
             "\"%s\" (err = %d)\n", filter, GetLastError());
         goto failed;
     }
-
-    if (!match)
+    handle[1] = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 888, 0);
+    if (handle[1] == INVALID_HANDLE_VALUE)
     {
-        // Catch non-matching packets:
-        handle0 = handle;
-        handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 33, 0);
-        if (handle == INVALID_HANDLE_VALUE)
-        {
-            fprintf(stderr, "error: failed to open WinDivert handle "
-                "(err = %d)\n", GetLastError());
-            goto failed;
-        }
+        fprintf(stderr, "error: failed to open WinDivert handle "
+            "(err = %d)\n", GetLastError());
+        goto failed;
+    }
+
+    // (2) Create pended recv requests:
+    event[0] = CreateEvent(NULL, FALSE, FALSE, NULL);
+    event[1] = CreateEvent(NULL, FALSE, FALSE, NULL);
+    if (event[0] == NULL || event[1] == NULL)
+    {
+        fprintf(stderr, "error: failed to create event (err = %d)\n",
+            GetLastError());
+        goto failed;
+    }
+    memset(&overlapped[0], 0, sizeof(overlapped[0]));
+    memset(&overlapped[1], 0, sizeof(overlapped[1]));
+    overlapped[0].hEvent = event[0];
+    overlapped[1].hEvent = event[1];
+    if (WinDivertRecvEx(handle[0], buf[0], sizeof(buf[0]), &buf_len[0], 0,
+                &addr[0], NULL, &overlapped[0]) ||
+            GetLastError() != ERROR_IO_PENDING ||
+        WinDivertRecvEx(handle[1], buf[1], sizeof(buf[1]), &buf_len[1], 0,
+                &addr[1], NULL, &overlapped[1]) ||
+            GetLastError() != ERROR_IO_PENDING)
+    {
+        fprintf(stderr, "error: failed to created pended recv from WinDivert "
+                "handle (err = %d)\n", GetLastError());
+        goto failed;
     }
 
     // (2) Inject the packet:
-    if (!WinDivertSend(inject_handle, (PVOID)packet, packet_len, &addr, NULL))
+    memset(&addr_send, 0, sizeof(addr_send));
+    addr_send.Outbound          = TRUE;
+    addr_send.PseudoIPChecksum  = TRUE;
+    addr_send.PseudoTCPChecksum = TRUE;
+    addr_send.PseudoUDPChecksum = TRUE;
+    if (!WinDivertSend(inject_handle, (PVOID)packet, packet_len, &addr_send,
+            NULL))
     {
         fprintf(stderr, "error: failed to inject test packet (err = %d)\n",
             GetLastError());
@@ -547,108 +606,111 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
 
     // (3) Wait for the packet to arrive.
     // NOTE: This may fail, so set a generous time-out of 250ms.
-    memset(&overlapped, 0, sizeof(overlapped));
-    event = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (event == NULL)
+    switch (WaitForMultipleObjects(2, event, FALSE, 250))
     {
-        fprintf(stderr, "error: failed to create event (err = %d)\n",
-            GetLastError());
+        case WAIT_OBJECT_0:
+            QueryPerformanceCounter(&end);
+            result = TRUE;
+            idx = 0;
+            break;
+        case WAIT_OBJECT_0+1:
+            QueryPerformanceCounter(&end);
+            result = FALSE;
+            idx = 1;
+            break;
+        case WAIT_TIMEOUT:
+            fprintf(stderr, "error: failed to read packet from WinDivert "
+                "handle (timeout)\n", GetLastError());
+            goto failed;
+        default:
+            fprintf(stderr, "error: failed to wait for packet (err = %d)\n",
+                GetLastError());
+            goto failed;
+    }
+    if (!GetOverlappedResult(handle[idx], &overlapped[idx], &iolen, TRUE))
+    {
+        fprintf(stderr, "error: failed to get the overlapped result from "
+            "WinDivert handle (err = %d)\n", GetLastError());
         goto failed;
     }
-    overlapped.hEvent = event;
-    if (!WinDivertRecvEx(handle, buf, sizeof(buf), &buf_len, 0, &addr, NULL,
-            &overlapped))
-    {
-        if (GetLastError() != ERROR_IO_PENDING)
-        {
-read_failed:
-            fprintf(stderr, "error: failed to read packet from WinDivert "
-                "handle (err = %d)\n", GetLastError());
-            goto failed;
-        }
+    buf_len[idx] = (UINT)iolen;
+    *diff = end.QuadPart - addr[idx].Timestamp;
 
-        switch (WaitForSingleObject(event, 250))
-        {
-            case WAIT_OBJECT_0:
-                break;
-            case WAIT_TIMEOUT:
-                fprintf(stderr, "error: failed to read packet from WinDivert "
-                    "handle (timeout)\n", GetLastError());
-                goto failed;
-            default:
-                goto read_failed;
-        }
-
-        if (!GetOverlappedResult(handle, &overlapped, &iolen, TRUE))
-        {
-            fprintf(stderr, "error: failed to get the overlapped result from "
-                "WinDivert handle (err = %d)\n", GetLastError());
-            goto failed;
-        }
-        buf_len = (UINT)iolen;
-    }
-    if (addr.Outbound)
-    {
-        WinDivertHelperCalcChecksums(buf, buf_len, NULL, 0);
-    }
-
-    // (4) Verify that the packet is the same.
-    if (buf_len != packet_len)
+    // (4) Verify that the packet is the same & matches.
+    if (buf_len[idx] != packet_len)
     {
         fprintf(stderr, "error: packet length mis-match, expected (%u), got "
-            "(%u)\n", packet_len, buf_len);
+            "(%u)\n", packet_len, buf_len[idx]);
         goto failed;
     }
+    iphdr = (PWINDIVERT_IPHDR)buf[idx];
+    ipv4 = (iphdr->Version == 4);
     for (i = 0; i < packet_len; i++)
     {
-        if (packet[i] != buf[i])
+        if (ipv4 && i >= offsetof(WINDIVERT_IPHDR, Checksum) &&
+                    i < offsetof(WINDIVERT_IPHDR, Checksum) + sizeof(UINT16))
+        {
+            // The IPv4 checksum can change, so ignore it.
+            continue;
+        }
+        if (packet[i] != buf[idx][i])
         {
             fprintf(stderr, "error: packet data mis-match, expected byte #%u "
                 "to be (0x%.2X), got (0x%.2X)\n", i, (unsigned char)packet[i],
-                (unsigned char)buf[i]);
+                (unsigned char)buf[idx][i]);
             for (i = 0; i < packet_len; i++)
             {
-                printf("%c", (packet[i] == buf[i]? '.': 'X'));
+                printf("%c", (packet[i] == buf[idx][i]? '.': 'X'));
             }
             putchar('\n');
             goto failed;
         }
     }
 
-    // (5) Clean-up:
-    if (!WinDivertClose(handle))
+    random = (strstr(filter, "random") != 0);
+    // If (random && !result), then we cannot verify since the original
+    // non-matching random values have been lost:
+    if ((!random &&
+            WinDivertHelperEvalFilter(filter, buf[idx], buf_len[idx],
+                &addr[idx]) != result) ||
+        (random && result && 
+            !WinDivertHelperEvalFilter(filter, buf[idx], buf_len[idx],
+                &addr[idx])))
     {
-        handle = INVALID_HANDLE_VALUE;
+        fprintf(stderr, "error: filter \"%s\" does not match the given "
+            "packet\n", filter);
+        goto failed;
+    }
+    if (!random && result != match)
+    {
+        fprintf(stderr, "error: filter \"%s\" does not match the expected "
+            "result\n", filter);
+        goto failed;
+    }
+
+    // (5) Clean-up:
+    if (!WinDivertClose(handle[0]) || !WinDivertClose(handle[1]))
+    {
         fprintf(stderr, "error: failed to close WinDivert handle (err = %d)\n",
             GetLastError());
         goto failed;
     }
-    if (handle0 != INVALID_HANDLE_VALUE)
-    {
-        if (!WinDivertClose(handle0))
-        {
-            handle0 = INVALID_HANDLE_VALUE;
-            fprintf(stderr, "error: failed to close WinDivert handle "
-                "(err = %d)\n", GetLastError());
-            goto failed;
-        }
-    }
-    CloseHandle(event);
+    CloseHandle(event[0]);
+    CloseHandle(event[1]);
 
     return TRUE;
 
 failed:
-    if (handle0 != INVALID_HANDLE_VALUE)
+    for (i = 0; i < 2; i++)
     {
-        WinDivertClose(handle0);
-    }
-    if (handle != INVALID_HANDLE_VALUE)
-    {
-        WinDivertClose(handle);
-    }
-    if (event != NULL)
-    {
-        CloseHandle(event);
+        if (handle[i] != INVALID_HANDLE_VALUE)
+        {
+            WinDivertClose(handle[i]);
+        }
+        if (event[i] != NULL)
+        {
+            CloseHandle(event[i]);
+        }
     }
     return FALSE;
 }

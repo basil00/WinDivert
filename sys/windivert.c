@@ -32,6 +32,7 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+
 #include <ntifs.h>
 #include <ntddk.h>
 #include <fwpsk.h>
@@ -2314,7 +2315,9 @@ windivert_write_too_small_packet:
                 (addr[i].PseudoTCPChecksum? 0:
                     WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
                 (addr[i].PseudoUDPChecksum? 0:
-                    WINDIVERT_HELPER_NO_UDP_CHECKSUM);
+                    WINDIVERT_HELPER_NO_UDP_CHECKSUM) |
+                WINDIVERT_HELPER_NO_ICMP_CHECKSUM |
+                WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM;
             WinDivertHelperCalcChecksums(data_copy, packet_len, NULL,
                 checksums);
         }
@@ -4372,7 +4375,9 @@ static void windivert_reinject_packet(packet_t packet)
             (packet->pseudo_tcp_checksum != 0? 0:
                 WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
             (packet->pseudo_udp_checksum != 0? 0:
-                WINDIVERT_HELPER_NO_UDP_CHECKSUM);
+                WINDIVERT_HELPER_NO_UDP_CHECKSUM) |
+            WINDIVERT_HELPER_NO_ICMP_CHECKSUM |
+            WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM;
         WinDivertHelperCalcChecksums(packet_data, packet_len, NULL, checksums);
     }
 
@@ -4964,10 +4969,10 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     field[0] = (UINT32)event;
                     break;
                 case WINDIVERT_FILTER_FIELD_RANDOM8:
-                    field[0] = (UINT32)(random64 >> 48) & 0xFF;
+                    field[0] = (UINT32)((random64 >> 48) & 0xFF);
                     break;
                 case WINDIVERT_FILTER_FIELD_RANDOM16:
-                    field[0] = (UINT32)(random64 >> 32) & 0xFFFF;
+                    field[0] = (UINT32)((random64 >> 32) & 0xFFFF);
                     break;
                 case WINDIVERT_FILTER_FIELD_RANDOM32:
                     field[0] = (UINT32)random64;
