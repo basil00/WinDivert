@@ -62,7 +62,7 @@ EVT_WDF_WORKITEM windivert_reflect_worker;
 /*
  * Debugging macros.
  */
-#define DEBUG_ON
+// #define DEBUG_ON
 #define DEBUG_BUFSIZE       256
 
 #ifdef DEBUG_ON
@@ -2101,6 +2101,169 @@ windivert_read_service_request_exit:
 }
 
 /*
+ * Opportunistic read service request.
+ */
+static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
+    PNET_BUFFER_LIST buffers, WINDIVERT_LAYER layer, PVOID layer_data,
+    WINDIVERT_EVENT event, UINT64 flags, BOOL ipv4, BOOL outbound,
+    BOOL loopback, BOOL impostor, LONGLONG timestamp, WDFREQUEST request)
+{
+    PNET_BUFFER buffer;
+    PMDL dst_mdl;
+    UINT dst_len, read_len = 0;
+    UINT8 *dst, *src;
+    req_context_t req_context;
+    PWINDIVERT_ADDRESS addr;
+    UINT *addr_len_ptr;
+    NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums;
+    BOOL pseudo_ip_checksum, pseudo_tcp_checksum, pseudo_udp_checksum;
+    NTSTATUS status = STATUS_SUCCESS;
+
+    // This function bypasses the normal work_queue -> packet_queue flow, but
+    // is limited to a single packet+request pair.  This eliminates an extra
+    // packet copy, allocation+deallocation, and at least one context switch.
+
+    switch (layer)
+    {
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+        case WINDIVERT_LAYER_REFLECT:
+
+            status = WdfRequestRetrieveOutputWdmMdl(request, &dst_mdl);
+            if (!NT_SUCCESS(status))
+            {
+                goto windivert_fast_read_service_request_exit;
+            }
+            dst = MmGetSystemAddressForMdlSafe(dst_mdl,
+                NormalPagePriority | no_exec_flag);
+            if (dst == NULL)
+            {
+                status = STATUS_INSUFFICIENT_RESOURCES;
+                goto windivert_fast_read_service_request_exit;
+            }
+            dst_len = MmGetMdlByteCount(dst_mdl);
+            break;
+
+        case WINDIVERT_LAYER_FLOW:
+        case WINDIVERT_LAYER_SOCKET:
+            status = STATUS_SUCCESS;
+            dst = NULL;
+            dst_len = 0;
+            break;
+
+        default:
+            status = STATUS_INVALID_DEVICE_STATE;
+            goto windivert_fast_read_service_request_exit;
+    }
+
+    switch (layer)
+    {
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+            buffer = (PNET_BUFFER)packet;
+            dst_len = (dst_len < packet_len? dst_len: packet_len);
+            src = NdisGetDataBuffer(buffer, dst_len, NULL, 1, 0);
+            if (src == NULL)
+            {
+                NdisGetDataBuffer(buffer, dst_len, dst, 1, 0);
+            }
+            else
+            {
+                RtlCopyMemory(dst, src, dst_len);
+            }
+            if ((flags & WINDIVERT_FLAG_RECV_PARTIAL) == 0 &&
+                    dst_len < packet_len)
+            {
+                status = STATUS_BUFFER_TOO_SMALL;
+            }
+            read_len = dst_len;
+            checksums.Value = NET_BUFFER_LIST_INFO(buffers,
+                TcpIpChecksumNetBufferListInfo);
+            if (outbound)
+            {
+                pseudo_ip_checksum = (checksums.Transmit.IpHeaderChecksum != 0);
+                pseudo_tcp_checksum = (checksums.Transmit.TcpChecksum != 0);
+                pseudo_udp_checksum = (checksums.Transmit.UdpChecksum != 0);
+            }
+            else
+            {
+                pseudo_ip_checksum =
+                    (checksums.Receive.IpChecksumSucceeded != 0);
+                pseudo_tcp_checksum =
+                    (checksums.Receive.TcpChecksumSucceeded != 0);
+                pseudo_udp_checksum =
+                    (checksums.Receive.UdpChecksumSucceeded != 0);
+            }
+            break;
+
+        case WINDIVERT_LAYER_REFLECT:
+            dst_len = (dst_len < packet_len? dst_len: packet_len);
+            RtlCopyMemory(dst, packet, dst_len);
+            read_len = dst_len;
+            pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
+                FALSE;
+            break;
+
+        default:
+            read_len = 0;
+            pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
+                FALSE;
+            break;
+    }
+
+    req_context  = windivert_req_context_get(request);
+    addr         = req_context->addr;
+    addr_len_ptr = req_context->addr_len_ptr;
+
+    addr->Timestamp         = timestamp;
+    addr->Layer             = layer;
+    addr->Event             = event;
+    addr->Outbound          = (outbound? 1: 0);
+    addr->Loopback          = (loopback? 1: 0);
+    addr->Impostor          = (impostor? 1: 0);
+    addr->IPv6              = (ipv4? 0: 1);
+    addr->PseudoIPChecksum  = (pseudo_ip_checksum? 1: 0);
+    addr->PseudoTCPChecksum = (pseudo_tcp_checksum? 1: 0);
+    addr->PseudoUDPChecksum = (pseudo_udp_checksum? 1: 0);
+    addr->Reserved          = 0;
+    switch (layer)
+    {
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+            RtlCopyMemory(&addr->Network, layer_data,
+                sizeof(WINDIVERT_DATA_NETWORK));
+            break;
+
+        case WINDIVERT_LAYER_FLOW:
+            RtlCopyMemory(&addr->Flow, layer_data,
+                sizeof(WINDIVERT_DATA_FLOW));
+            break;
+
+        case WINDIVERT_LAYER_SOCKET:
+            RtlCopyMemory(&addr->Socket, layer_data,
+                sizeof(WINDIVERT_DATA_SOCKET));
+            break;
+
+        case WINDIVERT_LAYER_REFLECT:
+            RtlCopyMemory(&addr->Reflect, layer_data,
+                sizeof(WINDIVERT_DATA_REFLECT));
+            break;
+
+        default:
+            break;
+    }
+
+    if (addr_len_ptr)
+    {
+        *addr_len_ptr = sizeof(WINDIVERT_ADDRESS);
+    }
+
+windivert_fast_read_service_request_exit:
+
+    WdfRequestCompleteWithInformation(request, status, read_len);
+}
+
+/*
  * WinDivert read request service.
  */
 static void windivert_read_service(context_t context)
@@ -4106,6 +4269,8 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
     PWINDIVERT_DATA_SOCKET socket_data;
     PWINDIVERT_DATA_REFLECT reflect_data;
     BOOL pseudo_ip_checksum, pseudo_tcp_checksum, pseudo_udp_checksum;
+    WDFREQUEST request = NULL;
+    NTSTATUS status;
 
     if (!match && (flags & WINDIVERT_FLAG_SNIFF) != 0)
     {
@@ -4114,6 +4279,28 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
     if (match && (flags & WINDIVERT_FLAG_DROP) != 0)
     {
         return TRUE;
+    }
+
+    // Check for fast-path:
+    if (match)
+    {
+        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+        if (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
+            !context->shutdown_recv && IsListEmpty(&context->packet_queue) &&
+            IsListEmpty(&context->work_queue))
+        {
+            status = WdfIoQueueRetrieveNextRequest(context->read_queue,
+                &request);
+            request = (!NT_SUCCESS(status)? NULL: request);
+        }
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        if (request != NULL)
+        {
+            windivert_fast_read_service_request(packet, packet_len, buffers,
+                layer, layer_data, event, flags, ipv4, outbound, loopback,
+                impostor, timestamp, request);
+            return TRUE;
+        }
     }
 
     // Copy the packet & layer data.
