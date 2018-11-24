@@ -71,6 +71,7 @@ struct test
  */
 static BOOL run_test(HANDLE inject_handle, const char *filter,
     const char *packet, const size_t packet_len, BOOL match, INT64 *diff);
+static DWORD monitor_worker(LPVOID arg);
 
 /*
  * Test data.
@@ -341,6 +342,11 @@ static const struct test tests[] =
      "packet[-1] = 0x0a",                      &pkt_http_request, TRUE},
     {"tcp.Payload16[-1] == 0x0d0a",            &pkt_http_request, TRUE},
     {"tcp.Payload32[-2] == 0x20474d54",        &pkt_http_request, TRUE},
+    {"(ipv6? true: false) or (udp? udp.DstPort != 53: false) or "
+     "(not tcp and not udp? true: false)",     &pkt_http_request, FALSE},
+    {"ip and !loopback and (outbound? tcp.DstPort == 80 or"
+     " tcp.DstPort == 443 or udp.DstPort == 53 :"
+     " icmp.Type == 11 and icmp.Code == 0)",   &pkt_http_request, TRUE},
     {"random8 < 128",                          &pkt_http_request, TRUE},
     {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
                                                &pkt_http_request, TRUE},
@@ -360,6 +366,9 @@ static const struct test tests[] =
                                                &pkt_dns_request, FALSE},
     {"ip.DstAddr == ::ffff:8.8.4.4",           &pkt_dns_request, TRUE},
     {"ip.DstAddr == ::0:ffff:8.8.4.4",         &pkt_dns_request, TRUE},
+    {"(ipv6? true: false) or (udp? udp.DstPort != 53: false) or "
+     "(not tcp and not udp? true: false)",     &pkt_dns_request, FALSE},
+    {"ipv6 or (not tcp and udp.DstPort != 53)",&pkt_dns_request, FALSE},
     {"udp.PayloadLength == 29",                &pkt_dns_request, TRUE},
     {"udp.Payload16[-1] == 0x0001 && udp.Payload16[-2] == 0x0001",
                                                &pkt_dns_request, TRUE},
@@ -373,12 +382,16 @@ static const struct test tests[] =
     {"ipv6",                                   &pkt_ipv6_tcp_syn, TRUE},
     {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.Syn",                                &pkt_ipv6_tcp_syn, TRUE},
+    {"tcp.DstPort >= 23 && tcp.DstPort <= 23", &pkt_ipv6_tcp_syn, TRUE},
     {"tcp.Syn == 1 && tcp.Ack == 0",           &pkt_ipv6_tcp_syn, TRUE},
     {"tcp.Rst or tcp.Fin",                     &pkt_ipv6_tcp_syn, FALSE},
     {"(tcp.Syn? !tcp.Rst && !tcp.Fin: true)",  &pkt_ipv6_tcp_syn, TRUE},
     {"(tcp.Rst? !tcp.Syn: (tcp.Fin? !tcp.Syn: tcp.Syn))",
                                                &pkt_ipv6_tcp_syn, TRUE},
     {"tcp.PayloadLength == 0",                 &pkt_ipv6_tcp_syn, TRUE},
+    {"ip and !loopback and (outbound? tcp.DstPort == 80 or"
+     " tcp.DstPort == 443 or udp.DstPort == 53 :"
+     " icmp.Type == 11 and icmp.Code == 0)",   &pkt_ipv6_tcp_syn, FALSE},
     {"ipv6.SrcAddr == 1234:5678:1::aabb:ccdd", &pkt_ipv6_tcp_syn, TRUE},
     {"ipv6.SrcAddr == aabb:5678:1::1234:ccdd", &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.SrcPort == 50046",                   &pkt_ipv6_tcp_syn, TRUE},
@@ -401,6 +414,9 @@ static const struct test tests[] =
     {"icmpv6.Body == 0x10720003",              &pkt_ipv6_echo_reply, TRUE},
     {"ipv6.DstAddr >= 1000",                   &pkt_ipv6_echo_reply, FALSE},
     {"ipv6.DstAddr <= 1",                      &pkt_ipv6_echo_reply, TRUE},
+    {"ip and !loopback and (outbound? tcp.DstPort == 80 or"
+     " tcp.DstPort == 443 or udp.DstPort == 53 :"
+     " icmp.Type == 11 and icmp.Code == 0)",   &pkt_ipv6_echo_reply, FALSE},
     {"random8 < 128",                          &pkt_ipv6_echo_reply, TRUE},
     {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
                                                &pkt_ipv6_echo_reply, TRUE},
@@ -426,6 +442,8 @@ static const struct test tests[] =
      "(inbound and tcp? tcp.SrcPort == 0xABAB: false) or "
      "(inbound and udp? udp.SrcPort == 0xAAAA: false)",
                                                &pkt_ipv6_exthdrs_udp, TRUE},
+    {"(ipv6? true: false) or (udp? udp.DstPort != 53: false) or "
+     "(not tcp and not udp? true: false)",     &pkt_ipv6_exthdrs_udp, TRUE},
     {"(tcp or udp) and (ip or ipv6) and (icmp or !icmpv6) and "
      "(tcp.Payload16[-1] == 0x1234 or udp.Payload16[-1] == 0x2101)",
                                                &pkt_ipv6_exthdrs_udp, TRUE},
@@ -442,7 +460,8 @@ static const struct test tests[] =
 int main(void)
 {
     HANDLE upper_handle, lower_handle;
-    HANDLE console;
+    HANDLE console, monitor;
+    DWORD result;
     LARGE_INTEGER freq;
     UINT64 diff;
     size_t i;
@@ -457,13 +476,23 @@ int main(void)
     if (upper_handle == INVALID_HANDLE_VALUE ||
         lower_handle == INVALID_HANDLE_VALUE)
     {
-        fprintf(stderr, "error: failed to open WinDivert handle (err = %d)",
+        fprintf(stderr, "error: failed to open WinDivert handle (err = %d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
 
     console = GetStdHandle(STD_OUTPUT_HANDLE);
     QueryPerformanceFrequency(&freq);
+
+    // Spawn monitor thread:
+    monitor = CreateThread(NULL, 1, (LPTHREAD_START_ROUTINE)monitor_worker,
+        NULL, 0, NULL);
+    if (monitor == NULL)
+    {
+        fprintf(stderr, "error: failed to spawn monitor thread (err = %d)\n",
+            GetLastError());
+        exit(EXIT_FAILURE);
+    }
 
     // Wait for existing packets to flush:
     Sleep(150);
@@ -511,6 +540,21 @@ int main(void)
 
     WinDivertClose(upper_handle);
     WinDivertClose(lower_handle);
+
+    result = WaitForSingleObject(monitor, 1000);
+    switch (result)
+    {
+        case WAIT_OBJECT_0:
+            break;
+        case WAIT_TIMEOUT:
+            fprintf(stderr, "error: failed to wait for monitor thread "
+                "(timeout)\n");
+            exit(EXIT_FAILURE);
+        default:
+            fprintf(stderr, "error: failed to wait for monitor thread "
+                "(err = %d)\n", result);
+            exit(EXIT_FAILURE);
+    }
 
     printf("\npassed = %.2f%%\n",
         ((double)passed_tests / (double)num_tests) * 100.0);
@@ -713,5 +757,51 @@ failed:
         }
     }
     return FALSE;
+}
+
+/*
+ * Monitor thread.
+ */
+static DWORD monitor_worker(LPVOID arg)
+{
+    char filter[100], packet[4096], object_1[4096], *object_2;
+    UINT packet_len;
+    WINDIVERT_ADDRESS addr;
+    UINT i;
+
+    snprintf(filter, sizeof(filter), "processId=%d and priority=777 and "
+        "event=OPEN", GetCurrentProcessId());
+    HANDLE handle = WinDivertOpen(filter, WINDIVERT_LAYER_REFLECT, 0,
+        WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY);
+    if (handle == INVALID_HANDLE_VALUE)
+    {
+        fprintf(stderr, "error: failed to open reflect handle (err = %d)\n",
+            GetLastError());
+        exit(EXIT_FAILURE);
+    }
+
+    size_t num_tests = sizeof(tests) / sizeof(struct test);
+    for (i = 0; i < num_tests; i++)
+    {
+        WinDivertHelperCompileFilter(tests[i].filter, WINDIVERT_LAYER_NETWORK,
+            object_1, sizeof(object_1), NULL, NULL);
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        {
+            fprintf(stderr, "error: failed to read OPEN event (err = %d)\n",
+                GetLastError());
+            exit(EXIT_FAILURE);
+        }
+        WinDivertHelperParsePacket(packet, packet_len, NULL, NULL, NULL, NULL,
+            NULL, NULL, (void **)&object_2, NULL);
+        if (strcmp(object_1, object_2) != 0)
+        {
+            fprintf(stderr, "error: filter object mismatch (%s vs %s)\n",
+                object_1, object_2);
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    WinDivertClose(handle);
+    return 0;
 }
 
