@@ -137,6 +137,7 @@ typedef enum
     TOKEN_REMOTE_PORT,
     TOKEN_PROTOCOL,
     TOKEN_LAYER,
+    TOKEN_PRIORITY,
     TOKEN_FLOW,
     TOKEN_SOCKET,
     TOKEN_NETWORK,
@@ -238,6 +239,7 @@ struct EXPR
     };
     UINT8 kind;
     UINT8 count;
+    BOOL neg;
     UINT16 succ;
     UINT16 fail;
 };
@@ -614,6 +616,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"packet",              TOKEN_PACKET,              LNM___},
         {"packet16",            TOKEN_PACKET16,            LNM___},
         {"packet32",            TOKEN_PACKET32,            LNM___},
+        {"priority",            TOKEN_PRIORITY,            L____R},
         {"processId",           TOKEN_PROCESS_ID,          L__FSR},
         {"protocol",            TOKEN_PROTOCOL,            LN_FS_},
         {"random16",            TOKEN_RANDOM16,            LNM___},
@@ -943,6 +946,7 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
         {{{0}}, TOKEN_REMOTE_PORT},
         {{{0}}, TOKEN_PROTOCOL},
         {{{0}}, TOKEN_LAYER},
+        {{{0}}, TOKEN_PRIORITY},
     };
 
     // Binary search:
@@ -997,10 +1001,6 @@ static PEXPR WinDivertMakeZero(void)
  */
 static PEXPR WinDivertMakeNumber(HANDLE pool, UINT32 *val, PERROR error)
 {
-    if (val[0] == 0 && val[1] == 0 && val[2] == 0 && val[3] == 0)
-    {
-        return WinDivertMakeZero();
-    }
     PEXPR expr = (PEXPR)HeapAlloc(pool, HEAP_ZERO_MEMORY, sizeof(EXPR));
     if (expr == NULL)
     {
@@ -1064,7 +1064,7 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
 {
     PEXPR var, val;
     KIND kind;
-    BOOL not = FALSE, neg;
+    BOOL not = FALSE, neg, priority = FALSE;
     UINT idx, size;
     while (toks[*i].kind == TOKEN_NOT)
     {
@@ -1073,6 +1073,9 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
     }
     switch (toks[*i].kind)
     {
+        case TOKEN_PRIORITY:
+            priority = TRUE;
+            /* fallthough */
         case TOKEN_ZERO:
         case TOKEN_EVENT:
         case TOKEN_RANDOM8:
@@ -1261,12 +1264,19 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
         }
     }
     *i = *i + 1;
+    neg = FALSE;
+    if (priority && toks[*i].kind == TOKEN_MINUS)
+    {
+        neg = TRUE;
+        *i = *i + 1;
+    }
     if (toks[*i].kind != TOKEN_NUMBER)
     {
         *error = MAKE_ERROR(WINDIVERT_ERROR_UNEXPECTED_TOKEN, toks[*i].pos);
         return NULL;
     }
     val = WinDivertMakeNumber(pool, toks[*i].val, error);
+    val->neg = neg;
     *i = *i + 1;
     return WinDivertMakeBinOp(pool, kind, var, val, error);
 }
@@ -1394,6 +1404,9 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
             break;
         case TOKEN_LAYER:
             lb = 0; ub = WINDIVERT_LAYER_MAX;
+            break;
+        case TOKEN_PRIORITY:
+            lb = 0; ub = WINDIVERT_PRIORITY_MAX;
             break;
         case TOKEN_EVENT:
             lb = 0; ub = WINDIVERT_EVENT_MAX;
@@ -1613,6 +1626,7 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
 {
     BOOL big;
     PEXPR var = test->arg[0], val = test->arg[1];
+    UINT32 val0;
     switch (test->kind)
     {
         case TOKEN_EQ:
@@ -1638,6 +1652,7 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
     }
     big = FALSE;
     object->arg[1] = object->arg[2] = object->arg[3] = 0;
+    val0 = val->val[0];
     switch (var->kind)
     {
         case TOKEN_ZERO:
@@ -1731,6 +1746,11 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
             break;
         case TOKEN_LAYER:
             object->field = WINDIVERT_FILTER_FIELD_LAYER;
+            break;
+        case TOKEN_PRIORITY:
+            object->field = WINDIVERT_FILTER_FIELD_PRIORITY;
+            val0 = (val->neg? WINDIVERT_PRIORITY_MAX - val0:
+                              WINDIVERT_PRIORITY_MAX + val0);
             break;
         case TOKEN_IP:
             object->field = WINDIVERT_FILTER_FIELD_IP;
@@ -1898,7 +1918,7 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
         default:
             return;
     }
-    object->arg[0] = val->val[0];
+    object->arg[0] = val0;
     if (big)
     {
         object->arg[1] = val->val[1];
@@ -2533,6 +2553,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         addr->Layer == WINDIVERT_LAYER_REFLECT);
                 break;
             case WINDIVERT_FILTER_FIELD_LAYER:
+            case WINDIVERT_FILTER_FIELD_PRIORITY:
                 pass = (addr->Layer == WINDIVERT_LAYER_REFLECT);
                 break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
@@ -2628,6 +2649,13 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 break;
             case WINDIVERT_FILTER_FIELD_EVENT:
                 val[0] = addr->Event;
+                break;
+            case WINDIVERT_FILTER_FIELD_LAYER:
+                val[0] = addr->Reflect.Layer;
+                break;
+            case WINDIVERT_FILTER_FIELD_PRIORITY:
+                val[0] = (UINT32)((INT32)addr->Reflect.Layer +
+                    WINDIVERT_PRIORITY_MAX);
                 break;
             case WINDIVERT_FILTER_FIELD_RANDOM8:
                 val[0] = (UINT32)((random64 >> 48) & 0xFF);
@@ -3514,6 +3542,8 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             kind = TOKEN_PROTOCOL; break;
         case WINDIVERT_FILTER_FIELD_LAYER:
             kind = TOKEN_LAYER; break;
+        case WINDIVERT_FILTER_FIELD_PRIORITY:
+            kind = TOKEN_PRIORITY; break;
         default:
             return NULL;
     }
@@ -3965,7 +3995,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
 {
     PEXPR field = expr->arg[0], val = expr->arg[1];
     BOOL is_ipv4_addr = FALSE, is_ipv6_addr = FALSE, is_layer = FALSE,
-        is_event = FALSE, is_hex = FALSE;
+        is_priority = FALSE, is_event = FALSE, is_hex = FALSE;
 
     switch (field->kind)
     {
@@ -4021,6 +4051,9 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             break;
         case TOKEN_LAYER:
             is_layer = TRUE;
+            break;
+        case TOKEN_PRIORITY:
+            is_priority = TRUE;
             break;
         case TOKEN_EVENT:
             is_event = TRUE;
@@ -4088,6 +4121,16 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             default:
                 WinDivertFormatNumber(stream, val->val[0]); break;
         }
+    }
+    else if (is_priority)
+    {
+        INT32 val32 = (INT32)val->val[0];
+        val32 -= WINDIVERT_PRIORITY_MAX;
+        if (val32 < 0)
+        {
+            WinDivertPutChar(stream, '-');
+        }
+        WinDivertFormatNumber(stream, (val32 < 0? -val32: val32));
     }
     else if (is_event)
     {
@@ -4387,6 +4430,8 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             WinDivertPutString(stream, "protocol"); return;
         case TOKEN_LAYER:
             WinDivertPutString(stream, "layer"); return;
+        case TOKEN_PRIORITY:
+            WinDivertPutString(stream, "priority"); return;
         case TOKEN_NUMBER:
             WinDivertFormatNumber(stream, expr->val[0]); return;
     }

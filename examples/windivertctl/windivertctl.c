@@ -228,7 +228,7 @@ usage:
             return 0;
         }
         if (GetLastError() == ERROR_INVALID_PARAMETER &&
-            !WinDivertHelperCompileFilter(filter, WINDIVERT_LAYER_FLOW,
+            !WinDivertHelperCompileFilter(filter, WINDIVERT_LAYER_REFLECT,
                 NULL, 0, &err_str, NULL))
         {
             fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);

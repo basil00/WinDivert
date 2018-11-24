@@ -51,11 +51,11 @@ do
         BITS=64
         MANGLE=
     fi
+    HAVE_SYS=yes
     if [ ! -d install/WDDK/$CPU ]
     then
         echo "WARNING: missing WDDK build; run wddk-build.bat first"
-        echo "SKIP MINGW-$CPU"
-        continue
+        HAVE_SYS=no
     fi
     echo "BUILD MINGW-$CPU"
     CC="$ENV-gcc"
@@ -109,8 +109,11 @@ do
         $CC -s -O2 -Iinclude/ examples/socketdump/socketdump.c \
             -o "install/MINGW/$CPU/socketdump.exe" -lWinDivert \
             -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
-        echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
-        cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU
+        if [ $HAVE_SYS = yes ]
+        then
+            echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
+            cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU
+        fi
     else
         echo "WARNING: $CC not found"
     fi

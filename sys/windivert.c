@@ -5063,6 +5063,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                           layer == WINDIVERT_LAYER_REFLECT);
                 break;
             case WINDIVERT_FILTER_FIELD_LAYER:
+            case WINDIVERT_FILTER_FIELD_PRIORITY:
                 result = (layer == WINDIVERT_LAYER_REFLECT);
                 break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
@@ -5659,7 +5660,11 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_LAYER:
-                    field[0] = reflect_data->Layer;
+                    field[0] = (UINT32)reflect_data->Layer;
+                    break;
+                case WINDIVERT_FILTER_FIELD_PRIORITY:
+                    field[0] = (UINT32)((INT32)reflect_data->Priority +
+                        WINDIVERT_PRIORITY_MAX);
                     break;
                 default:
                     return FALSE;
@@ -5841,6 +5846,12 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
                 break;
             case WINDIVERT_FILTER_FIELD_LAYER:
                 if (ioctl_filter[i].arg[0] > WINDIVERT_LAYER_MAX)
+                {
+                    goto windivert_filter_compile_error;
+                }
+                break;
+            case WINDIVERT_FILTER_FIELD_PRIORITY:
+                if (ioctl_filter[i].arg[0] > 2 * WINDIVERT_PRIORITY_MAX)
                 {
                     goto windivert_filter_compile_error;
                 }
