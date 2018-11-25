@@ -366,6 +366,10 @@ static const struct test tests[] =
                                                &pkt_dns_request, FALSE},
     {"ip.DstAddr == ::ffff:8.8.4.4",           &pkt_dns_request, TRUE},
     {"ip.DstAddr == ::0:ffff:8.8.4.4",         &pkt_dns_request, TRUE},
+    {"remoteAddr == 8.8.4.4",                  &pkt_dns_request, TRUE},
+    {"remoteAddr == ::ffff:8.8.4.4",           &pkt_dns_request, TRUE},
+    {"protocol == 17",                         &pkt_dns_request, TRUE},
+    {"remotePort == 53",                       &pkt_dns_request, TRUE},
     {"(ipv6? true: false) or (udp? udp.DstPort != 53: false) or "
      "(not tcp and not udp? true: false)",     &pkt_dns_request, FALSE},
     {"ipv6 or (not tcp and udp.DstPort != 53)",&pkt_dns_request, FALSE},
@@ -437,6 +441,9 @@ static const struct test tests[] =
                                                &pkt_ipv6_exthdrs_udp, TRUE},
     {"udp.SrcPort == 4660 and udp.DstPort == 12345",
                                                &pkt_ipv6_exthdrs_udp, FALSE},
+    {"localAddr == ::1",                       &pkt_ipv6_exthdrs_udp, TRUE},
+    {"localPort == 4660 and remotePort == 43690",
+                                               &pkt_ipv6_exthdrs_udp, TRUE},
     {"(outbound and tcp? tcp.DstPort == 0xABAB: false) or "
      "(outbound and udp? udp.DstPort == 0xAAAA: false) or "
      "(inbound and tcp? tcp.SrcPort == 0xABAB: false) or "

@@ -2957,6 +2957,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                     case WINDIVERT_LAYER_NETWORK:
                         if (!addr->IPv6)
                         {
+                            val[3] = val[2] = 0;
                             val[1] = 0x0000FFFF;
                             val[0] = ntohl((addr->Outbound? iphdr->SrcAddr:
                                                             iphdr->DstAddr));
@@ -3000,6 +3001,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                     case WINDIVERT_LAYER_NETWORK:
                         if (!addr->IPv6)
                         {
+                            val[3] = val[2] = 0;
                             val[1] = 0x0000FFFF;
                             val[0] = ntohl((!addr->Outbound? iphdr->SrcAddr:
                                                              iphdr->DstAddr));

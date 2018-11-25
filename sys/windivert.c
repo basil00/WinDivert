@@ -5470,6 +5470,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                         case WINDIVERT_LAYER_NETWORK:
                             if (ipv4)
                             {
+                                field[3] = field[2] = 0;
                                 field[1] = 0x0000FFFF;
                                 field[0] = (UINT32)RtlUlongByteSwap(
                                     (outbound? ip_header->SrcAddr:
@@ -5521,6 +5522,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                         case WINDIVERT_LAYER_NETWORK:
                             if (ipv4)
                             {
+                                field[3] = field[2] = 0;
                                 field[1] = 0x0000FFFF;
                                 field[0] = (UINT32)RtlUlongByteSwap(
                                     (!outbound? ip_header->SrcAddr:
