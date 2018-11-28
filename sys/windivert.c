@@ -2004,43 +2004,46 @@ static void windivert_read_service_request(context_t context, packet_t packet,
         }
 
         // Copy the address data:
-        addr[i].Timestamp         = (INT64)packet->timestamp;
-        addr[i].Layer             = packet->layer;
-        addr[i].Event             = packet->event;
-        addr[i].Outbound          = packet->outbound;
-        addr[i].Loopback          = packet->loopback;
-        addr[i].Impostor          = packet->impostor;
-        addr[i].IPv6              = packet->ipv6;
-        addr[i].PseudoIPChecksum  = packet->pseudo_ip_checksum;
-        addr[i].PseudoTCPChecksum = packet->pseudo_tcp_checksum;
-        addr[i].PseudoUDPChecksum = packet->pseudo_udp_checksum;
-        addr[i].Reserved          = 0;
-        layer_data = (PVOID)packet->data;
-        switch (packet->layer)
+        if (addr != NULL)
         {
-            case WINDIVERT_LAYER_NETWORK:
-            case WINDIVERT_LAYER_NETWORK_FORWARD:
-                RtlCopyMemory(&addr[i].Network, layer_data,
-                    sizeof(WINDIVERT_DATA_NETWORK));
-                break;
+            addr[i].Timestamp         = (INT64)packet->timestamp;
+            addr[i].Layer             = packet->layer;
+            addr[i].Event             = packet->event;
+            addr[i].Outbound          = packet->outbound;
+            addr[i].Loopback          = packet->loopback;
+            addr[i].Impostor          = packet->impostor;
+            addr[i].IPv6              = packet->ipv6;
+            addr[i].PseudoIPChecksum  = packet->pseudo_ip_checksum;
+            addr[i].PseudoTCPChecksum = packet->pseudo_tcp_checksum;
+            addr[i].PseudoUDPChecksum = packet->pseudo_udp_checksum;
+            addr[i].Reserved          = 0;
+            layer_data = (PVOID)packet->data;
+            switch (packet->layer)
+            {
+                case WINDIVERT_LAYER_NETWORK:
+                case WINDIVERT_LAYER_NETWORK_FORWARD:
+                    RtlCopyMemory(&addr[i].Network, layer_data,
+                        sizeof(WINDIVERT_DATA_NETWORK));
+                    break;
 
-            case WINDIVERT_LAYER_FLOW:
-                RtlCopyMemory(&addr[i].Flow, layer_data,
-                    sizeof(WINDIVERT_DATA_FLOW));
-                break;
+                case WINDIVERT_LAYER_FLOW:
+                    RtlCopyMemory(&addr[i].Flow, layer_data,
+                        sizeof(WINDIVERT_DATA_FLOW));
+                    break;
 
-            case WINDIVERT_LAYER_SOCKET:
-                RtlCopyMemory(&addr[i].Socket, layer_data,
-                    sizeof(WINDIVERT_DATA_SOCKET));
-                break;
+                case WINDIVERT_LAYER_SOCKET:
+                    RtlCopyMemory(&addr[i].Socket, layer_data,
+                        sizeof(WINDIVERT_DATA_SOCKET));
+                    break;
 
-            case WINDIVERT_LAYER_REFLECT:
-                RtlCopyMemory(&addr[i].Reflect, layer_data,
-                    sizeof(WINDIVERT_DATA_REFLECT));
-                break;
+                case WINDIVERT_LAYER_REFLECT:
+                    RtlCopyMemory(&addr[i].Reflect, layer_data,
+                        sizeof(WINDIVERT_DATA_REFLECT));
+                    break;
 
-            default:
-                break;
+                default:
+                    break;
+            }
         }
 
         i++;
@@ -2215,45 +2218,47 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
     addr         = req_context->addr;
     addr_len_ptr = req_context->addr_len_ptr;
 
-    addr->Timestamp         = timestamp;
-    addr->Layer             = layer;
-    addr->Event             = event;
-    addr->Outbound          = (outbound? 1: 0);
-    addr->Loopback          = (loopback? 1: 0);
-    addr->Impostor          = (impostor? 1: 0);
-    addr->IPv6              = (ipv4? 0: 1);
-    addr->PseudoIPChecksum  = (pseudo_ip_checksum? 1: 0);
-    addr->PseudoTCPChecksum = (pseudo_tcp_checksum? 1: 0);
-    addr->PseudoUDPChecksum = (pseudo_udp_checksum? 1: 0);
-    addr->Reserved          = 0;
-    switch (layer)
+    if (addr != NULL)
     {
-        case WINDIVERT_LAYER_NETWORK:
-        case WINDIVERT_LAYER_NETWORK_FORWARD:
-            RtlCopyMemory(&addr->Network, layer_data,
-                sizeof(WINDIVERT_DATA_NETWORK));
-            break;
+        addr->Timestamp         = timestamp;
+        addr->Layer             = layer;
+        addr->Event             = event;
+        addr->Outbound          = (outbound? 1: 0);
+        addr->Loopback          = (loopback? 1: 0);
+        addr->Impostor          = (impostor? 1: 0);
+        addr->IPv6              = (ipv4? 0: 1);
+        addr->PseudoIPChecksum  = (pseudo_ip_checksum? 1: 0);
+        addr->PseudoTCPChecksum = (pseudo_tcp_checksum? 1: 0);
+        addr->PseudoUDPChecksum = (pseudo_udp_checksum? 1: 0);
+        addr->Reserved          = 0;
+        switch (layer)
+        {
+            case WINDIVERT_LAYER_NETWORK:
+            case WINDIVERT_LAYER_NETWORK_FORWARD:
+                RtlCopyMemory(&addr->Network, layer_data,
+                    sizeof(WINDIVERT_DATA_NETWORK));
+                break;
 
-        case WINDIVERT_LAYER_FLOW:
-            RtlCopyMemory(&addr->Flow, layer_data,
-                sizeof(WINDIVERT_DATA_FLOW));
-            break;
+            case WINDIVERT_LAYER_FLOW:
+                RtlCopyMemory(&addr->Flow, layer_data,
+                    sizeof(WINDIVERT_DATA_FLOW));
+                break;
 
-        case WINDIVERT_LAYER_SOCKET:
-            RtlCopyMemory(&addr->Socket, layer_data,
-                sizeof(WINDIVERT_DATA_SOCKET));
-            break;
+            case WINDIVERT_LAYER_SOCKET:
+                RtlCopyMemory(&addr->Socket, layer_data,
+                    sizeof(WINDIVERT_DATA_SOCKET));
+                break;
 
-        case WINDIVERT_LAYER_REFLECT:
-            RtlCopyMemory(&addr->Reflect, layer_data,
-                sizeof(WINDIVERT_DATA_REFLECT));
-            break;
+            case WINDIVERT_LAYER_REFLECT:
+                RtlCopyMemory(&addr->Reflect, layer_data,
+                    sizeof(WINDIVERT_DATA_REFLECT));
+                break;
 
-        default:
-            break;
+            default:
+                break;
+        }
     }
-
-    if (addr_len_ptr)
+    if (addr_len_ptr != NULL)
     {
         *addr_len_ptr = sizeof(WINDIVERT_ADDRESS);
     }
@@ -2683,21 +2688,24 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
                         status);
                     goto windivert_caller_context_error;
                 }
+                if (addr == NULL)
+                {
+                    status = STATUS_INVALID_PARAMETER;
+                    DEBUG_ERROR("null address for RECV ioctl", status);
+                    goto windivert_caller_context_error;
+                }
             }
-            if (addr == NULL)
+            if (addr != NULL)
             {
-                status = STATUS_INVALID_PARAMETER;
-                DEBUG_ERROR("null address for RECV ioctl", status);
-                goto windivert_caller_context_error;
+                status = WdfRequestProbeAndLockUserBufferForWrite(request,
+                    addr, addr_len, &memobj);
+                if (!NT_SUCCESS(status))
+                {
+                    DEBUG_ERROR("invalid address for RECV ioctl", status);
+                    goto windivert_caller_context_error;
+                }
+                addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
             }
-            status = WdfRequestProbeAndLockUserBufferForWrite(request, addr,
-                addr_len, &memobj);
-            if (!NT_SUCCESS(status))
-            {
-                DEBUG_ERROR("invalid address for RECV ioctl", status);
-                goto windivert_caller_context_error;
-            }
-            addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
             break;
 
         case IOCTL_WINDIVERT_SEND:
@@ -5583,6 +5591,16 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                                     (outbound? udp_header->SrcPort:
                                                udp_header->DstPort));
                             }
+                            else if (icmp_header != NULL)
+                            {
+                                field[0] = (outbound?
+                                    (UINT32)icmp_header->Type: 0);
+                            }
+                            else if (icmpv6_header != NULL)
+                            {
+                                field[0] = (outbound?
+                                    (UINT32)icmpv6_header->Type: 0);
+                            }
                             else
                             {
                                 field[0] = 0;
@@ -5613,6 +5631,16 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                                 field[0] = (UINT32)RtlUshortByteSwap(
                                     (!outbound? udp_header->SrcPort:
                                                 udp_header->DstPort));
+                            }
+                            else if (icmp_header != NULL)
+                            {
+                                field[0] = (!outbound?
+                                    (UINT32)icmp_header->Type: 0);
+                            }
+                            else if (icmpv6_header != NULL)
+                            {
+                                field[0] = (!outbound?
+                                    (UINT32)icmpv6_header->Type: 0);
                             }
                             else
                             {

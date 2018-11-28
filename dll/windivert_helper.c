@@ -2192,6 +2192,7 @@ static ERROR WinDivertCompileFilter(const char *filter,
 
         if (!WinDivertDeserializeFilter(&stream, object, obj_len))
         {
+            SetLastError(ERROR_INVALID_PARAMETER);
             return MAKE_ERROR(WINDIVERT_ERROR_BAD_OBJECT, 0);
         }
         return MAKE_ERROR(WINDIVERT_ERROR_NONE, 0);
@@ -3052,6 +3053,14 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                             val[0] = ntohs((addr->Outbound? udphdr->SrcPort:
                                                             udphdr->DstPort));
                         }
+                        else if (icmphdr != NULL)
+                        {
+                            val[0] = (addr->Outbound? icmphdr->Type: 0);
+                        }
+                        else if (icmpv6hdr != NULL)
+                        {
+                            val[0] = (addr->Outbound? icmpv6hdr->Type: 0);
+                        }
                         else
                         {
                             val[0] = 0;
@@ -3081,6 +3090,14 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         {
                             val[0] = ntohs((!addr->Outbound? udphdr->SrcPort:
                                                              udphdr->DstPort));
+                        }
+                        else if (icmphdr != NULL)
+                        {
+                            val[0] = (!addr->Outbound? icmphdr->Type: 0);
+                        }
+                        else if (icmpv6hdr != NULL)
+                        {
+                            val[0] = (!addr->Outbound? icmpv6hdr->Type: 0);
                         }
                         else
                         {
@@ -3668,6 +3685,7 @@ static PEXPR WinDivertCoalesceAndOr(HANDLE pool, PEXPR *exprs, UINT8 i,
     PEXPR expr, next_expr, new_expr;
     BOOL singleton;
     static const EXPR true_expr  = {{{0}}, TOKEN_TRUE};
+    static const EXPR false_expr = {{{0}}, TOKEN_FALSE};
     
     expr = exprs[i];
     while (TRUE)
@@ -3739,8 +3757,22 @@ static PEXPR WinDivertCoalesceAndOr(HANDLE pool, PEXPR *exprs, UINT8 i,
                 }
                 else if (next_expr->fail == expr->succ)
                 {
-                    expr = WinDivertSimplifyAndOr(pool, exprs, expr,
-                        /*and=*/TRUE, expr->fail, expr->succ);
+                    new_expr = (PEXPR)HeapAlloc(pool, HEAP_ZERO_MEMORY,
+                        sizeof(EXPR));
+                    if (new_expr == NULL)
+                    {
+                        return NULL;
+                    }
+                    new_expr->kind   = TOKEN_QUESTION;
+                    new_expr->arg[0] = expr;
+                    new_expr->arg[1] = (PEXPR)&false_expr;
+                    new_expr->arg[2] = next_expr;
+                    new_expr->succ   = next_expr->succ;
+                    new_expr->fail   = next_expr->fail;
+                    new_expr->count  = expr->count;
+                    WinDivertDerefExpr(exprs, expr->succ);
+                    WinDivertDerefExpr(exprs, expr->fail);
+                    expr = new_expr;
                     continue;
                 }
                 break;

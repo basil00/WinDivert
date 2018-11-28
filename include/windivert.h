@@ -220,7 +220,7 @@ extern WINDIVERTEXPORT HANDLE WinDivertOpen(
  */
 extern WINDIVERTEXPORT BOOL WinDivertRecv(
     __in        HANDLE handle,
-    __out       VOID *pPacket,
+    __out_opt   VOID *pPacket,
     __in        UINT packetLen,
     __out_opt   WINDIVERT_ADDRESS *pAddr,
     __out_opt   UINT *pReadLen);
@@ -230,7 +230,7 @@ extern WINDIVERTEXPORT BOOL WinDivertRecv(
  */
 extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
     __in        HANDLE handle,
-    __out       PVOID pPacket,
+    __out_opt   VOID *pPacket,
     __in        UINT packetLen,
     __out_opt   UINT *pReadLen,
     __in        UINT64 flags,

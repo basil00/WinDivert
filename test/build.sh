@@ -35,8 +35,11 @@
 # Script for MinGW/Linux cross compilation.
 # NOTE: run wddk-build.bat before this script.
 
-CC=x86_64-w64-mingw32-gcc
+CC=i686-w64-mingw32-gcc
+$CC -fno-ident -s -O2 -I../include/ test.c \
+    -o ../install/MINGW/i386/test.exe -lWinDivert -L"../install/MINGW/i386/" 
 
-$CC -fno-ident -s -O2 -I../include/ test.c -o test.exe -lWinDivert \
-    -L"../install/MINGW/amd64/"
+CC=x86_64-w64-mingw32-gcc
+$CC -fno-ident -s -O2 -I../include/ test.c -o ../install/MINGW/amd64/test.exe \
+    -lWinDivert -L"../install/MINGW/amd64/"
 
