@@ -127,5 +127,111 @@ WinDivert 1.4.2
     - Add workaround for pseudo checksum issue (see #134).
 WinDivert 1.4.3
     - WinDivert.dll no longer depends on MSVCRT*.dll.
-WinDivert 1.4.4
-    - Optimize pseudo checksum calculation.
+WinDivert 2.0.0-rc
+    - Add 3 new layers:
+      * WINDIVERT_LAYER_FLOW for tracking network "flow" events.
+      * WINDIVERT_LAYER_SOCKET for tracking "socket" events.
+      * WINDIVERT_LAYER_REFLECT for tracking WinDivert events.
+    - WINDIVERT_ADDRESS has been re-factored as follows:
+      * addr.Layer: The WINDIVERT_LAYER_* value for the handle.
+      * addr.Event: A WINDIVERT_EVENT_* value representing the event (see
+        below).
+      * addr.Outbound: Replaces addr.Direction.
+      * addr.IPv6: Indicates an IPv6 packet.
+      * addr.Network.IfIdx: Replaces addr.IfIdx.
+      * addr.Network.SubIfIdx: Replaces addr.SubIfIdx.
+      * addr.Flow.ProcessId: The ID of process that created the flow.
+      * addr.Flow.LocalAddr: The flow's local address.
+      * addr.Flow.RemoteAddr: The flow's remote address.
+      * addr.Flow.LocalPort: The flow's local port.
+      * addr.Flow.RemotePort: The flow's remote port.
+      * addr.Flow.Protocol: The flow's protocol.
+      * addr.Socket.ProcessId: The ID of process that created the socket.
+      * addr.Socket.LocalAddr: The socket's local address.
+      * addr.Socket.RemoteAddr: The socket's remote address.
+      * addr.Socket.LocalPort: The socket's local port.
+      * addr.Socket.RemotePort: The socket's remote port.
+      * addr.Socket.Protocol: The socket's protocol.
+      * addr.Reflect.ProcessId: The ID of process that created opened the
+        handle.
+      * addr.Reflect.Timestamp: The timestamp of the handle.
+      * addr.Reflect.Layer: The layer of the handle.
+      * addr.Reflect.Flags: The flags of the handle.
+      * addr.Reflect.Priority: The priority of the handle.
+    - The addr.Event field can take the following values:
+      * WINDIVERT_EVENT_NETWORK_PACKET: (NETWORK/NETWORK_FORWARD layers) a new
+        packet was diverted.
+      * WINDIVERT_EVENT_FLOW_ESTABLISHED: (FLOW layer) a new flow is
+        established.
+      * WINDIVERT_EVENT_FLOW_DELETED: (FLOW layer) an existing flow is
+        deleted.
+      * WINDIVERT_EVENT_SOCKET_BIND: (SOCKET layer) a socket bind()
+        operation occurred.
+      * WINDIVERT_EVENT_SOCKET_LISTEN: (SOCKET layer) a socket listen()
+        operation occurred.
+      * WINDIVERT_EVENT_SOCKET_CONNECT: (SOCKET layer) a socket connect()
+        operation occurred.
+      * WINDIVERT_EVENT_SOCKET_ACCEPT: (SOCKET layer) a socket accept()
+        operation occurred.
+      * WINDIVERT_EVENT_REFLECT_OPEN: (REFLECT layer) a WinDivertOpen()
+        operation occurred.
+      * WINDIVERT_EVENT_REFLECT_CLOSE: (REFLECT layer) a WinDivertClose()
+        operation occurred.
+    - The WinDivert filter language has been expanded with new fields:
+      * event: The event value.
+      * processId: (FLOW/SOCKET/REFLECT layers) the process Id.
+      * localAddr: (NETWORK/NETWORK_FORWARD/FLOW/SOCKET layers) the local
+        address.
+      * localPort: (NETWORK/NETWORK_FORWARD/FLOW/SOCKET layers) the local
+        port.
+      * remoteAddr: (NETWORK/NETWORK_FORWARD/FLOW/SOCKET layers) the remote
+        address.
+      * remotePort: (NETWORK/NETWORK_FORWARD/FLOW/SOCKET layers) the remote
+        port.
+      * protocol: (NETWORK/NETWORK_FORWARD/FLOW/SOCKET layers) the protocol.
+      * priority: (REFLECT layer) the handle's priority.
+      * layer: (REFLECT layer) the handle's layer.
+      * random8: (NETWORK/NETWORK_FORWARD layers) an 8-bit pseudo random
+        number.
+      * random16: (NETWORK/NETWORK_FORWARD layers) a 16-bit pseudo random
+        number.
+      * random32: (NETWORK/NETWORK_FORWARD layers) a 32-bit pseudo random
+        number.
+      * zero: The value "0".
+    - The WinDivert filter language can now address packet/payload data for
+      the NETWORK/NETWORK_FORWARD layers:
+      * packet[i]: the ith packet byte.
+      * packet16[i]: the ith packet 16bit word.
+      * packet32[i]: the ith packet 32bit word.
+      * tcp.payload[i]: the ith TCP payload byte.
+      * tcp.payload16[i]: the ith TCP 16bit word.
+      * tcp.payload32[i]: the ith TCP 32bit word.
+      * udp.payload[i]: the ith UDP payload byte.
+      * udp.payload16[i]: the ith UDP 16bit word.
+      * udp.payload32[i]: the ith UDP 32bit word.
+      The index (i) can be:
+      * An ordinary integer representing word addressing.
+      * A 'b' decorated integer representing byte-level addressing.
+      Furthermore, the index can be:
+      * Positive, representing addressing from the start of the
+        packet/payload.
+      * Negative, representing addressing from the end of the packet/payload.
+    - The WinDivert filter language now supports several symbolic values:
+      * ACCEPT: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_ACCEPT.
+      * BIND: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_BIND.
+      * CLOSE: (REFLECT layer) equal to WINDIVERT_EVENT_REFLECT_CLOSE.
+      * DELETED: (FLOW LAYER) equal to WINDIVERT_EVENT_FLOW_DELETED.
+      * ESTABLISHED: (FLOW layer) equal to WINDIVERT_EVENT_FLOW_ESTABLISHED.
+      * FLOW: (REFLECT layer) equal to WINDIVERT_LAYER_FLOW.
+      * LISTEN: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_LISTEN.
+      * NEWORK: (REFLECT layer) equal to WINDIVERT_LAYER_NETWORK.
+      * NEWORK_FORWARD: (REFLECT layer) equal to
+        WINDIVERT_LAYER_NETWORK_FORWARD.
+      * OPEN: (REFLECT layer) equal to WINDIVERT_EVENT_REFLECT_OPEN.
+      * PACKET: (NETWORK/NETWORK_FORWARD layers) equal to
+        WINDIVERT_EVENT_NETWORK_PACKET
+      * REFLECT: (REFLECT layer) equal to WINDIVERT_LAYER_REFLECT.
+      * SOCKET: (REFLECT layer) equal to WINDIVERT_LAYER_SOCKET.
+
+TODO
+
