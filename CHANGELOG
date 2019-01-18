@@ -224,14 +224,44 @@ WinDivert 2.0.0-rc
       * ESTABLISHED: (FLOW layer) equal to WINDIVERT_EVENT_FLOW_ESTABLISHED.
       * FLOW: (REFLECT layer) equal to WINDIVERT_LAYER_FLOW.
       * LISTEN: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_LISTEN.
-      * NEWORK: (REFLECT layer) equal to WINDIVERT_LAYER_NETWORK.
-      * NEWORK_FORWARD: (REFLECT layer) equal to
+      * NETWORK: (REFLECT layer) equal to WINDIVERT_LAYER_NETWORK.
+      * NETWORK_FORWARD: (REFLECT layer) equal to
         WINDIVERT_LAYER_NETWORK_FORWARD.
       * OPEN: (REFLECT layer) equal to WINDIVERT_EVENT_REFLECT_OPEN.
       * PACKET: (NETWORK/NETWORK_FORWARD layers) equal to
         WINDIVERT_EVENT_NETWORK_PACKET
       * REFLECT: (REFLECT layer) equal to WINDIVERT_LAYER_REFLECT.
       * SOCKET: (REFLECT layer) equal to WINDIVERT_LAYER_SOCKET.
-
-TODO
-
+    - WinDivertOpen() now supports several new flags:
+      * WINDIVERT_FLAG_RECV_ONLY/WINDIVERT_FLAG_READ_ONLY: The handle cannot
+        be used for send operations.
+      * WINDIVERT_FLAG_SEND_ONLY/WINDIVERT_FLAG_WRITE_ONLY: The handle cannot
+        be used for receive operations.
+      * WINDIVERT_FLAG_RECV_PARTIAL: The handle will support partial receives,
+        meaning that the buffer can be smaller than the packet.
+      * WINDIVERT_FLAG_NO_INSTALL: If the WinDivert driver is not already
+        installed/loaded, then WinDivertOpen() will fail with an error.
+    - WinDivertRecvEx()/WinDivertSendEx() now support a "batch" mode that
+      allows more than one packet to be received/sent at once.  The number
+      of packets is determined by a new pAddrLen/addrLen parameter.
+    - Add a new WinDivertShutdown() function that supports the following
+      modes:
+      * WINDIVERT_SHUTDOWN_RECV: Disable the queuing new packets.
+      * WINDIVERT_SHUTDOWN_SEND: Disable the sending of new packets.
+      * WINDIVERT_SHUTDOWN_BOTH: Equivalent to
+        (WINDIVERT_SHUTDOWN_RECV | WINDIVERT_SHUTDOWN_SEND).
+    - Add a new WinDivertHelperHashPacket() helper function that calculates
+      a 64bit hash value of a packet.
+    - Add new WinDivertHelperFormatIPv4Address() and
+      WinDivertHelperFormatIPv6Address() helper functions that format
+      IPv4 and IPv6 addresses respectively.
+    - Replace WinDivertHelperCheckFilter() with a new
+      WinDivertHelperCompileFilter() helper function.  The latter can also be
+      used to compile a human-readable filter string into a more compact
+      "object" format.  The object format can be used in place of the
+      human readable format for all WinDivert operations.
+    - Add a new WinDivertHelperFormatFilter() helper function that formats a
+      filter string into a normalized form.  It also can be used to
+      "de-compile" the object format into a human readable form.
+    - Add new WinDivertHelperNto*()/WinDivertHelperHton*() helper functions
+      for swapping from network to host byte ordering, and vice versa.
