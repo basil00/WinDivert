@@ -22,9 +22,10 @@
 <li><a href="#divert_recv_ex">5.4 WinDivertRecvEx</a></li>
 <li><a href="#divert_send">5.5 WinDivertSend</a></li>
 <li><a href="#divert_send_ex">5.6 WinDivertSendEx</a></li>
-<li><a href="#divert_close">5.7 WinDivertClose</a></li>
-<li><a href="#divert_set_param">5.8 WinDivertSetParam</a></li>
-<li><a href="#divert_get_param">5.9 WinDivertGetParam</a></li>
+<li><a href="#divert_shutdown">5.7 WinDivertShutdown</a></li>
+<li><a href="#divert_close">5.8 WinDivertClose</a></li>
+<li><a href="#divert_set_param">5.9 WinDivertSetParam</a></li>
+<li><a href="#divert_get_param">5.10 WinDivertGetParam</a></li>
 </ul>
 <li><a href="#helper_programming_api">6. Helper Programming API</a></li>
 <ul>
@@ -857,7 +858,83 @@ supports overlapped I/O via the <tt>lpOverlapped</tt> parameter.
 </p>
 </dd></dl>
 
-<a name="divert_close"><h3>5.7 WinDivertClose</h3></a>
+<a name="divert_shutdown"><h3>5.7 WinDivertShutdown</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertShutdown</b>(
+    __in HANDLE handle,
+    __in WINDIVERT_SHUTDOWN how);
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>handle</tt>: A valid WinDivert handle created by
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
+<li> <tt>how</tt>: A <tt>WINDIVERT_SHUTDOWN</tt> value to indicate how
+     the handle should be shutdown.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if successful, <tt>FALSE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+This operation causes all or part of a WinDivert handle to be shut down.
+The possible values for <tt>how</tt> are:
+</p>
+<p>
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+How
+</th>
+<th>
+Description
+</th>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_SHUTDOWN_RECV</tt>
+</td>
+<td>
+Stop new packets being queued for
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_SHUTDOWN_SEND</tt>
+</td>
+<td>
+Stop new packets being injected via
+<a href="#divert_send"><tt>WinDivertSend()</tt></a>.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_SHUTDOWN_BOTH</tt>
+</td>
+<td>
+Equivalent to <tt>(WINDIVERT_SHUTDOWN_RECV | WINDIVERT_SHUTDOWN_SEND)</tt>.
+</td>
+</tr>
+</table>
+</center>
+</p>
+<p>
+Note that previously queued packets can still be received after
+<tt>WINDIVERT_SHUTDOWN_RECV</tt>.
+When the packet queue is empty,
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>
+will fail with <tt>ERROR_NO_DATA</tt>.
+</p>
+<dd></dl>
+
+<a name="divert_close"><h3>5.8 WinDivertClose</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertClose</b>(
@@ -883,7 +960,7 @@ Closes a WinDivert handle created by
 </p>
 <dd></dl>
 
-<a name="divert_set_param"><h3>5.8 WinDivertSetParam</h3></a>
+<a name="divert_set_param"><h3>5.9 WinDivertSetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertSetParam</b>(
@@ -962,7 +1039,7 @@ and the maximum is 33554432 (32MB).
 </p>
 <dd></dl>
 
-<a name="divert_get_param"><h3>5.9 WinDivertGetParam</h3></a>
+<a name="divert_get_param"><h3>5.10 WinDivertGetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertGetParam</b>(
