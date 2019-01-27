@@ -39,7 +39,7 @@
 <li><a href="#divert_help_parse_ipv4_address">6.8 WinDivertHelperParseIPv4Address</li>
 <li><a href="#divert_help_parse_ipv6_address">6.9 WinDivertHelperParseIPv6Address</li>
 <li><a href="#divert_helper_calc_checksums">6.10 WinDivertHelperCalcChecksums</a></li>
-<li><a href="#divert_helper_check_filter">6.11 WinDivertHelperCheckFilter</a></li>
+<li><a href="#divert_helper_compile_filter">6.11 WinDivertHelperCompileFilter</a></li>
 <li><a href="#divert_helper_eval_filter">6.12 WinDivertHelperEvalFilter</a></li>
 </ul>
 <li><a href="#filter_language">7. Filter Language</a></li>
@@ -1445,12 +1445,14 @@ order to (re)inject the packet.
 </p>
 </dd></dl>
 
-<a name="divert_helper_check_filter"><h3>6.11 WinDivertHelperCheckFilter</h3></a>
+<a name="divert_helper_compile_filter"><h3>6.11 WinDivertHelperCompileFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>WinDivertHelperCheckFilter</b>(
+BOOL <b>WinDivertHelperCompileFilter</b>(
     __in const char *filter,
     __in WINDIVERT_LAYER layer,
+    __out_opt char *object,
+    __in UINT objLen,
     __out_opt const char **errorStr,
     __out_opt UINT *errorPos
 );
@@ -1461,18 +1463,32 @@ BOOL <b>WinDivertHelperCheckFilter</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>filter</tt>: The packet filter string to be checked.</li>
-<li> <tt>layer</tt>: The layer.
+<li> <tt>layer</tt>: The layer.</li>
+<li> <tt>object</tt>: The compiled filter object.</li>
+<li> <tt>objLen</tt>: The length of the <tt>object</tt> buffer.</li>
 <li> <tt>errorStr</tt>: The error description.</li>
 <li> <tt>errorPos</tt>: The error position.</li>
 </ul>
 </p><p>
 <b>Return Value</b><br>
-<tt>TRUE</tt> if the packet filter string is valid, <tt>FALSE</tt> otherwise.
+<tt>TRUE</tt> if the packet filter compilation is successful, <tt>FALSE</tt>
+otherwise.
 </p><p>
 <b>Remarks</b><br>
-Checks if the given packet filter string is valid with respect to the
+Compiles the given packet filter string into a compact <q>object</q>
+representation that is optionally stored in <tt>object</tt> if non-NULL.
+The <q>object</q> representation is a valid null terminated C string, but is
+otherwise opaque and not meant to be human readable.
+The object representation can be passed to all WinDivert functions,
+such as <a href="#divert_open"><tt>WinDivertOpen()</tt></a>, in place of the
+human-readable filter string equivalent.
+</p>
+<p>
+The compilation operation will succeed if the given filter string is
+valid with respect to the
 <a href="#filter_language">filter language</a>.
-If the filter is invalid, then a human readable description of the error is
+Otherwise, if the filter is invalid, then a human readable description of
+the error is
 returned by <tt>errorStr</tt> (if non-<tt>NULL</tt>), and the error's
 position is returned by <tt>errorPos</tt> (if non-<tt>NULL</tt>).
 </p><p>
@@ -1486,7 +1502,6 @@ objects, and therefore do not need to be deallocated.
 <pre>
 BOOL <b>WinDivertHelperEvalFilter</b>(
     __in const char *filter,
-    __in WINDIVERT_LAYER layer,
     __in PVOID pPacket,
     __in UINT packetLen,
     __in PWINDIVERT_ADDRESS pAddr
@@ -1498,7 +1513,6 @@ BOOL <b>WinDivertHelperEvalFilter</b>(
 <b>Parameters</b><br>
 <ul>
 <li> <tt>filter</tt>: The packet filter string to be evaluated.</li>
-<li> <tt>layer</tt>: The layer.
 <li> <tt>pPacket</tt>: The packet.</li>
 <li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
 <li> <tt>pAddr</tt>: The <tt>WINDIVERT_ADDRESS</tt> of the packet
@@ -1521,7 +1535,10 @@ Otherwise, if no error occurred, <tt>GetLastError()</tt> will return
 </p><p>
 Note that this function is relatively slow since the packet filter string
 will be (re)compiled for each call.
-This function is mainly intended for debugging or testing purposes.
+This overhead can be minimized by pre-compiling the filter string into the
+object representation using the <a
+href="#divert_helper_compile_filter">WinDivertHelperCompileFilter()</a>
+function.
 <p>
 </dd></dl>
 
