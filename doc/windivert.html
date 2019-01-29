@@ -1610,27 +1610,50 @@ The possible fields are:
 </p><p>
 <center>
 <table border="1" cellpadding="5">
-<tr><th>Field</th><th>Description</th></tr>
-<tr><td><tt>outbound</tt></td><td>Is outbound? (only valid for <tt>WINDIVERT_LAYER_NETWORK</tt>)</td></tr>
-<tr><td><tt>inbound</tt></td><td>Is inbound? (only valid for <tt>WINDIVERT_LAYER_NETWORK</tt>)</td></tr>
-<tr><td><tt>ifIdx</tt></td><td>Interface index</td></tr>
-<tr><td><tt>subIfIdx</tt></td><td>Sub-interface index</td></tr>
-<tr><td><tt>loopback</tt></td><td>Is loopback packet?</td></tr>
-<tr><td><tt>impostor</tt></td><td>Is impostor packet?</td></tr>
-<tr><td><tt>ip</tt></td><td>Is IPv4?</td></tr>
-<tr><td><tt>ipv6</tt></td><td>Is IPv6?</td></tr>
-<tr><td><tt>icmp</tt></td><td>Is ICMP?</td></tr>
-<tr><td><tt>icmpv6</tt></td><td>Is ICMPv6?</td></tr>
-<tr><td><tt>tcp</tt></td><td>Is TCP?</td></tr>
-<tr><td><tt>udp</tt></td><td>Is UDP?</td></tr>
-<tr><td><tt>ip.*</tt></td><td>IPv4 fields (see <tt>WINDIVERT_IPHDR</tt>)</td></tr>
-<tr><td><tt>ipv6.*</tt></td><td>IPv6 fields (see <tt>WINDIVERT_IPV6HDR</tt>)</td></tr>
-<tr><td><tt>icmp.*</tt></td><td>ICMP fields (see <tt>WINDIVERT_ICMPHDR</tt>)</td></tr>
-<tr><td><tt>icmpv6.*</tt></td><td>ICMPV6 fields (see <tt>WINDIVERT_ICMPV6HDR</tt>)</td></tr>
-<tr><td><tt>tcp.*</tt></td><td>TCP fields (see <tt>WINDIVERT_TCPHDR</tt>)</td></tr>
-<tr><td><tt>tcp.PayloadLength</tt></td><td>The TCP payload length</td></tr>
-<tr><td><tt>udp.*</tt></td><td>UDP fields (see <tt>WINDIVERT_UDPHDR</tt>)</td></tr>
-<tr><td><tt>udp.PayloadLength</tt></td><td>The UDP payload length</td></tr>
+<tr><th>Field</th><th colspan="5">Layer</th><th>Description</th></tr>
+<tr><th></th><th><tt>NETWORK</tt></th><th><tt>FORWARD</tt></th><th><tt>FLOW&nbsp;&nbsp;&nbsp;</tt></th><th><tt>SOCKET&nbsp;</tt></th><th><tt>REFLECT</tt></th><th></th></tr>
+<tr><td><tt>zero</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The value zero</td></tr>
+<tr><td><tt>event</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The event</td></tr>
+<tr><td><tt>outbound</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is outbound?</td></tr>
+<tr><td><tt>inbound</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is inbound?</td></tr>
+<tr><td><tt>ifIdx</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Interface index</td></tr>
+<tr><td><tt>subIfIdx</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Sub-interface index</td></tr>
+<tr><td><tt>loopback</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is loopback packet?</td></tr>
+<tr><td><tt>impostor</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Is impostor packet?</td></tr>
+<tr><td><tt>processId</tt></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>Process ID</td></tr>
+<tr><td><tt>random8</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>8-bit random number</td></tr>
+<tr><td><tt>random16</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>16-bit random number</td></tr>
+<tr><td><tt>random32</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>32-bit random number</td></tr>
+<tr><td><tt>layer</tt></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td>The handle's layer</td></tr>
+<tr><td><tt>priority</tt></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td>The handle's priority</td></tr>
+<tr><td><tt>packet[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 8-bit word of the packet</td></tr>
+<tr><td><tt>packet16[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 16-bit word of the packet</td></tr>
+<tr><td><tt>packet32[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 32-bit word of the packet</td></tr>
+<tr><td><tt>ip</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv4?</td></tr>
+<tr><td><tt>ipv6</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv6?</td></tr>
+<tr><td><tt>icmp</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMP?</td></tr>
+<tr><td><tt>icmpv6</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMPv6?</td></tr>
+<tr><td><tt>tcp</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is TCP?</td></tr>
+<tr><td><tt>udp</tt></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is UDP?</td></tr>
+<tr><td><tt>protocol</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The protocol</td></tr>
+<tr><td><tt>localAddr</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The local address</td></tr>
+<tr><td><tt>localPort</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The local port</td></tr>
+<tr><td><tt>remoteAddr</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote address</td></tr>
+<tr><td><tt>remotePort</tt></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote port</td></tr>
+<tr><td><tt>ip.*</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv4 fields (see <tt>WINDIVERT_IPHDR</tt>)</td></tr>
+<tr><td><tt>ipv6.*</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv6 fields (see <tt>WINDIVERT_IPV6HDR</tt>)</td></tr>
+<tr><td><tt>icmp.*</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>ICMP fields (see <tt>WINDIVERT_ICMPHDR</tt>)</td></tr>
+<tr><td><tt>icmpv6.*</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>ICMPV6 fields (see <tt>WINDIVERT_ICMPV6HDR</tt>)</td></tr>
+<tr><td><tt>tcp.*</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>TCP fields (see <tt>WINDIVERT_TCPHDR</tt>)</td></tr>
+<tr><td><tt>tcp.PayloadLength</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The TCP payload length</td></tr>
+<tr><td><tt>tcp.Payload[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 8-bit word of the TCP payload</td></tr>
+<tr><td><tt>tcp.Payload16[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 16-bit word of the TCP payload</td></tr>
+<tr><td><tt>tcp.Payload32[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 32-bit word of the TCP payload</td></tr>
+<tr><td><tt>udp.*</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>UDP fields (see <tt>WINDIVERT_UDPHDR</tt>)</td></tr>
+<tr><td><tt>udp.PayloadLength</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The UDP payload length</td></tr>
+<tr><td><tt>udp.Payload[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 8-bit word of the UDP payload</td></tr>
+<tr><td><tt>udp.Payload16[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 16-bit word of the UDP payload</td></tr>
+<tr><td><tt>udp.Payload32[i]</tt></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <tt>i</tt><sup>th</sup> 32-bit word of the UDP payload</td></tr>
 </table>
 </center>
 </p><p>
