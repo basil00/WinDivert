@@ -16,16 +16,17 @@
 <li><a href="#uninstalling">4. Uninstalling</a></li>
 <li><a href="#programming_api">5. Programming API</a></li>
 <ul>
-<li><a href="#divert_address">5.1 WINDIVERT_ADDRESS</a></li>
-<li><a href="#divert_open">5.2 WinDivertOpen</a></li>
-<li><a href="#divert_recv">5.3 WinDivertRecv</a></li>
-<li><a href="#divert_recv_ex">5.4 WinDivertRecvEx</a></li>
-<li><a href="#divert_send">5.5 WinDivertSend</a></li>
-<li><a href="#divert_send_ex">5.6 WinDivertSendEx</a></li>
-<li><a href="#divert_shutdown">5.7 WinDivertShutdown</a></li>
-<li><a href="#divert_close">5.8 WinDivertClose</a></li>
-<li><a href="#divert_set_param">5.9 WinDivertSetParam</a></li>
-<li><a href="#divert_get_param">5.10 WinDivertGetParam</a></li>
+<li><a href="#divert_layers">5.1 Layers</a></li>
+<li><a href="#divert_address">5.2 WINDIVERT_ADDRESS</a></li>
+<li><a href="#divert_open">5.3 WinDivertOpen</a></li>
+<li><a href="#divert_recv">5.4 WinDivertRecv</a></li>
+<li><a href="#divert_recv_ex">5.5 WinDivertRecvEx</a></li>
+<li><a href="#divert_send">5.6 WinDivertSend</a></li>
+<li><a href="#divert_send_ex">5.7 WinDivertSendEx</a></li>
+<li><a href="#divert_shutdown">5.8 WinDivertShutdown</a></li>
+<li><a href="#divert_close">5.9 WinDivertClose</a></li>
+<li><a href="#divert_set_param">5.10 WinDivertSetParam</a></li>
+<li><a href="#divert_get_param">5.11 WinDivertGetParam</a></li>
 </ul>
 <li><a href="#helper_programming_api">6. Helper Programming API</a></li>
 <ul>
@@ -238,20 +239,241 @@ To use the WinDivert package, a program/application must:
 library.</li>
 </ol>
 
-<a name="divert_address"><h3>5.1 WINDIVERT_ADDRESS</h3></a>
+<a name="divert_layers"><h3>5.1 WINDIVERT_LAYER</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef enum
+{
+    WINDIVERT_LAYER_NETWORK = 0,
+    WINDIVERT_LAYER_NETWORK_FORWARD,
+    WINDIVERT_LAYER_FLOW,
+    WINDIVERT_LAYER_SOCKET,
+    WINDIVERT_LAYER_REFLECT,
+} <b>WINDIVERT_LAYER</b>, *<b>PWINDIVERT_LAYER</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Remarks</b><br>
+<p>
+WinDivert supports several <i>layers</i> for diverting or capturing
+network packets/events.
+Each layer has its own capabilities, such as the ability to block
+events or to inject new events, etc.
+The list of supported WinDivert layers is summarized below:
+</p>
+<p>
+<center>
+<table border="1" cellpadding="5">
+<tr>
+<th>Layer</th>
+<th colspan="4">Capability</th>
+<th>Description</th>
+</tr>
+<tr>
+<th>
+</th>
+<th>
+Block?
+</th>
+<th>
+Inject?
+</th>
+<th>
+Data?
+</th>
+<th>
+PID?
+</th>
+<th>
+</th>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_NETWORK</tt>
+</td>
+<td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td>
+<td>
+Network packets to/from the local machine.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_NETWORK_FORWARD</tt>
+</td>
+<td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td>
+<td>
+Network packets passing through the local machine.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_FLOW</tt>
+</td>
+<td></td><td></td><td></td><td>&#10004;</td>
+<td>
+Network flow established/deleted events.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_SOCKET</tt>
+</td>
+<td>&#10004;</td><td></td><td></td><td>&#10004;</td>
+<td>
+Socket operation events.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_REFLECT</tt>
+</td>
+<td></td><td></td><td>&#10004;</td><td>&#10004;</td>
+<td>
+WinDivert handle events.
+</td>
+</tr>
+</table>
+</center>
+</p>
+<p>
+Here, the layer capabilities are:
+</p>
+<ul>
+<li> (Block?) the layer can block events/packets;</li>
+<li> (Inject?) the layer can inject new events/packets;</li>
+<li> (Data?) whether the layer returns packet data or not; and</li>
+<li> (PID?) whether the <i>process ID</i> for the process associated with
+     an event/packet is available at this layer, or not.
+</ul>
+<p>
+Both <tt>WINDIVERT_LAYER_NETWORK</tt> and
+<tt>WINDIVERT_LAYER_NETWORK_FORWARD</tt> represent the <q>traditional</q>
+WinDivert layers, allowing the user application to capture/block/inject
+network packets passing to/from/through the local machine.
+This layer only supports one event, namely:
+</p>
+<ul>
+<li> <tt>WINDIVERT_EVENT_NETWORK_PACKET</tt>: A network packet.
+</ul>
+Due to technical limitations, process ID information is not available
+at this layer.
+<p>
+The <tt>WINDIVERT_LAYER_FLOW</tt> layer captures information about
+network flow establishment/deletion events.
+Here, a <i>flow</i> represents a <q>packet flow</q>, meaning either a
+TCP connection, or an implicit <q>flow</q> created by the first sent/received
+packet for non-TCP traffic, e.g., UDP.
+The <tt>WINDIVERT_LAYER_FLOW</tt> layer supports two events:
+</p>
+<ul>
+<li> <tt>WINDIVERT_EVENT_FLOW_ESTABLISHED</tt>: A new flow is created.</li>
+<li> <tt>WINDIVERT_EVENT_FLOW_DELETED</tt>: An old flow is deleted.</li>
+</ul>
+<p>
+Flows can be captured, but never blocked or injected.
+Process ID information is available at this layer.
+Due to technical limitations, the
+<tt>WINDIVERT_LAYER_FLOW</tt> layer cannot capture events that
+occurred before the WinDivert handle was opened.
+</p>
+<p>
+The <tt>WINDIVERT_LAYER_SOCKET</tt> layer captures/blocks events that
+correspond to socket operations, such as:
+</p>
+<ul>
+<li> <tt>WINDIVERT_EVENT_SOCKET_BIND</tt>: A <tt>bind()</tt> operation.</li>
+<li> <tt>WINDIVERT_EVENT_SOCKET_LISTEN</tt>: A <tt>listen()</tt> operation.</li>
+<li> <tt>WINDIVERT_EVENT_SOCKET_CONNECT</tt>: A <tt>connect()</tt>
+    operation.</li>
+<li> <tt>WINDIVERT_EVENT_SOCKET_ACCEPT</tt>: An <tt>accept()</tt>
+    operation.</li>
+</ul>
+<p>
+Socket events can be blocked but not injected.
+Process ID information is available at this layer.
+Due to technical limitations, the
+<tt>WINDIVERT_LAYER_SOCKET</tt> layer cannot capture events that
+occurred before the WinDivert handle was opened.
+</p>
+<p>
+Finally, the <tt>WINDIVERT_LAYER_REFLECT</tt> layer captures events related
+to WinDivert itself, such as:
+</p>
+<ul>
+<li> <tt>WINDIVERT_EVENT_REFLECT_OPEN</tt>: A new WinDivert handle was
+    opened.</li>
+<li> <tt>WINDIVERT_EVENT_REFLECT_CLOSE</tt>: An old WinDivert handle was
+    closed.</li>
+</ul>
+<p>
+These events can be captured, but not injected nor blocked.
+Process ID information is available at this layer,
+meaning that it is possible to determine which (if any) process is using
+WinDivert.
+The layer also returns a <q>pseudo packet</q> that encodes the filter string
+associated with the event.
+The <tt>WINDIVERT_LAYER_REFLECT</tt> layer can also capture events that
+occurred before the handle was opened.
+</p>
+</dd></dl>
+
+<a name="divert_address"><h3>5.2 WINDIVERT_ADDRESS</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
 {
-    INT64  Timestamp;
     UINT32 IfIdx;
     UINT32 SubIfIdx;
-    UINT8  Direction:1;
-    UINT8  Loopback:1;
-    UINT8  Impostor:1;
-    UINT8  PseudoIPChecksum:1;
-    UINT8  PseudoTCPChecksum:1;
-    UINT8  PseudoUDPChecksum:1;
+} <b>WINDIVERT_DATA_NETWORK</b>, *<b>PWINDIVERT_DATA_NETWORK</b>;
+
+typedef struct
+{
+    UINT32 ProcessId;
+    UINT32 LocalAddr[4];
+    UINT32 RemoteAddr[4];
+    UINT16 LocalPort;
+    UINT16 RemotePort;
+    UINT8  Protocol;
+} <b>WINDIVERT_DATA_FLOW</b>, *<b>PWINDIVERT_DATA_FLOW</b>;
+
+typedef struct
+{
+    UINT32 ProcessId;
+    UINT32 LocalAddr[4];
+    UINT32 RemoteAddr[4];
+    UINT16 LocalPort;
+    UINT16 RemotePort;
+    UINT8  Protocol;
+} <b>WINDIVERT_DATA_SOCKET</b>, *<b>PWINDIVERT_DATA_SOCKET</b>;
+
+typedef struct
+{
+    INT64  Timestamp;
+    UINT32 ProcessId;
+    WINDIVERT_LAYER Layer;
+    UINT64 Flags;
+    INT16  Priority;
+} <b>WINDIVERT_DATA_REFLECT</b>, *<b>PWINDIVERT_DATA_REFLECT</b>;
+
+typedef struct
+{
+    INT64  Timestamp;
+    UINT64 Layer:8;
+    UINT64 Event:8;
+    UINT64 Outbound:1;
+    UINT64 Loopback:1;
+    UINT64 Impostor:1;
+    UINT64 IPv6:1;
+    UINT64 PseudoIPChecksum:1;
+    UINT64 PseudoTCPChecksum:1;
+    UINT64 PseudoUDPChecksum:1;
+    union
+    {
+        WINDIVERT_DATA_NETWORK Network;
+        WINDIVERT_DATA_FLOW    Flow;
+        WINDIVERT_DATA_SOCKET  Socket;
+        WINDIVERT_DATA_REFLECT Reflect;
+    };
 } <b>WINDIVERT_ADDRESS</b>, *<b>PWINDIVERT_ADDRESS</b>;
 </pre>
 </td></tr></table>
@@ -332,7 +554,7 @@ Typically, modified packets should preserve the <tt>Pseudo*Checksum</tt> flags.
 </p>
 </dd></dl>
 
-<a name="divert_open"><h3>5.2 WinDivertOpen</h3></a>
+<a name="divert_open"><h3>5.3 WinDivertOpen</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 HANDLE <b>WinDivertOpen</b>(
@@ -572,7 +794,7 @@ Note that only one of <tt>WINDIVERT_FLAG_SNIFF</tt> or
 </p>
 </dd></dl>
 
-<a name="divert_recv"><h3>5.3 WinDivertRecv</h3></a>
+<a name="divert_recv"><h3>5.4 WinDivertRecv</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertRecv</b>(
@@ -637,7 +859,7 @@ WinDivert handle created with the <tt>WINDIVERT_FLAG_DROP</tt> set.
 </p>
 </dd></dl>
 
-<a name="divert_recv_ex"><h3>5.4 WinDivertRecvEx</h3></a>
+<a name="divert_recv_ex"><h3>5.5 WinDivertRecvEx</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertRecvEx</b>(
@@ -685,7 +907,7 @@ supports overlapped I/O via the <tt>lpOverlapped</tt> parameter.
 </p>
 </dd></dl>
 
-<a name="divert_send"><h3>5.5 WinDivertSend</h3></a>
+<a name="divert_send"><h3>5.6 WinDivertSend</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertSend</b>(
@@ -810,7 +1032,7 @@ Thus, it is important that this memory is not read-only.
 </p>
 </dd></dl>
 
-<a name="divert_send_ex"><h3>5.6 WinDivertSendEx</h3></a>
+<a name="divert_send_ex"><h3>5.7 WinDivertSendEx</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertSendEx</b>(
@@ -858,7 +1080,7 @@ supports overlapped I/O via the <tt>lpOverlapped</tt> parameter.
 </p>
 </dd></dl>
 
-<a name="divert_shutdown"><h3>5.7 WinDivertShutdown</h3></a>
+<a name="divert_shutdown"><h3>5.8 WinDivertShutdown</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertShutdown</b>(
@@ -934,7 +1156,7 @@ will fail with <tt>ERROR_NO_DATA</tt>.
 </p>
 <dd></dl>
 
-<a name="divert_close"><h3>5.8 WinDivertClose</h3></a>
+<a name="divert_close"><h3>5.9 WinDivertClose</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertClose</b>(
@@ -960,7 +1182,7 @@ Closes a WinDivert handle created by
 </p>
 <dd></dl>
 
-<a name="divert_set_param"><h3>5.9 WinDivertSetParam</h3></a>
+<a name="divert_set_param"><h3>5.10 WinDivertSetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertSetParam</b>(
@@ -1039,7 +1261,7 @@ and the maximum is 33554432 (32MB).
 </p>
 <dd></dl>
 
-<a name="divert_get_param"><h3>5.10 WinDivertGetParam</h3></a>
+<a name="divert_get_param"><h3>5.11 WinDivertGetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertGetParam</b>(
