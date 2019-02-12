@@ -16,7 +16,7 @@
 <li><a href="#uninstalling">4. Uninstalling</a></li>
 <li><a href="#programming_api">5. Programming API</a></li>
 <ul>
-<li><a href="#divert_layers">5.1 Layers</a></li>
+<li><a href="#divert_layers">5.1 WINDIVERT_LAYER</a></li>
 <li><a href="#divert_address">5.2 WINDIVERT_ADDRESS</a></li>
 <li><a href="#divert_open">5.3 WinDivertOpen</a></li>
 <li><a href="#divert_recv">5.4 WinDivertRecv</a></li>
@@ -37,11 +37,14 @@
 <li><a href="#divert_tcphdr">6.5 WINDIVERT_TCPHDR</a></li>
 <li><a href="#divert_udphdr">6.6 WINDIVERT_UDPHDR</a></li>
 <li><a href="#divert_helper_parse_packet">6.7 WinDivertHelperParsePacket</a></li>
-<li><a href="#divert_help_parse_ipv4_address">6.8 WinDivertHelperParseIPv4Address</li>
-<li><a href="#divert_help_parse_ipv6_address">6.9 WinDivertHelperParseIPv6Address</li>
-<li><a href="#divert_helper_calc_checksums">6.10 WinDivertHelperCalcChecksums</a></li>
-<li><a href="#divert_helper_compile_filter">6.11 WinDivertHelperCompileFilter</a></li>
-<li><a href="#divert_helper_eval_filter">6.12 WinDivertHelperEvalFilter</a></li>
+<li><a href="#divert_helper_hash_packet">6.8 WinDivertHelperHashPacket</a></li>
+<li><a href="#divert_helper_parse_ipv4_address">6.9 WinDivertHelperParseIPv4Address</li>
+<li><a href="#divert_helper_parse_ipv6_address">6.10 WinDivertHelperParseIPv6Address</li>
+<li><a href="#divert_helper_calc_checksums">6.11 WinDivertHelperCalcChecksums</a></li>
+<li><a href="#divert_helper_compile_filter">6.12 WinDivertHelperCompileFilter</a></li>
+<li><a href="#divert_helper_eval_filter">6.13 WinDivertHelperEvalFilter</a></li>
+<li><a href="#divert_helper_eval_ntoh"><h3>6.14 WinDivertHelperNtoh*</a></li>
+<li><a href="#divert_helper_eval_hton"><h3>6.15 WinDivertHelperHton*</a></li>
 </ul>
 <li><a href="#filter_language">7. Filter Language</a></li>
 <ul>
@@ -342,27 +345,30 @@ Here, the layer capabilities are:
 <li> (Block?) the layer can block events/packets;</li>
 <li> (Inject?) the layer can inject new events/packets;</li>
 <li> (Data?) whether the layer returns packet data or not; and</li>
-<li> (PID?) whether the <i>process ID</i> for the process associated with
+<li> (PID?) whether the ID for the process associated with
      an event/packet is available at this layer, or not.
 </ul>
 <p>
-Both <tt>WINDIVERT_LAYER_NETWORK</tt> and
-<tt>WINDIVERT_LAYER_NETWORK_FORWARD</tt> represent the <q>traditional</q>
-WinDivert layers, allowing the user application to capture/block/inject
-network packets passing to/from/through the local machine.
-This layer only supports one event, namely:
+The <tt>WINDIVERT_LAYER_NETWORK</tt> (and
+<tt>WINDIVERT_LAYER_NETWORK_FORWARD</tt>) layers
+allow the user application to capture/block/inject network packets passing
+to/from (and through) the local machine.
+These represent the <q>traditional</q>
+WinDivert layers.
+Only a single event is supported:
 </p>
 <ul>
-<li> <tt>WINDIVERT_EVENT_NETWORK_PACKET</tt>: A network packet.
+<li> <tt>WINDIVERT_EVENT_NETWORK_PACKET</tt>: A new network packet was
+    intercepted.</li>
 </ul>
 Due to technical limitations, process ID information is not available
-at this layer.
+at these layers.
 <p>
 The <tt>WINDIVERT_LAYER_FLOW</tt> layer captures information about
 network flow establishment/deletion events.
-Here, a <i>flow</i> represents a <q>packet flow</q>, meaning either a
-TCP connection, or an implicit <q>flow</q> created by the first sent/received
-packet for non-TCP traffic, e.g., UDP.
+Here, a <i>flow</i> represents either (1) a
+TCP connection, or (2) an implicit <q>flow</q> created by the first
+sent/received packet for non-TCP traffic, e.g., UDP.
 The <tt>WINDIVERT_LAYER_FLOW</tt> layer supports two events:
 </p>
 <ul>
@@ -370,7 +376,9 @@ The <tt>WINDIVERT_LAYER_FLOW</tt> layer supports two events:
 <li> <tt>WINDIVERT_EVENT_FLOW_DELETED</tt>: An old flow is deleted.</li>
 </ul>
 <p>
-Flows can be captured, but never blocked or injected.
+Old flows are deleted when the corresponding connection is closed (for TCP),
+or on a timeout (non-TCP).
+Flow events can be captured, but never blocked or injected.
 Process ID information is available at this layer.
 Due to technical limitations, the
 <tt>WINDIVERT_LAYER_FLOW</tt> layer cannot capture events that
@@ -481,52 +489,75 @@ typedef struct
 <p>
 <b>Fields</b>
 <ul>
-<li> <tt>Timestamp</tt>: A timestamp indicating when WinDivert first captured
-    the packet.</li>
-<li> <tt>IfIdx</tt>: The interface index on which the packet arrived
-    (for inbound packets), or is to be sent (for outbound packets).</li>
-<li> <tt>SubIfIdx</tt>: The sub-interface index for <tt>IfIdx</tt>.</li>
-<li> <tt>Direction</tt>: The packet's direction.
-The possible values are
-<ul>
-<li> <tt>WINDIVERT_DIRECTION_OUTBOUND</tt> with value 0 for <i>outbound</i>
-packets.</li>
-<li> <tt>WINDIVERT_DIRECTION_INBOUND</tt> with value 1 for <i>inbound</i>
-packets.</li>
-</ul></li>
+<li> <tt>Timestamp</tt>: A timestamp indicating when event occurred.</li>
+<li> <tt>Layer</tt>: The handle's layer (<tt>WINDIVERT_LAYER_*</tt>).</li>
+<li> <tt>Event</tt>: The captured event (<tt>WINDIVERT_EVENT_*</tt>).</li>
+<li> <tt>Outbound</tt>: Set to <tt>1</tt> for <i>outbound</i>
+    packets/event, <tt>0</tt> for <i>inbound</i> or otherwise.</li>
 <li> <tt>Loopback</tt>: Set to <tt>1</tt> for loopback packets, <tt>0</tt>
 otherwise</li>
 <li> <tt>Impostor</tt>: Set to <tt>1</tt> for <q>impostor</q> packets,
 <tt>0</tt> otherwise.</li>
+<li> <tt>IPv6</tt>: Set to <tt>1</tt> for IPv6 packets/events, <tt>0</tt>
+otherwise</li>
 <li> <tt>PseudoIPChecksum</tt>: Set to <tt>1</tt> for packets with a
 <i>pseudo</i> IPv4 checksum, <tt>0</tt> otherwise.</li>
 <li> <tt>PseudoTCPChecksum</tt>: Set to <tt>1</tt> for packets with a
 <i>pseudo</i> TCP checksum, <tt>0</tt> otherwise.</li>
 <li> <tt>PseudoTCPChecksum</tt>: Set to <tt>1</tt> for packets with a
 <i>pseudo</i> UDP checksum, <tt>0</tt> otherwise.</li>
+<li> <tt>Network.IfIdx</tt>: The interface index on which the packet arrived
+    (for inbound packets), or is to be sent (for outbound packets).</li>
+<li> <tt>Network.SubIfIdx</tt>: The sub-interface index for <tt>IfIdx</tt>.</li>
+<li> <tt>Flow.ProcessId</tt>: The ID of the process associated with the
+    flow.</li>
+<li> <tt>Flow.LocalAddr</tt>, <tt>Flow.RemoteAddr</tt>,
+     <tt>Flow.LocalPort</tt>, <tt>Flow.RemotePort</tt>, and
+     <tt>Flow.Protocol</tt>: The network 5-tuple associated with the
+     flow.</li>
+<li> <tt>Socket.ProcessId</tt>: The ID of the process associated with the
+     socket operation.</li>
+<li> <tt>Socket.LocalAddr</tt>, <tt>Socket.RemoteAddr</tt>,
+     <tt>Socket.LocalPort</tt>, <tt>Socket.RemotePort</tt>, and
+     <tt>Socket.Protocol</tt>: The network 5-tuple associated with the
+     socket operation.</li>
+<li> <tt>Reflect.Timestamp</tt>: A timestamp indicating when the handle was 
+     opened.</li>
+<li> <tt>Reflect.ProcessId</tt>: The ID of the process that opened the
+     handle.</li>
+<li> <tt>Reflect.Layer</tt>, <tt>Reflect.Flags</tt>, and
+     <tt>Reflect.Priority</tt>: The
+     <a href="#divert_open"><tt>WinDivertOpen()</tt></a> parameters of
+     the opened handle.</li>
 </ul>
 </p><p>
 <b>Remarks</b><br>
 The <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> structure
 represents the "address" of a captured or injected packet.
-The address includes the packet's timestamp, network interfaces, direction
-and other information.
+The address includes the packet's timestamp, layer, event, flags, and
+layer-specific data.
+All fields are set by <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>
+when the packet/event is captured.
+Only some fields are used by
+<a href="#divert_send"><tt>WinDivertSend()</tt></a> when a packet
+is injected.
 </p><p>
-The <tt>Timestamp</tt> indicates when the packet was first
+The <tt>Timestamp</tt> indicates when the packet/event was first
 captured by WinDivert.
 It uses the same clock as
 <a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms644904(v=vs.85).aspx"><tt>QueryPerformanceCounter()</tt></a>.
-The <tt>Timestamp</tt> value is ignored by
-<a href="#divert_send"><tt>WinDivertSend()</tt></a>.
 </p><p>
-The <tt>IfIdx</tt>/<tt>SubIfIdx</tt> indicate the packet's network adapter
-(a.k.a. interface) index.
-These values are ignored for <i>outbound</i> packets.
+The <tt>Layer</tt> indicates the <i>layer</i> parameter
+(<a href="#divert_layers"><tt>WINDIVERT_LAYER_*</tt></a>) that was passed to
+<a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
+It is included in the address to make the structure self-contained.
 </p><p>
-The <tt>Direction</tt> field is set to <tt>WINDIVERT_DIRECTION_OUTBOUND</tt>
-(<tt>0</tt>) for outbound packets, and
-<tt>WINDIVERT_DIRECTION_INBOUND</tt> (<tt>1</tt>) for inbound packets.
-This field is ignored for <i>forward</i> packets.
+The <tt>Event</tt> indicates the layer-specific <i>event</i>
+(<a href="#divert_layers"><tt>WINDIVERT_EVENT_*</tt></a>) that was captured.
+</p><p>
+The <tt>Outbound</tt> flag is set for <i>outbound</i>
+packets/events, and is cleared
+for <i>inbound</i> or direction-less packets/events.
 </p><p>
 The <tt>Loopback</tt> flag is set for <i>loopback</i> packets.
 Note that Windows considers any packet originating from, and destined to, the
@@ -544,6 +575,9 @@ where a packet injected by <a href="#divert_send"><tt>WinDivertSend()</tt></a>
 is captured again by <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
 For more information, see <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
 </p><p>
+The <tt>IPv6</tt> flag is set for <i>IPv6</i> packets/events, and cleared
+for <i>IPv4</i> packets/events.
+</p><p>
 The <tt>Pseudo*Checksum</tt> flags indicate whether the packet uses
 <i>full</i> or <i>pseudo</i> checksums.
 Pseudo checksums are used when 
@@ -551,6 +585,64 @@ Pseudo checksums are used when
 hardware calculates/validates checksums rather than the Windows TCP/IP stack.
 Pseudo checksums may be arbitrary values.
 Typically, modified packets should preserve the <tt>Pseudo*Checksum</tt> flags.
+</p><p>
+The <tt>Network.*</tt> fields are only valid at the
+<tt>WINDIVERT_LAYER_NETWORK</tt> and
+<tt>WINDIVERT_LAYER_NETWORK_FORWARD</tt> layers.
+The <tt>Network.IfIdx</tt>/<tt>Network.SubIfIdx</tt> indicate the packet's
+network adapter (a.k.a. interface) index.
+These values are ignored for <i>outbound</i> packets.
+</p><p>
+The <tt>Flow.*</tt> fields are only valid at the
+<tt>WINDIVERT_LAYER_FLOW</tt> layer.
+The <tt>Flow.ProcessId</tt> is the <i>ID</i> of the process that
+created the flow (for outbound), or receives the flow (for inbound).
+The
+(<tt>Flow.LocalAddr</tt>, <tt>Flow.LocalPort</tt>,
+ <tt>Flow.RemoteAddr</tt>, <tt>Flow.RemotePort</tt>, <tt>Flow.Protocol</tt>)
+fields form the network 5-tuple associated with the flow.
+For IPv4, the <tt>Flow.LocalAddr</tt> and <tt>Flow.RemoteAddr</tt>
+fields will be IPv4-mapped IPv6 addresses,
+e.g. the IPv4 address <tt>X.Y.Z.W</tt> will be represented by
+<tt>::ffff:X.Y.Z.W</tt>.
+</p><p>
+The <tt>Socket.*</tt> fields are only valid at the
+<tt>WINDIVERT_LAYER_SOCKET</tt> layer.
+The <tt>Socket.ProcessId</tt> is the <i>ID</i> of the process that executed
+the socket operation.
+The
+(<tt>Socket.LocalAddr</tt>, <tt>Socket.LocalPort</tt>,
+ <tt>Socket.RemoteAddr</tt>, <tt>Socket.RemotePort</tt>,
+ <tt>Socket.Protocol</tt>)
+fields form the network 5-tuple associated with the operation.
+For IPv4, the <tt>Socket.LocalAddr</tt> and <tt>Socket.RemoteAddr</tt>
+fields will be IPv4-mapped IPv6 addresses.
+The <tt>WINDIVERT_EVENT_SOCKET_BIND</tt> and
+<tt>WINDIVERT_EVENT_SOCKET_LISTEN</tt> events will occur before a
+connection attempt has been made, meaning that the
+<tt>Socket.RemoteAddr</tt> and <tt>Socket.RemotePort</tt> fields
+for these events will be zero.
+</p><p>
+The <tt>Reflect.*</tt> fields are only valid at the
+<tt>WINDIVERT_LAYER_REFLECT</tt> layer.
+The <tt>Reflect.ProcessId</tt> is the <i>ID</i> of the process that
+opened the WinDivert handle.
+The <tt>Reflect.Timestamp</tt> field is a timestamp indicating when the
+handle was opened, using
+the same clock as
+<a href="https://msdn.microsoft.com/en-us/library/windows/desktop/ms644904(v=vs.85).aspx"><tt>QueryPerformanceCounter()</tt></a>.
+The <tt>Reflect.Layer</tt>, <tt>Reflect.Flags</tt>, and
+    <tt>Reflect.Priority</tt> fields correspond to the
+<a href="#divert_open"><tt>WinDivertOpen()</tt></a> parameters of
+the opened handle.
+</p><p>
+Most address fields are ignored by
+<a href="#divert_send"><tt>WinDivertSend()</tt></a>.
+The exceptions are
+<tt>Outbound</tt> (for <tt>WINDIVERT_LAYER_NETWORK</tt> only),
+<tt>Impostor</tt>, <tt>PseudoIPChecksum</tt>, <tt>PseudoTCPChecksum</tt>,
+<tt>PseudoUDPChecksum</tt>, <tt>Network.IfIdx</tt> and
+<tt>Network.SubIfIdx</tt>.
 </p>
 </dd></dl>
 
@@ -1536,7 +1628,43 @@ for parsing.
 <p>
 </dd></dl>
 
-<a name="divert_help_parse_ipv4_address"><h3>6.8 WinDivertHelperParseIPv4Address</h3></a>
+<a name="divert_helper_hash_packet"><h3>6.8 WinDivertHelperHashPacket</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+UINT64 <b>WinDivertHelperHashPacket</b>(
+    __in const VOID *pPacket,
+    __in UINT packetLen,
+    __in UINT64 seed = 0
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>pPacket</tt>: The packet to be hashed.</li>
+<li> <tt>packetLen</tt>: The total length of the packet <tt>pPacket</tt>.</li>
+<li> <tt>seed</tt>: An optional seed value.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+A 64bit hash value.
+</p><p>
+<b>Remarks</b><br>
+Calculates a 64bit hash value of the given packet.
+Note that the hash function depends on the <i>packet's
+IP and transport headers only</i>, and not the payload of the packet.
+That said, a weak dependency on the payload will exist if the
+TCP/UDP checksums are valid.
+The hash function itself is based on the
+<a href="https://cyan4973.github.io/xxHash/">xxHash</a> algorithm
+and is <b>not</b> cryptographic.
+</p><p>
+The optional <tt>seed</tt> value is also incorporated into the hash.
+<p>
+</dd></dl>
+
+<a name="divert_helper_parse_ipv4_address"><h3>6.9 WinDivertHelperParseIPv4Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParseIPv4Address</b>(
@@ -1565,7 +1693,7 @@ Use <tt>htonl()</tt> to convert the result into network-byte-order.
 </p>
 <dd></dl>
 
-<a name="divert_help_parse_ipv6_address"><h3>6.9 WinDivertHelperParseIPv6Address</h3></a>
+<a name="divert_helper_parse_ipv6_address"><h3>6.10 WinDivertHelperParseIPv6Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParseIPv6Address</b>(
@@ -1607,7 +1735,7 @@ swapping the array indexes.
 </p>
 <dd></dl>
 
-<a name="divert_helper_calc_checksums"><h3>6.10 WinDivertHelperCalcChecksums</h3></a>
+<a name="divert_helper_calc_checksums"><h3>6.11 WinDivertHelperCalcChecksums</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT <b>WinDivertHelperCalcChecksums</b>(
@@ -1667,7 +1795,7 @@ order to (re)inject the packet.
 </p>
 </dd></dl>
 
-<a name="divert_helper_compile_filter"><h3>6.11 WinDivertHelperCompileFilter</h3></a>
+<a name="divert_helper_compile_filter"><h3>6.12 WinDivertHelperCompileFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCompileFilter</b>(
@@ -1719,7 +1847,7 @@ objects, and therefore do not need to be deallocated.
 <p>
 </dd></dl>
 
-<a name="divert_helper_eval_filter"><h3>6.12 WinDivertHelperEvalFilter</h3></a>
+<a name="divert_helper_eval_filter"><h3>6.13 WinDivertHelperEvalFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperEvalFilter</b>(
@@ -1762,6 +1890,76 @@ object representation using the <a
 href="#divert_helper_compile_filter">WinDivertHelperCompileFilter()</a>
 function.
 <p>
+</dd></dl>
+
+<a name="divert_helper_eval_ntoh"><h3>6.14 WinDivertHelperNtoh*</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+UINT16 <b>WinDivertHelperNtohs</b>(
+    __in UINT16 x
+);
+UINT32 <b>WinDivertHelperNtohl</b>(
+    __in UINT32 x
+);
+UINT64 <b>WinDivertHelperNtohll</b>(
+    __in UINT64 x
+);
+void <b>WinDivertHelperNtohIpv6Address</b>(
+    __in const UINT *inAddr,
+    __out UINT *outAddr
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>x</tt>: The input value in network byte-order.</li>
+<li> <tt>inAddr</tt>: The input IPv6 address in network byte-order.</li>
+<li> <tt>outAddr</tt>: A buffer for the output IPv6 address in host
+	byte-order.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+The output value in host byte order.
+</p><p>
+<b>Remarks</b><br>
+Converts a value/IPv6-address from network to host byte-order.
+</p>
+</dd></dl>
+
+<a name="divert_helper_eval_hton"><h3>6.15 WinDivertHelperHton*</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+UINT16 <b>WinDivertHelperHtons</b>(
+    __in UINT16 x
+);
+UINT32 <b>WinDivertHelperHtonl</b>(
+    __in UINT32 x
+);
+UINT64 <b>WinDivertHelperHtonll</b>(
+    __in UINT64 x
+);
+void <b>WinDivertHelperHtonIpv6Address</b>(
+    __in const UINT *inAddr,
+    __out UINT *outAddr
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>x</tt>: The input value in host byte-order.</li>
+<li> <tt>inAddr</tt>: The input IPv6 address in host byte-order.</li>
+<li> <tt>outAddr</tt>: A buffer for the output IPv6 address in network
+	byte-order.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+The output value in network byte order.
+</p><p>
+<b>Remarks</b><br>
+Converts a value/IPv6-address from host to network byte-order.
+</p>
 </dd></dl>
 
 <hr>
