@@ -40,11 +40,14 @@
 <li><a href="#divert_helper_hash_packet">6.8 WinDivertHelperHashPacket</a></li>
 <li><a href="#divert_helper_parse_ipv4_address">6.9 WinDivertHelperParseIPv4Address</li>
 <li><a href="#divert_helper_parse_ipv6_address">6.10 WinDivertHelperParseIPv6Address</li>
-<li><a href="#divert_helper_calc_checksums">6.11 WinDivertHelperCalcChecksums</a></li>
-<li><a href="#divert_helper_compile_filter">6.12 WinDivertHelperCompileFilter</a></li>
-<li><a href="#divert_helper_eval_filter">6.13 WinDivertHelperEvalFilter</a></li>
-<li><a href="#divert_helper_eval_ntoh"><h3>6.14 WinDivertHelperNtoh*</a></li>
-<li><a href="#divert_helper_eval_hton"><h3>6.15 WinDivertHelperHton*</a></li>
+<li><a href="#divert_helper_format_ipv4_address">6.11 WinDivertHelperFormatIPv4Address</li>
+<li><a href="#divert_helper_format_ipv6_address">6.12 WinDivertHelperFormatIPv6Address</li>
+<li><a href="#divert_helper_calc_checksums">6.13 WinDivertHelperCalcChecksums</a></li>
+<li><a href="#divert_helper_compile_filter">6.14 WinDivertHelperCompileFilter</a></li>
+<li><a href="#divert_helper_eval_filter">6.15 WinDivertHelperEvalFilter</a></li>
+<li><a href="#divert_helper_format_filter">6.16 WinDivertHelperFormatFilter</a></li>
+<li><a href="#divert_helper_ntoh"><h3>6.17 WinDivertHelperNtoh*</a></li>
+<li><a href="#divert_helper_hton"><h3>6.18 WinDivertHelperHton*</a></li>
 </ul>
 <li><a href="#filter_language">7. Filter Language</a></li>
 <ul>
@@ -736,6 +739,18 @@ have a valid digital signature
 </tr>
 <tr>
 <td>
+<tt>ERROR_SERVICE_DOES_NOT_EXIST</tt>
+</td>
+<td>
+1060
+</td>
+<td>
+The handle was opened with the <tt>WINDIVERT_FLAG_NO_INSTALL</tt> flag and
+the WinDivert driver is not already installed.
+</td>
+</tr>
+<tr>
+<td>
 <tt>ERROR_DRIVER_BLOCKED</tt>
 </td>
 <td>
@@ -767,13 +782,14 @@ disabled.
 </p><p>
 <b>Remarks</b><br>
 Opens a WinDivert handle for the given filter.
-Unless otherwise specified by <tt>flags</tt>, any packet that matches the
-filter will be diverted to the handle.
-Diverted packets can be read by the application with
+Unless otherwise specified by <tt>flags</tt>, any packet or event that
+matches the filter will be diverted to the handle.
+Diverted packets/events can be read by the application with
 <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
 </p>
 <p>
-A typical application is only interested in a subset of all network traffic.
+A typical application is only interested in a subset of all network traffic
+or events.
 In this case the filter should <i>match as closely as possible</i> to
 the subset of interest.
 This avoids unnecessary overheads introduced by diverting packets to the
@@ -784,7 +800,10 @@ information.
 <p>
 The <i>layer</i> of the WinDivert handle is determined by the <tt>layer</tt>
 parameter.
-Currently the following layers are supported.
+See <a href="#divert_layers"><tt>WINDIVERT_LAYER</tt></a> for more
+information.
+Currently the following layers are supported:
+</p>
 <center>
 <table border="1" cellpadding="5" width="75%">
 <tr>
@@ -800,8 +819,8 @@ Description
 <tt>WINDIVERT_LAYER_NETWORK = 0</tt>
 </td>
 <td>
-The network layer.
-This is the default.
+Network packets to/from the local machine.
+This is the default layer.
 </td>
 </tr>
 <tr>
@@ -809,12 +828,35 @@ This is the default.
 <tt>WINDIVERT_LAYER_NETWORK_FORWARD</tt>
 </td>
 <td>
-The network layer (forwarded packets).
+Network packets passing through the local machine.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_FLOW</tt>
+</td>
+<td>
+Network flow established/deleted events.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_SOCKET</tt>
+</td>
+<td>
+Socket operation events.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_REFLECT</tt>
+</td>
+<td>
+WinDivert handle events.
 </td>
 </tr>
 </table>
 </center>
-</p>
 <p>
 Different WinDivert handles can be assigned different priorities by the
 <tt>priority</tt> parameter.
@@ -825,12 +867,14 @@ and so on, provided the packet matches the handle's filter.
 A packet is only diverted once per priority level, so handles should not
 share priority levels unless they use mutually exclusive filters.
 Otherwise it is not defined which handle will receive the packet first.
-Lower <tt>priority</tt> values represent higher priorities, with <tt>-1000</tt>
-being the highest priority, <tt>0</tt> the middle (and a good default)
-priority, and <tt>1000</tt> the lowest priority.
+Lower <tt>priority</tt> values represent higher priorities, with
+<tt>-30000</tt> being the highest priority, <tt>0</tt> the middle
+(and a good default) priority, and <tt>30000</tt> the lowest priority.
 </p>
 <p>
-The following flags are supported.
+Different flags affect how the opened handle behaves.
+The following flags are supported:
+</p>
 <center>
 <table border="1" cellpadding="5" width="75%">
 <tr>
@@ -867,23 +911,116 @@ WinDivert <a href="#filter_language">filter language</a>.
 </tr>
 <tr>
 <td>
-<tt>WINDIVERT_FLAG_DEBUG</tt>
+<tt>WINDIVERT_FLAG_RECV_ONLY</tt>
 </td>
 <td>
-This flag causes <a href="#divert_send"><tt>WinDivertSend()</tt></a> to block
-until the injected packet <i>exits</i> the Windows TCP/IP stack.
-By default, <a href="#divert_send"><tt>WinDivertSend()</tt></a> does not
-block and returns immediately after the packet <i>enters</i> the
-TCP/IP stack.
-The default mode is faster, but will not return an error code if the
-packet is lost or rejected for any reason; making debugging difficult.
+This flags forces the handle into <q>receive only</q> mode which effectively
+disables <a href="#divert_send"><tt>WinDivertSend()</tt></a>.
+This means that it is possible to block/capture packets or events but not
+inject them.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_FLAG_READ_ONLY</tt>
+</td>
+<td>
+An alias for <tt>WINDIVERT_FLAG_RECV_ONLY</tt>.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_FLAG_SEND_ONLY</tt>
+</td>
+<td>
+This flags forces the handle into <q>send only</q> mode which effectively
+disables <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
+This means that it is possible to inject packets or events, but not
+block/capture them.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_FLAG_WRITE_ONLY</tt>
+</td>
+<td>
+An alias for <tt>WINDIVERT_FLAG_SEND_ONLY</tt>.
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_FLAG_RECV_PARTIAL</tt>
+</td>
+<td>
+This flags enables <q>partial receives</q>.
+By default, if a packet is too big for the buffer passed to
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>, the operation
+will fail with <tt>ERROR_INSUFFICIENT_BUFFER</tt>.
+This flag silences this error and only copies part of the packet
+up to the buffer size.
+The <tt>WINDIVERT_FLAG_RECV_PARTIAL</tt> behavior was the default
+on older (pre-2.0) versions of WinDivert.
+</td>
+</tr>
+<td>
+<tt>WINDIVERT_FLAG_NO_INSTALL</tt>
+</td>
+<td>
+This flags causes <tt>WinDivertOpen()</tt> to fail with 
+<tt>ERROR_SERVICE_DOES_NOT_EXIST</tt> if the WinDivert driver
+is not already installed.
+This flag is useful for querying the WinDivert state using a
+<tt>WINDIVERT_LAYER_REFLECT</tt> handle.
 </td>
 </tr>
 </table>
 </center>
-Note that only one of <tt>WINDIVERT_FLAG_SNIFF</tt> or
-<tt>WINDIVERT_FLAG_DROP</tt> may be set at the same time.
+<p>
+Note that any combination of
+<tt>(WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP)</tt> or
+<tt>(WINDIVERT_FLAG_RECV_ONLY | WINDIVERT_FLAG_SEND_ONLY)</tt> or
+<tt>(WINDIVERT_FLAG_RECV_PARTIAL | WINDIVERT_FLAG_SEND_ONLY)</tt>
+are considered invalid.
 </p>
+<p>
+Some layers have mandatory flags, as listed below:
+</p>
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Layer
+</th>
+<th>
+Required Flags
+</th>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_FLOW</tt>
+</td>
+<td>
+<tt>WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY</tt>
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_SOCKET</tt>
+</td>
+<td>
+<tt>WINDIVERT_FLAG_RECV_ONLY</tt>
+</td>
+</tr>
+<tr>
+<td>
+<tt>WINDIVERT_LAYER_REFLECT</tt>
+</td>
+<td>
+<tt>WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY</tt>
+</td>
+</tr>
+</table>
+</center>
 </dd></dl>
 
 <a name="divert_recv"><h3>5.4 WinDivertRecv</h3></a>
@@ -1246,7 +1383,7 @@ When the packet queue is empty,
 <a href="#divert_recv"><tt>WinDivertRecv()</tt></a>
 will fail with <tt>ERROR_NO_DATA</tt>.
 </p>
-<dd></dl>
+</dd></dl>
 
 <a name="divert_close"><h3>5.9 WinDivertClose</h3></a>
 <table border="1" cellpadding="5"><tr><td>
@@ -1272,7 +1409,7 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 Closes a WinDivert handle created by
 <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.
 </p>
-<dd></dl>
+</dd></dl>
 
 <a name="divert_set_param"><h3>5.10 WinDivertSetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
@@ -1351,7 +1488,7 @@ and the maximum is 33554432 (32MB).
 </table>
 </center>
 </p>
-<dd></dl>
+</dd></dl>
 
 <a name="divert_get_param"><h3>5.11 WinDivertGetParam</h3></a>
 <table border="1" cellpadding="5"><tr><td>
@@ -1381,7 +1518,7 @@ Gets a WinDivert parameter.
 See <a href="#divert_set_param"><tt>WinDivertSetParam()</tt></a> for the list
 of parameters.
 </p>
-<dd></dl>
+</dd></dl>
 
 <hr>
 <a name="helper_programming_api"><h2>6. Helper Programming API</h2></a>
@@ -1687,11 +1824,12 @@ Use <tt>GetLastError()</tt> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Parses an IPv4 address stored in <tt>addrStr</tt>.
-If <tt>pAddr</tt> is non-<tt>NULL</tt>, the is be stored in
+If <tt>pAddr</tt> is non-<tt>NULL</tt>, the result is be stored in
 host-byte-order.
-Use <tt>htonl()</tt> to convert the result into network-byte-order.
+Use <a href="#divert_helper_hton"><tt>WinDivertHelperHtonl()</tt></a>
+to convert the result into network-byte-order.
 </p>
-<dd></dl>
+</dd></dl>
 
 <a name="divert_helper_parse_ipv6_address"><h3>6.10 WinDivertHelperParseIPv6Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
@@ -1719,23 +1857,68 @@ Parses an IPv6 address stored in <tt>addrStr</tt>.
 If <tt>pAddr</tt> is non-<tt>NULL</tt>, the buffer assumed 
 to be large enough to hold a 16-byte IPv6 address.
 The result is stored in host-byte-order.
-For example, given an IPv6 address of the form
-<tt>0011:2233:4455:6677:8899:aabb:ccdd:eeff</tt>, then
-the result is ordered as follows:
-<pre>
-pAddr[0] = 0xccddeeff
-pAddr[1] = 0x8899aabb
-pAddr[2] = 0x44556677
-pAddr[3] = 0x00112233
-</pre>
-where each <tt>pAddr[i]</tt> is in host-byte-order.
-The result can be converted into network-byte-order by setting
-<tt>pAddr[i] = htonl(pAddr[i])</tt> for each <tt>i</tt> and
-swapping the array indexes.
+Use <a href="#divert_helper_hton"><tt>WinDivertHelperHtonIpv6Address()</tt></a>
+to convert the result into network-byte-order.
 </p>
-<dd></dl>
+</dd></dl>
 
-<a name="divert_helper_calc_checksums"><h3>6.11 WinDivertHelperCalcChecksums</h3></a>
+<a name="divert_helper_format_ipv4_address"><h3>6.11 WinDivertHelperParseIPv4Address</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperFormatIPv4Address</b>(
+    __in UINT32 addr,
+    __out char *buffer,
+    __in UINT bufLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>addr</tt>: The IPv4 address in host-byte order.</li>
+<li> <tt>buffer</tt>: The buffer to store the formatted string.</li>
+<li> <tt>bufLen</tt>: The length of <tt>buffer</tt>.
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if successful, <tt>FALSE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Convert an IPv4 address into a string.
+</p>
+</dd></dl>
+
+<a name="divert_helper_format_ipv6_address"><h3>6.12 WinDivertHelperParseIPv6Address</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperFormatIPv6Address</b>(
+    __in const UINT32 *pAddr,
+    __out char *buffer,
+    __in UINT bufLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>pAddr</tt>: The IPv6 address in host-byte order.</li>
+<li> <tt>buffer</tt>: The buffer to store the formatted string.</li>
+<li> <tt>bufLen</tt>: The length of <tt>buffer</tt>.
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if successful, <tt>FALSE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Convert an IPv6 address into a string.
+</p>
+</dd></dl>
+
+<a name="divert_helper_calc_checksums"><h3>6.13 WinDivertHelperCalcChecksums</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT <b>WinDivertHelperCalcChecksums</b>(
@@ -1795,7 +1978,7 @@ order to (re)inject the packet.
 </p>
 </dd></dl>
 
-<a name="divert_helper_compile_filter"><h3>6.12 WinDivertHelperCompileFilter</h3></a>
+<a name="divert_helper_compile_filter"><h3>6.14 WinDivertHelperCompileFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCompileFilter</b>(
@@ -1847,7 +2030,7 @@ objects, and therefore do not need to be deallocated.
 <p>
 </dd></dl>
 
-<a name="divert_helper_eval_filter"><h3>6.13 WinDivertHelperEvalFilter</h3></a>
+<a name="divert_helper_eval_filter"><h3>6.15 WinDivertHelperEvalFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperEvalFilter</b>(
@@ -1886,13 +2069,48 @@ Otherwise, if no error occurred, <tt>GetLastError()</tt> will return
 Note that this function is relatively slow since the packet filter string
 will be (re)compiled for each call.
 This overhead can be minimized by pre-compiling the filter string into the
-object representation using the <a
-href="#divert_helper_compile_filter">WinDivertHelperCompileFilter()</a>
+object representation using the
+<a href="#divert_helper_compile_filter"><tt>WinDivertHelperCompileFilter()</tt></a>
 function.
 <p>
 </dd></dl>
 
-<a name="divert_helper_eval_ntoh"><h3>6.14 WinDivertHelperNtoh*</h3></a>
+<a name="divert_helper_format_filter"><h3>6.16 WinDivertHelperFormatFilter</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperEvalFilter</b>(
+    __in const char *filter,
+    __in WINDIVERT_LAYER layer,
+    __out char *buffer,
+    __in UINT bufLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Parameters</b><br>
+<ul>
+<li> <tt>filter</tt>: The packet filter string to be evaluated.</li>
+<li> <tt>layer</tt>: The layer.</li>
+<li> <tt>buffer</tt>: A buffer for the formatted filter.</li>
+<li> <tt>bufLen</tt>: The length of <tt>buffer</tt>.</li>
+</ul>
+</p><p>
+<b>Return Value</b><br>
+<tt>TRUE</tt> if successful, <tt>FALSE</tt> if an error occurred.
+Use <tt>GetLastError()</tt> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Formats the given filter string or object.
+This function is mainly useful for <q>decompiling</q> the filter object
+representation back into a human-readable filter string representation.
+One application is the <tt>WINDIVERT_LAYER_REFLECT</tt> layer,
+where a pseudo packet containing a filter object is returned by
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>.
+</p>
+</dd></dl>
+
+<a name="divert_helper_ntoh"><h3>6.17 WinDivertHelperNtoh*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperNtohs</b>(
@@ -1927,7 +2145,7 @@ Converts a value/IPv6-address from network to host byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_eval_hton"><h3>6.15 WinDivertHelperHton*</h3></a>
+<a name="divert_helper_hton"><h3>6.18 WinDivertHelperHton*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperHtons</b>(
