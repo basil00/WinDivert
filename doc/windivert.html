@@ -1093,11 +1093,12 @@ WinDivert handle created with the <tt>WINDIVERT_FLAG_DROP</tt> set.
 <pre>
 BOOL <b>WinDivertRecvEx</b>(
     __in HANDLE handle,
-    __out PVOID pPacket,
+    __out VOID *pPacket,
     __in UINT packetLen,
-    __in UINT64 flags,
-    __out_opt PWINDIVERT_ADDRESS pAddr,
     __out_opt UINT *recvLen,
+    __in UINT64 flags,
+    __out_opt WINDIVERT_ADDRESS *pAddr,
+    __inout_opt UINT *pAddrLen,
     __inout_opt LPOVERLAPPED lpOverlapped
 );
 </pre>
@@ -1108,14 +1109,20 @@ BOOL <b>WinDivertRecvEx</b>(
 <ul>
 <li> <tt>handle</tt>: A valid WinDivert handle created by
      <a href="#divert_open"><tt>WinDivertOpen()</tt></a>.</li>
-<li> <tt>pPacket</tt>: A buffer for the captured packet.</li>
-<li> <tt>packetLen</tt>: The length of the buffer <tt>pPacket</tt>.</li>
-<li> <tt>flags</tt>: Reserved, set to zero.</li>
-<li> <tt>pAddr</tt>: The
-    <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a>  of the captured
-    packet.</li>
+<li> <tt>pPacket</tt>: A buffer for the captured packet(s).</li>
+<li> <tt>packetLen</tt>: The length of the <tt>pPacket</tt> buffer in
+    bytes.</li>
 <li> <tt>recvLen</tt>: The total number of bytes written to <tt>pPacket</tt>.
      Can be <tt>NULL</tt> if this information is not required.</li>
+<li> <tt>flags</tt>: Reserved, set to zero.</li>
+<li> <tt>pAddr</tt>: The
+    <a href="#divert_address"><tt>WINDIVERT_ADDRESS</tt></a> of the captured
+    packet(s).</li>
+<li> <tt>pAddrLen</tt>: Initially, a pointer to the length of the
+    <tt>pAddr</tt> buffer in bytes.
+    This value is updated to the total bytes written to <tt>pAddr</tt>.
+    If <tt>NULL</tt>, a fixed length of <tt>sizeof(WINDIVERT_ADDRESS)</tt> is
+    assumed.</li>
 <li> <tt>lpOverlapped</tt>: An optional pointer to a <tt>OVERLAPPED</tt>
      structure.</li>
 </ul>
@@ -1131,9 +1138,31 @@ All other codes indicate an error.
 </p><p>
 <b>Remarks</b><br>
 This function is equivalent to
-<a href="#divert_recv"><tt>WinDivertRecv()</tt></a> except that it
-supports overlapped I/O via the <tt>lpOverlapped</tt> parameter.
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a> except:
 </p>
+<ul>
+<li> <i>Overlapped I/O</i> is supported via the <tt>lpOverlapped</tt>
+    parameter.</li>
+<li> <i>Batched I/O</i> (i.e., reading multiple packets at once) is
+    supported.</li>
+</ul>
+<p>
+Batched I/O makes it possible to receive multiple packets at once using a
+single operation.
+This reduces the number of kernel/user-mode context switches, improving
+performance.
+To use batched I/O, pass an array of more than one
+<tt>WINDIVERT_ADDRESS</tt> to <tt>pAddr</tt>, set <tt>pAddrLen</tt>
+to be the total length of the <tt>pAddr</tt> array, and ensure that
+<tt>pPacket</tt> points to a sufficiently large buffer for multiple
+packets.
+When the operation completes, the value pointed to by <tt>pAddrLen</tt>
+is updated to the total number of address bytes actually received.
+For example, if a batch of <tt>5</tt> packets were to be received, then
+<tt>pAddrLen</tt> will be updated to point to the value
+<tt>(5*sizeof(WINDIVERT_ADDRESS))</tt>.
+The received packets are packed continuously into the <tt>pPacket</tt> buffer
+without gaps.
 </dd></dl>
 
 <a name="divert_send"><h3>5.6 WinDivertSend</h3></a>
