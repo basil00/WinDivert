@@ -46,8 +46,8 @@
 <li><a href="#divert_helper_compile_filter">6.14 WinDivertHelperCompileFilter</a></li>
 <li><a href="#divert_helper_eval_filter">6.15 WinDivertHelperEvalFilter</a></li>
 <li><a href="#divert_helper_format_filter">6.16 WinDivertHelperFormatFilter</a></li>
-<li><a href="#divert_helper_ntoh"><h3>6.17 WinDivertHelperNtoh*</a></li>
-<li><a href="#divert_helper_hton"><h3>6.18 WinDivertHelperHton*</a></li>
+<li><a href="#divert_helper_ntoh">6.17 WinDivertHelperNtoh*</a></li>
+<li><a href="#divert_helper_hton">6.18 WinDivertHelperHton*</a></li>
 </ul>
 <li><a href="#filter_language">7. Filter Language</a></li>
 <ul>
@@ -2506,11 +2506,58 @@ The possible fields are:
 </table>
 </center>
 </p><p>
-A <i>test</i> also fails if the field is missing.
-E.g. the test <q><tt>tcp.DstPort == 80</tt></q> will fail if the packet does
-not contain a TCP header.
+A <i>test</i> will also fails if the field is not relevant.
+For example, the test <q><tt>tcp.DstPort == 80</tt></q> will fail if the
+packet does not contain a TCP header.
 </p><p>
-The layer-specific macros make it possible to match specific events
+The <tt>processId</tt> field matches the ID of the process associated
+to an event.
+Due to technical limitations, this field is not supported by the
+<tt>WINDIVERT_LAYER_NETWORK*</tt> layers.
+That said, it is usually possible to associate process IDs to network packets 
+matching the same network 5-tuple.
+</p><p>
+Note that a fundamental race condition exists between the <tt>processId</tt>
+and the termination of the corresponding process.
+By the time an event is received using
+<a href="#divert_recv"><tt>WinDivertRecv()</tt></a>,
+it is possible that the process has already terminated and 
+the ID has been reassigned to an unrelated process.
+This problem can be partly mitigated by comparing the timestamp
+(<tt>addr.Timestamp</tt>) with the creation time of the process.
+If the process is newer, then the ID has been reassigned.
+</p><p>
+The <tt>packet*[i]</tt>, <tt>tcp.Payload*[i]</tt> and
+<tt>udp.Payload*[i]</tt> fields take an <i>index</i> parameter (<tt>i</tt>).
+The following indexing schemes are supported:
+</p>
+<ul>
+<li> <i>Undecorated integer</i> (e.g., <tt>packet32[10]</tt>):
+    evaluates to the <tt>i</tt><sup>th</sup> word from the start of
+    the packet/payload.
+    This is essentially C-style array indexing; </li>
+<li> <i>Negative decorated integer</i> (e.g., <tt>packet32[-10]</tt>):
+    evaluates to the <tt>i</tt><sup>th</sup> word from the <b>end</b>
+    of the packet/payload.
+    Here the index (<tt>-1</tt>) is the first full word that fits; and </li>
+<li> <i>Byte decorated (negative) integer</i> (e.g., <tt>packet32[10b]</tt>
+    or <tt>packet32[-10b]</tt>):
+    evaluated to the word offset by <tt>i</tt> bytes from the
+    start (or end) of the packet/payload.
+</ul>
+<p>
+These fields can be used to match filters against the contents of
+packets/payloads in addition to address/header information.
+Words are assumed to be in network-byte ordering.
+If the index is out-of-bounds then the corresponding <i>test</i> is
+deemed to have failed.
+</p><p>
+The <tt>random*</tt> fields are not really random but use a
+deterministic hash value calculated using the
+<a href="#divert_helper_hash_packet"><tt>WinDivertHelperHashPacket()</tt></a>
+function.
+</p></p>
+Layer-specific macros make it possible to match events
 and layers symbolically, e.g., <q><tt>event == CONNECT</tt></q> or
 <q><tt>layer == SOCKET</tt></q>.
 The possible macros are:
@@ -2535,7 +2582,6 @@ The possible macros are:
 <tr><td><tt>REFLECT</tt></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><tt>WINDIVERT_LAYER_FLOW_REFLECT</tt></td></tr>
 </table>
 </center>
-
 
 <a name="filter_examples"><h3>7.1 Filter Examples</h3></a>
 
