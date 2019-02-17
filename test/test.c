@@ -1061,10 +1061,10 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
 
     // (2) Inject the packet:
     memset(&addr_send, 0, sizeof(addr_send));
-    addr_send.Outbound          = TRUE;
-    addr_send.PseudoIPChecksum  = TRUE;
-    addr_send.PseudoTCPChecksum = TRUE;
-    addr_send.PseudoUDPChecksum = TRUE;
+    addr_send.Outbound    = TRUE;
+    addr_send.IPChecksum  = FALSE;
+    addr_send.TCPChecksum = FALSE;
+    addr_send.UDPChecksum = FALSE;
     if (!WinDivertSend(inject_handle, (PVOID)packet, packet_len, &addr_send,
             NULL))
     {
@@ -1242,7 +1242,7 @@ static DWORD monitor_worker(LPVOID arg)
             exit(EXIT_FAILURE);
         }
         WinDivertHelperParsePacket(packet, packet_len, NULL, NULL, NULL, NULL,
-            NULL, NULL, (void **)&object_2, NULL);
+            NULL, NULL, NULL, (void **)&object_2, NULL, NULL, NULL);
         if (strcmp(object_1, object_2) != 0)
         {
             // Filter is not the same.

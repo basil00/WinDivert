@@ -251,9 +251,9 @@ struct packet_s
     UINT64 loopback:1;                      // Packet is loopback?
     UINT64 impostor:1;                      // Packet is impostor?
     UINT64 ipv6:1;                          // Packet is IPv6?
-    UINT64 pseudo_ip_checksum:1;            // Packet has pseudo IPv4 check?
-    UINT64 pseudo_tcp_checksum:1;           // Packet has pseudo TCP check?
-    UINT64 pseudo_udp_checksum:1;           // Packet has pseudo UDP check?
+    UINT64 ip_checksum:1;                   // Packet has IPv4 checksum?
+    UINT64 tcp_checksum:1;                  // Packet has TCP checksum?
+    UINT64 udp_checksum:1;                  // Packet has UDP checksum?
     UINT64 match:1;                         // Packet matches filter?
     UINT32 priority;                        // Packet priority.
     UINT32 packet_len;                      // Length of the packet.
@@ -2006,17 +2006,17 @@ static void windivert_read_service_request(context_t context, packet_t packet,
         // Copy the address data:
         if (addr != NULL)
         {
-            addr[i].Timestamp         = (INT64)packet->timestamp;
-            addr[i].Layer             = packet->layer;
-            addr[i].Event             = packet->event;
-            addr[i].Outbound          = packet->outbound;
-            addr[i].Loopback          = packet->loopback;
-            addr[i].Impostor          = packet->impostor;
-            addr[i].IPv6              = packet->ipv6;
-            addr[i].PseudoIPChecksum  = packet->pseudo_ip_checksum;
-            addr[i].PseudoTCPChecksum = packet->pseudo_tcp_checksum;
-            addr[i].PseudoUDPChecksum = packet->pseudo_udp_checksum;
-            addr[i].Reserved          = 0;
+            addr[i].Timestamp   = (INT64)packet->timestamp;
+            addr[i].Layer       = packet->layer;
+            addr[i].Event       = packet->event;
+            addr[i].Outbound    = packet->outbound;
+            addr[i].Loopback    = packet->loopback;
+            addr[i].Impostor    = packet->impostor;
+            addr[i].IPv6        = packet->ipv6;
+            addr[i].IPChecksum  = packet->ip_checksum;
+            addr[i].TCPChecksum = packet->tcp_checksum;
+            addr[i].UDPChecksum = packet->udp_checksum;
+            addr[i].Reserved    = 0;
             layer_data = (PVOID)packet->data;
             switch (packet->layer)
             {
@@ -2119,7 +2119,7 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
     PWINDIVERT_ADDRESS addr;
     UINT *addr_len_ptr;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums;
-    BOOL pseudo_ip_checksum, pseudo_tcp_checksum, pseudo_udp_checksum;
+    BOOL ip_checksum, tcp_checksum, udp_checksum;
     NTSTATUS status = STATUS_SUCCESS;
 
     // This function bypasses the normal work_queue -> packet_queue flow, but
@@ -2184,18 +2184,15 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
                 TcpIpChecksumNetBufferListInfo);
             if (outbound)
             {
-                pseudo_ip_checksum = (checksums.Transmit.IpHeaderChecksum != 0);
-                pseudo_tcp_checksum = (checksums.Transmit.TcpChecksum != 0);
-                pseudo_udp_checksum = (checksums.Transmit.UdpChecksum != 0);
+                ip_checksum = (checksums.Transmit.IpHeaderChecksum == 0);
+                tcp_checksum = (checksums.Transmit.TcpChecksum == 0);
+                udp_checksum = (checksums.Transmit.UdpChecksum == 0);
             }
             else
             {
-                pseudo_ip_checksum =
-                    (checksums.Receive.IpChecksumSucceeded != 0);
-                pseudo_tcp_checksum =
-                    (checksums.Receive.TcpChecksumSucceeded != 0);
-                pseudo_udp_checksum =
-                    (checksums.Receive.UdpChecksumSucceeded != 0);
+                ip_checksum = (checksums.Receive.IpChecksumSucceeded == 0);
+                tcp_checksum = (checksums.Receive.TcpChecksumSucceeded == 0);
+                udp_checksum = (checksums.Receive.UdpChecksumSucceeded == 0);
             }
             break;
 
@@ -2203,14 +2200,12 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
             dst_len = (dst_len < packet_len? dst_len: packet_len);
             RtlCopyMemory(dst, packet, dst_len);
             read_len = dst_len;
-            pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
-                FALSE;
+            ip_checksum = tcp_checksum = udp_checksum = FALSE;
             break;
 
         default:
             read_len = 0;
-            pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
-                FALSE;
+            ip_checksum = tcp_checksum = udp_checksum = FALSE;
             break;
     }
 
@@ -2220,17 +2215,17 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
 
     if (addr != NULL)
     {
-        addr->Timestamp         = timestamp;
-        addr->Layer             = layer;
-        addr->Event             = event;
-        addr->Outbound          = (outbound? 1: 0);
-        addr->Loopback          = (loopback? 1: 0);
-        addr->Impostor          = (impostor? 1: 0);
-        addr->IPv6              = (ipv4? 0: 1);
-        addr->PseudoIPChecksum  = (pseudo_ip_checksum? 1: 0);
-        addr->PseudoTCPChecksum = (pseudo_tcp_checksum? 1: 0);
-        addr->PseudoUDPChecksum = (pseudo_udp_checksum? 1: 0);
-        addr->Reserved          = 0;
+        addr->Timestamp   = timestamp;
+        addr->Layer       = layer;
+        addr->Event       = event;
+        addr->Outbound    = (outbound? 1: 0);
+        addr->Loopback    = (loopback? 1: 0);
+        addr->Impostor    = (impostor? 1: 0);
+        addr->IPv6        = (ipv4? 0: 1);
+        addr->IPChecksum  = (ip_checksum? 1: 0);
+        addr->TCPChecksum = (tcp_checksum? 1: 0);
+        addr->UDPChecksum = (udp_checksum? 1: 0);
+        addr->Reserved    = 0;
         switch (layer)
         {
             case WINDIVERT_LAYER_NETWORK:
@@ -2474,15 +2469,15 @@ windivert_write_too_small_packet:
         RtlCopyMemory(data_copy, data, packet_len);
 
         // Fix checksums:
-        if (addr[i].PseudoIPChecksum != 0 || addr[i].PseudoTCPChecksum != 0 ||
-            addr[i].PseudoUDPChecksum != 0)
+        if (addr[i].IPChecksum == 0 || addr[i].TCPChecksum == 0 ||
+            addr[i].UDPChecksum == 0)
         {
             checksums = 
-                (addr[i].PseudoIPChecksum?  0:
+                (addr[i].IPChecksum == 0?  0:
                     WINDIVERT_HELPER_NO_IP_CHECKSUM) |
-                (addr[i].PseudoTCPChecksum? 0:
+                (addr[i].TCPChecksum == 0? 0:
                     WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
-                (addr[i].PseudoUDPChecksum? 0:
+                (addr[i].UDPChecksum == 0? 0:
                     WINDIVERT_HELPER_NO_UDP_CHECKSUM) |
                 WINDIVERT_HELPER_NO_ICMP_CHECKSUM |
                 WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM;
@@ -4276,7 +4271,7 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
     PWINDIVERT_DATA_FLOW flow_data;
     PWINDIVERT_DATA_SOCKET socket_data;
     PWINDIVERT_DATA_REFLECT reflect_data;
-    BOOL pseudo_ip_checksum, pseudo_tcp_checksum, pseudo_udp_checksum;
+    BOOL ip_checksum, tcp_checksum, udp_checksum;
     WDFREQUEST request = NULL;
     NTSTATUS status;
 
@@ -4347,18 +4342,15 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
                 TcpIpChecksumNetBufferListInfo);
             if (outbound)
             {
-                pseudo_ip_checksum = (checksums.Transmit.IpHeaderChecksum != 0);
-                pseudo_tcp_checksum = (checksums.Transmit.TcpChecksum != 0);
-                pseudo_udp_checksum = (checksums.Transmit.UdpChecksum != 0);
+                ip_checksum = (checksums.Transmit.IpHeaderChecksum == 0);
+                tcp_checksum = (checksums.Transmit.TcpChecksum == 0);
+                udp_checksum = (checksums.Transmit.UdpChecksum == 0);
             }
             else
             {
-                pseudo_ip_checksum =
-                    (checksums.Receive.IpChecksumSucceeded != 0);
-                pseudo_tcp_checksum =
-                    (checksums.Receive.TcpChecksumSucceeded != 0);
-                pseudo_udp_checksum =
-                    (checksums.Receive.UdpChecksumSucceeded != 0);
+                ip_checksum = (checksums.Receive.IpChecksumSucceeded == 0);
+                tcp_checksum = (checksums.Receive.TcpChecksumSucceeded == 0);
+                udp_checksum = (checksums.Receive.UdpChecksumSucceeded == 0);
             }
             break;
 
@@ -4373,8 +4365,7 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
             work->packet_len = 0;
             data = WINDIVERT_LAYER_DATA_PTR(work);
             RtlCopyMemory(data, flow_data, sizeof(WINDIVERT_DATA_FLOW));
-            pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
-                FALSE;
+            ip_checksum = tcp_checksum = udp_checksum = FALSE;
             break;
  
         case WINDIVERT_LAYER_SOCKET:
@@ -4388,8 +4379,7 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
             work->packet_len = 0;
             data = WINDIVERT_LAYER_DATA_PTR(work);
             RtlCopyMemory(data, socket_data, sizeof(WINDIVERT_DATA_SOCKET));
-            pseudo_ip_checksum = pseudo_tcp_checksum = pseudo_udp_checksum =
-                FALSE;
+            ip_checksum = tcp_checksum = udp_checksum = FALSE;
             break;
 
         case WINDIVERT_LAYER_REFLECT:
@@ -4406,26 +4396,25 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
             RtlCopyMemory(data, reflect_data, sizeof(WINDIVERT_DATA_REFLECT));
             data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_REFLECT, work);
             RtlCopyMemory(data, packet, packet_len);
-            pseudo_ip_checksum  = TRUE;
-            pseudo_tcp_checksum = pseudo_udp_checksum = FALSE;
+            ip_checksum = tcp_checksum = udp_checksum = FALSE;
             break;
 
         default:
             return TRUE;
     }
 
-    work->layer               = layer;
-    work->event               = event;
-    work->outbound            = (outbound? 1: 0);
-    work->loopback            = (loopback? 1: 0);
-    work->impostor            = (impostor? 1: 0);
-    work->ipv6                = (!ipv4? 1: 0);
-    work->pseudo_ip_checksum  = (pseudo_ip_checksum? 1: 0);
-    work->pseudo_tcp_checksum = (pseudo_tcp_checksum? 1: 0);
-    work->pseudo_udp_checksum = (pseudo_udp_checksum? 1: 0);
-    work->match               = match;
-    work->priority            = priority;
-    work->timestamp           = timestamp;
+    work->layer        = layer;
+    work->event        = event;
+    work->outbound     = (outbound? 1: 0);
+    work->loopback     = (loopback? 1: 0);
+    work->impostor     = (impostor? 1: 0);
+    work->ipv6         = (!ipv4? 1: 0);
+    work->ip_checksum  = (ip_checksum? 1: 0);
+    work->tcp_checksum = (tcp_checksum? 1: 0);
+    work->udp_checksum = (udp_checksum? 1: 0);
+    work->match        = match;
+    work->priority     = priority;
+    work->timestamp    = timestamp;
 
     old_entry = NULL;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -4561,16 +4550,13 @@ static void windivert_reinject_packet(packet_t packet)
     packet_len = packet->packet_len;
 
     // Fix checksums:
-    if (packet->pseudo_ip_checksum != 0 || packet->pseudo_tcp_checksum != 0 ||
-        packet->pseudo_udp_checksum != 0)
+    if (packet->ip_checksum == 0 || packet->tcp_checksum == 0 ||
+        packet->udp_checksum == 0)
     {
         checksums =
-            (packet->pseudo_ip_checksum != 0?  0:
-                WINDIVERT_HELPER_NO_IP_CHECKSUM) |
-            (packet->pseudo_tcp_checksum != 0? 0:
-                WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
-            (packet->pseudo_udp_checksum != 0? 0:
-                WINDIVERT_HELPER_NO_UDP_CHECKSUM) |
+            (packet->ip_checksum == 0?  0: WINDIVERT_HELPER_NO_IP_CHECKSUM) |
+            (packet->tcp_checksum == 0? 0: WINDIVERT_HELPER_NO_TCP_CHECKSUM) |
+            (packet->udp_checksum == 0? 0: WINDIVERT_HELPER_NO_UDP_CHECKSUM) |
             WINDIVERT_HELPER_NO_ICMP_CHECKSUM |
             WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM;
         WinDivertHelperCalcChecksums(packet_data, packet_len, NULL, checksums);

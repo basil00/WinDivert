@@ -204,8 +204,10 @@ int __cdecl main(int argc, char **argv)
             continue;
         }
 
-        if (!WinDivertHelperParsePacket(packet, packet_len, &ip_header, NULL,
-                NULL, NULL, &tcp_header, NULL, &payload, &payload_len) ||
+        WinDivertHelperParsePacket(packet, packet_len, NULL, &ip_header,
+            NULL, NULL, NULL, &tcp_header, NULL, &payload, &payload_len,
+            NULL, NULL);
+        if (ip_header == NULL || tcp_header == NULL || payload == NULL ||
             !BlackListPayloadMatch(blacklist, payload, (UINT16)payload_len))
         {
             // Packet does not match the blacklist; simply reinject it.

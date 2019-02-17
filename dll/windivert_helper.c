@@ -285,19 +285,6 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     WINDIVERT_LAYER layer, BOOL top_level, BOOL and);
 
 /*
- * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
- */
-extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
-    PWINDIVERT_IPHDR *ppIpHdr, PWINDIVERT_IPV6HDR *ppIpv6Hdr,
-    PWINDIVERT_ICMPHDR *ppIcmpHdr, PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
-    PWINDIVERT_TCPHDR *ppTcpHdr, PWINDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
-    UINT *pDataLen)
-{
-    return WinDivertParsePacket((PVOID)pPacket, packetLen, ppIpHdr, ppIpv6Hdr,
-        ppIcmpHdr, ppIcmpv6Hdr, ppTcpHdr, ppUdpHdr, NULL, ppData, pDataLen);
-}
-
-/*
  * Parse an IPv4 address.
  */
 extern BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
@@ -2446,9 +2433,9 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
-            WinDivertParsePacket((PVOID)packet, packet_len, &iphdr, &ipv6hdr,
-                &icmphdr, &icmpv6hdr, &tcphdr, &udphdr, &protocol, NULL,
-                &payload_len);
+            WinDivertHelperParsePacket((PVOID)packet, packet_len, &protocol,
+                &iphdr, &ipv6hdr, &icmphdr, &icmpv6hdr, &tcphdr, &udphdr,
+                NULL, &payload_len, NULL, NULL);
             header_len = packet_len - payload_len;
             if ((addr->IPv6 && ipv6hdr == NULL) ||
                 (!addr->IPv6 && iphdr == NULL))
@@ -4599,9 +4586,9 @@ extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
 
-    WinDivertParsePacket((PVOID)pPacket, packetLen, &ip_header, &ipv6_header,
-        &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
-        NULL, NULL);
+    WinDivertHelperParsePacket((PVOID)pPacket, packetLen, NULL, &ip_header,
+        &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header, &udp_header,
+        NULL, NULL, NULL, NULL);
     return WinDivertHashPacket(seed, ip_header, ipv6_header, icmp_header,
         icmpv6_header, tcp_header, udp_header);
 }
@@ -4635,7 +4622,7 @@ extern UINT64 WinDivertHelperHtonll(UINT64 x)
 }
 static void WinDivertByteSwap128(const UINT *inAddr, UINT *outAddr)
 {
-    UINT32 tmp[4], i;   // tmp[] allows overlapping
+    UINT32 tmp[4], i;   // tmp[] allows overlapping inAddr/outAddr
     for (i = 0; i < 4; i++)
     {
         tmp[3-i] = BYTESWAP32(inAddr[0]);

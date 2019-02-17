@@ -140,9 +140,9 @@ typedef struct
     UINT64 Loopback:1;                  /* Packet is loopback? */
     UINT64 Impostor:1;                  /* Packet is impostor? */
     UINT64 IPv6:1;                      /* Packet is IPv6? */
-    UINT64 PseudoIPChecksum:1;          /* Packet has pseudo IPv4 checksum? */
-    UINT64 PseudoTCPChecksum:1;         /* Packet has pseudo TCP checksum? */
-    UINT64 PseudoUDPChecksum:1;         /* Packet has pseudo UDP checksum? */
+    UINT64 IPChecksum:1;                /* Packet has valid IPv4 checksum? */
+    UINT64 TCPChecksum:1;               /* Packet has valid TCP checksum? */
+    UINT64 UDPChecksum:1;               /* Packet has valid UDP checksum? */
     UINT64 Reserved:41;
     union
     {
@@ -291,6 +291,22 @@ extern WINDIVERTEXPORT BOOL WinDivertGetParam(
     __out       UINT64 *pValue);
 
 #endif      /* WINDIVERT_KERNEL */
+
+/*
+ * WinDivert constants.
+ */
+#define WINDIVERT_PRIORITY_LOWEST           30000
+#define WINDIVERT_PRIORITY_HIGHEST          (-WINDIVERT_PRIORITY_LOWEST)
+#define WINDIVERT_PARAM_QUEUE_LEN_DEFAULT   2048
+#define WINDIVERT_PARAM_QUEUE_LEN_MIN       16
+#define WINDIVERT_PARAM_QUEUE_LEN_MAX       16384
+#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT  1000        /* 1s */
+#define WINDIVERT_PARAM_QUEUE_TIME_MIN      20          /* 20ms */
+#define WINDIVERT_PARAM_QUEUE_TIME_MAX      8000        /* 8s */
+#define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT  4194304     /* 4MB */
+#define WINDIVERT_PARAM_QUEUE_SIZE_MIN      65535       /* 64KB */
+#define WINDIVERT_PARAM_QUEUE_SIZE_MAX      33554432    /* 32MB */
+#define WINDIVERT_BATCH_MAX                 0xFF        /* 255 */
 
 /****************************************************************************/
 /* WINDIVERT HELPER API                                                     */
@@ -459,6 +475,7 @@ extern WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
 extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __in        const VOID *pPacket,
     __in        UINT packetLen,
+    __out_opt   UINT8 *pProtocol,
     __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt   PWINDIVERT_IPV6HDR *ppIpv6Hdr,
     __out_opt   PWINDIVERT_ICMPHDR *ppIcmpHdr,
@@ -466,7 +483,9 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __out_opt   PWINDIVERT_TCPHDR *ppTcpHdr,
     __out_opt   PWINDIVERT_UDPHDR *ppUdpHdr,
     __out_opt   PVOID *ppData,
-    __out_opt   UINT *pDataLen);
+    __out_opt   UINT *pDataLen,
+    __out_opt   PVOID *ppNext,
+    __out_opt   UINT *pNextLen);
 
 /*
  * Parse an IPv4 address.
@@ -504,7 +523,7 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
 extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
     __inout     VOID *pPacket, 
     __in        UINT packetLen,
-    __in_opt    const WINDIVERT_ADDRESS *pAddr,
+    __out_opt   WINDIVERT_ADDRESS *pAddr,
     __in        UINT64 flags);
 
 /*

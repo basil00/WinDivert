@@ -390,7 +390,7 @@ usage:
         fputs(" filter=", stdout);
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
         WinDivertHelperParsePacket(packet, packet_len, NULL, NULL, NULL, NULL,
-            NULL, NULL, &object, NULL);
+            NULL, NULL, NULL, &object, NULL, NULL, NULL);
         if (WinDivertHelperFormatFilter((char *)object, addr.Reflect.Layer,
             filter_str, sizeof(filter_str)))
         {

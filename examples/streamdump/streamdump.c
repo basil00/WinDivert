@@ -250,8 +250,9 @@ read_failed:
         }
         cleanup(ioport, &overlapped);
 
-        if (!WinDivertHelperParsePacket(packet, packet_len, &ip_header, NULL,
-                NULL, NULL, &tcp_header, NULL, NULL, NULL))
+        WinDivertHelperParsePacket(packet, packet_len, NULL, &ip_header, NULL,
+            NULL, NULL, &tcp_header, NULL, NULL, NULL, NULL, NULL);
+        if (ip_header == NULL || tcp_header == NULL)
         {
             warning("failed to parse packet (%d)", GetLastError());
             continue;

@@ -212,26 +212,8 @@
  * WinDivert priorities.
  */
 #define WINDIVERT_PRIORITY_DEFAULT                  0
-#define WINDIVERT_PRIORITY_MAX                      30000
-#define WINDIVERT_PRIORITY_MIN                      -WINDIVERT_PRIORITY_MAX
-
-/*
- * WinDivert parameters.
- */
-#define WINDIVERT_PARAM_QUEUE_LEN_DEFAULT           2048
-#define WINDIVERT_PARAM_QUEUE_LEN_MIN               16
-#define WINDIVERT_PARAM_QUEUE_LEN_MAX               16384
-#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT          1000        // 1s
-#define WINDIVERT_PARAM_QUEUE_TIME_MIN              20          // 20ms
-#define WINDIVERT_PARAM_QUEUE_TIME_MAX              8000        // 8s
-#define WINDIVERT_PARAM_QUEUE_SIZE_MIN              65535       // 64KB
-#define WINDIVERT_PARAM_QUEUE_SIZE_MAX              33554432    // 32MB
-#define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT          4194304     // 4MB
-
-/*
- * WinDivert batch limits.
- */
-#define WINDIVERT_BATCH_MAX                         0xFF
+#define WINDIVERT_PRIORITY_MAX                      WINDIVERT_PRIORITY_LOWEST
+#define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY_HIGHEST
 
 /*
  * WinDivert message definitions.

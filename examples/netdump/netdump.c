@@ -147,9 +147,9 @@ int __cdecl main(int argc, char **argv)
         }
 
         // Print info about the matching packet.
-        WinDivertHelperParsePacket(packet, packet_len, &ip_header,
+        WinDivertHelperParsePacket(packet, packet_len, NULL, &ip_header,
             &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
-            &udp_header, NULL, NULL);
+            &udp_header, NULL, NULL, NULL, NULL);
         if (ip_header == NULL && ipv6_header == NULL)
         {
             fprintf(stderr, "warning: junk packet\n");
