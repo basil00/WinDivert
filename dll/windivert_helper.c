@@ -2416,6 +2416,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     UINT32 data32;
     BOOL pass, big;
     int cmp;
+    PVOID next;
     WINDIVERT_FILTER object[WINDIVERT_FILTER_MAXLEN];
     UINT obj_len;
 
@@ -2435,9 +2436,10 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
             }
             WinDivertHelperParsePacket((PVOID)packet, packet_len, &protocol,
                 &iphdr, &ipv6hdr, &icmphdr, &icmpv6hdr, &tcphdr, &udphdr,
-                NULL, &payload_len, NULL, NULL);
+                NULL, &payload_len, &next, NULL);
             header_len = packet_len - payload_len;
-            if ((addr->IPv6 && ipv6hdr == NULL) ||
+            if (next != NULL ||
+                (addr->IPv6 && ipv6hdr == NULL) ||
                 (!addr->IPv6 && iphdr == NULL))
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
@@ -4585,10 +4587,16 @@ extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
+    PVOID next;
 
-    WinDivertHelperParsePacket((PVOID)pPacket, packetLen, NULL, &ip_header,
-        &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header, &udp_header,
-        NULL, NULL, NULL, NULL);
+    if (!WinDivertHelperParsePacket((PVOID)pPacket, packetLen, NULL,
+            &ip_header, &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
+            &udp_header, NULL, NULL, &next, NULL) ||
+        next != NULL)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
     return WinDivertHashPacket(seed, ip_header, ipv6_header, icmp_header,
         icmpv6_header, tcp_header, udp_header);
 }

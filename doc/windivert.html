@@ -2027,6 +2027,10 @@ UINT64 <b>WinDivertHelperHashPacket</b>(
 <p>
 <b>Return Value</b><br>
 A 64bit hash value.
+Returns <code>0</code> with error code <code>ERROR_INVALID_PARAMETER</code>
+for invalid packets.
+Note that <code>0</code> (without an error code) is also a legitimate hash
+value.
 </p><p>
 <b>Remarks</b><br>
 Calculates a 64bit hash value of the given packet.
@@ -2158,7 +2162,7 @@ Convert an IPv6 address into a string.
 <a name="divert_helper_calc_checksums"><h3>6.13 WinDivertHelperCalcChecksums</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-UINT <b>WinDivertHelperCalcChecksums</b>(
+BOOL <b>WinDivertHelperCalcChecksums</b>(
     __inout PVOID pPacket,
     __in UINT packetLen,
     __out_opt WINDIVERT_ADDRESS *pAddr,
@@ -2189,7 +2193,8 @@ UINT <b>WinDivertHelperCalcChecksums</b>(
 </ul>
 <p>
 <b>Return Value</b><br>
-The number of checksums calculated.
+<code>TRUE</code> if successful, <code>FALSE</code> if an error occurred.
+Use <code>GetLastError()</code> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 (Re)calculates the checksum for any IPv4/ICMP/ICMPv6/TCP/UDP checksum present
@@ -2197,12 +2202,6 @@ in the given packet.
 Individual checksum calculations may be disabled via the appropriate flag.
 Typically this function should be invoked on a modified packet before it is
 injected with <a href="#divert_send"><code>WinDivertSend()</code></a>.
-</p><p>
-The <code>pPacket</code> parameter may also point to a batch (&gt;1) of
-packets.
-In this case, <code>packetLen</code> should be the total length of the batch,
-and this function will (re)calculate the checksums for all packets in the
-batch.
 </p><p>
 By default this function will calculate each checksum from scratch, even if
 the existing checksum is correct.

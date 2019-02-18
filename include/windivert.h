@@ -520,7 +520,7 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
-extern WINDIVERTEXPORT UINT WinDivertHelperCalcChecksums(
+extern WINDIVERTEXPORT BOOL WinDivertHelperCalcChecksums(
     __inout     VOID *pPacket, 
     __in        UINT packetLen,
     __out_opt   WINDIVERT_ADDRESS *pAddr,
