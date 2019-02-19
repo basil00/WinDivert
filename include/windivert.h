@@ -527,6 +527,13 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperCalcChecksums(
     __in        UINT64 flags);
 
 /*
+ * Decrement the TTL/HopLimit.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertHelperDecrementTTL(
+    __inout     VOID *pPacket,
+    __in        UINT packetLen);
+
+/*
  * Compile the given filter string.
  */
 extern WINDIVERTEXPORT BOOL WinDivertHelperCompileFilter(

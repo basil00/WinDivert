@@ -46,11 +46,12 @@
 <li><a href="#divert_helper_format_ipv4_address">6.11 WinDivertHelperFormatIPv4Address</a></li>
 <li><a href="#divert_helper_format_ipv6_address">6.12 WinDivertHelperFormatIPv6Address</a></li>
 <li><a href="#divert_helper_calc_checksums">6.13 WinDivertHelperCalcChecksums</a></li>
-<li><a href="#divert_helper_compile_filter">6.14 WinDivertHelperCompileFilter</a></li>
-<li><a href="#divert_helper_eval_filter">6.15 WinDivertHelperEvalFilter</a></li>
-<li><a href="#divert_helper_format_filter">6.16 WinDivertHelperFormatFilter</a></li>
-<li><a href="#divert_helper_ntoh">6.17 WinDivertHelperNtoh*</a></li>
-<li><a href="#divert_helper_hton">6.18 WinDivertHelperHton*</a></li>
+<li><a href="#divert_helper_dec_ttl">6.14 WinDivertHelperDecrementTTL</a></li>
+<li><a href="#divert_helper_compile_filter">6.15 WinDivertHelperCompileFilter</a></li>
+<li><a href="#divert_helper_eval_filter">6.16 WinDivertHelperEvalFilter</a></li>
+<li><a href="#divert_helper_format_filter">6.17 WinDivertHelperFormatFilter</a></li>
+<li><a href="#divert_helper_ntoh">6.18 WinDivertHelperNtoh*</a></li>
+<li><a href="#divert_helper_hton">6.19 WinDivertHelperHton*</a></li>
 </ul>
 </li>
 <li><a href="#filter_language">7. Filter Language</a>
@@ -1965,7 +1966,6 @@ BOOL <b>WinDivertHelperParsePacket</b>(
 <p>
 <b>Return Value</b><br>
 <code>TRUE</code> if successful, <code>FALSE</code> if an error occurred.
-Use <code>GetLastError()</code> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Parses a raw packet or batch of packets (e.g. from <a
@@ -1986,12 +1986,17 @@ Any non-<code>NULL</code> pointer that is returned:
 This function does not do any verification of the header/payload contents
 beyond checking the header length and any other minimal information required
 for parsing.
+This function will always succeed provided the <code>pPacket</code> buffer
+contains at least one IPv4 or IPv6 header and the <code>packetLen</code> is
+correct.
 </p><p>
-The <code>pPacket</code> parameter may also point to a batch (&gt;1) of
-packets.
-In this case, <code>packetLen</code> should be the total length of the batch.
-Each call will parse the first packet, and a pointer to the
-remaining packets will be written to <code>ppNext</code>
+By default this function will parse a single packet.
+However, if either <code>ppNext</code> or <code>pNextLen</code> are
+non-<code>NULL</code>, then the <code>pPacket</code> parameter can point
+to a batch (&gt;1) of packets
+(and <code>packetLen</code> can be the total length of the batch).
+In this case, the function will parse the first packet, and a pointer to the
+remaining packet(s) will be written to <code>ppNext</code>,
 and the remaining length will be written to <code>pNextLen</code>.
 This makes it convenient to loop over every packet in the batch as follows:
 </p>
@@ -2001,10 +2006,6 @@ This makes it convenient to loop over every packet in the batch as follows:
         ...
     }
 </pre>
-<p>
-This function will always succeed provided the <code>pPacket</code> buffer
-contains at least an IPv4 or IPv6 header.
-</p>
 </dd></dl>
 
 <a name="divert_helper_hash_packet"><h3>6.8 WinDivertHelperHashPacket</h3></a>
@@ -2027,10 +2028,6 @@ UINT64 <b>WinDivertHelperHashPacket</b>(
 <p>
 <b>Return Value</b><br>
 A 64bit hash value.
-Returns <code>0</code> with error code <code>ERROR_INVALID_PARAMETER</code>
-for invalid packets.
-Note that <code>0</code> (without an error code) is also a legitimate hash
-value.
 </p><p>
 <b>Remarks</b><br>
 Calculates a 64bit hash value of the given packet.
@@ -2194,7 +2191,6 @@ BOOL <b>WinDivertHelperCalcChecksums</b>(
 <p>
 <b>Return Value</b><br>
 <code>TRUE</code> if successful, <code>FALSE</code> if an error occurred.
-Use <code>GetLastError()</code> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 (Re)calculates the checksum for any IPv4/ICMP/ICMPv6/TCP/UDP checksum present
@@ -2211,11 +2207,48 @@ instead (not provided by this API).
 </p><p>
 If <code>pAddr</code> is non-<code>NULL</code>, this function sets
 the corresponding <code>*Checksum</code> flag
-(wee <a href="#divert_address"><code>WINDIVERT_ADDRESS</code></a>).
+(see <a href="#divert_address"><code>WINDIVERT_ADDRESS</code></a>).
+Normally, <code>pAddr</code> should point to the address 
+passed to <a href="#divert_send"><code>WinDivertSend()</code></a> for
+packet injection.
 </p>
 </dd></dl>
 
-<a name="divert_helper_compile_filter"><h3>6.14 WinDivertHelperCompileFilter</h3></a>
+<a name="divert_helper_dec_ttl"><h3>6.14 WinDivertHelperDecrementTTL</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperDecrementTTL</b>(
+    __inout VOID *packet,
+    __in packetLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p><b>Parameters</b></p>
+<ul>
+<li> <code>pPacket</code>: The packet to be modified.</li>
+<li> <code>packetLen</code>: The total length of the packet <code>pPacket</code>.</li>
+</ul>
+<p>
+<b>Return Value</b><br>
+<code>TRUE</code> if successful, <code>FALSE</code> if an error occurred.
+Returns <code>FALSE</code> if the <code>ip.TTL</code> or
+<code>ipv6.HopHimit</code> fields go to <code>0</code>.
+</p><p>
+<b>Remarks</b><br>
+Decrements the <code>ip.TTL</code> or
+<code>ipv6.HopHimit</code> field by <code>1</code>, and returns
+<code>TRUE</code> only if the result is non-zero.
+This is useful for applications where packet loops may be a problem.
+</p><p>
+For IPv4, this function will preserve the validity of the IPv4 checksum.
+That is, if the packet had a valid checksum before the operation, the
+resulting checksum will also be valid after the operation.
+This function updates the checksum field incrementally.
+</p>
+</dd></dl>
+
+<a name="divert_helper_compile_filter"><h3>6.15 WinDivertHelperCompileFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCompileFilter</b>(
@@ -2266,7 +2299,7 @@ objects, and therefore do not need to be deallocated.
 <p>
 </dd></dl>
 
-<a name="divert_helper_eval_filter"><h3>6.15 WinDivertHelperEvalFilter</h3></a>
+<a name="divert_helper_eval_filter"><h3>6.16 WinDivertHelperEvalFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperEvalFilter</b>(
@@ -2310,7 +2343,7 @@ function.
 <p>
 </dd></dl>
 
-<a name="divert_helper_format_filter"><h3>6.16 WinDivertHelperFormatFilter</h3></a>
+<a name="divert_helper_format_filter"><h3>6.17 WinDivertHelperFormatFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperEvalFilter</b>(
@@ -2344,7 +2377,7 @@ where a <q>pseudo packet</q> containing a filter object is returned by
 </p>
 </dd></dl>
 
-<a name="divert_helper_ntoh"><h3>6.17 WinDivertHelperNtoh*</h3></a>
+<a name="divert_helper_ntoh"><h3>6.18 WinDivertHelperNtoh*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperNtohs</b>(
@@ -2379,7 +2412,7 @@ Converts a value/IPv6-address from network to host byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_hton"><h3>6.18 WinDivertHelperHton*</h3></a>
+<a name="divert_helper_hton"><h3>6.19 WinDivertHelperHton*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperHtons</b>(
@@ -2715,12 +2748,29 @@ The sample programs are:
     The <code>streamdump</code> sample program also demonstrates usage of the
     <a href="#divert_recv_ex"><code>WinDivertRecvEx()</code></a> and
     <a href="#divert_send_ex"><code>WinDivertSendEx()</code></a> functions.</li>
+<li><code>flowtrack.exe</code>: A program that tracks all network flows
+    to and from the local machine, including information such as the ID of the
+    responsible process.
+    The <code>flowtrack</code> sample demonstrates the
+    <code>WINDIVERT_LAYER_FLOW</code> layer.</li>
+<li><code>socketdump.exe</code>: Dumps socket operations
+    (<code>bind()</code>, <code>connect()</code>, etc.) and the ID of the
+    responsible process.
+    The <code>socketdump</code> sample demonstrates the
+    <code>WINDIVERT_LAYER_SOCKET</code> layer.</li>
+<li><code>windivertctl.exe</code> allows the user to query which processes
+    are using WinDivert via the <code>list</code> or <code>monitor</code>
+    commands, or to terminate all such processes using the
+    <code>killall</code> command.
+    The <code>windivertctl</code> sample demonstrates the
+    <code>WINDIVERT_LAYER_REFLECT</code> layer.</li>
 </ul>
 <p>
 The samples are intended for educational purposes only, and are not
 fully-featured applications.
 </p><p>
-The following basic template for a WinDivert application.
+The following basic template for a WinDivert application using the
+<code>WINDIVERT_LAYER_NETWORK</code> layer.
 The basic idea is to open a WinDivert handle, then enter a
 capture-modify-reinject loop:
 </p>
@@ -2730,7 +2780,8 @@ capture-modify-reinject loop:
     char packet[MAXBUF];    // Packet buffer
     UINT packetLen;
 
-    handle = WinDivertOpen("...", 0, 0, 0);   // Open some filter
+    // Open some filter
+    handle = WinDivertOpen("...", WINDIVERT_LAYER_NETWORK, 0, 0);
     if (handle == INVALID_HANDLE_VALUE)
     {
         // Handle error

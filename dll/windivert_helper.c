@@ -2416,7 +2416,6 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     UINT32 data32;
     BOOL pass, big;
     int cmp;
-    PVOID next;
     WINDIVERT_FILTER object[WINDIVERT_FILTER_MAXLEN];
     UINT obj_len;
 
@@ -2434,12 +2433,15 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
-            WinDivertHelperParsePacket((PVOID)packet, packet_len, &protocol,
-                &iphdr, &ipv6hdr, &icmphdr, &icmpv6hdr, &tcphdr, &udphdr,
-                NULL, &payload_len, &next, NULL);
+            if (!WinDivertHelperParsePacket((PVOID)packet, packet_len,
+                    &protocol, &iphdr, &ipv6hdr, &icmphdr, &icmpv6hdr,
+                    &tcphdr, &udphdr, NULL, &payload_len, NULL, NULL))
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
             header_len = packet_len - payload_len;
-            if (next != NULL ||
-                (addr->IPv6 && ipv6hdr == NULL) ||
+            if ((addr->IPv6 && ipv6hdr == NULL) ||
                 (!addr->IPv6 && iphdr == NULL))
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
@@ -3367,6 +3369,28 @@ static BOOL WinDivertDeserializeFilter(PWINDIVERT_STREAM stream,
         if (!WinDivertDeserializeTest(stream, filter + i))
         {
             return FALSE;
+        }
+        switch (filter[i].success)
+        {
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
+            case WINDIVERT_FILTER_RESULT_REJECT:
+                break;
+            default:
+                if (filter[i].success <= i || filter[i].success >= *length)
+                {
+                    return FALSE;
+                }
+        }
+        switch (filter[i].failure)
+        {
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
+            case WINDIVERT_FILTER_RESULT_REJECT:
+                break;
+            default:
+                if (filter[i].failure <= i || filter[i].failure >= *length)
+                {
+                    return FALSE;
+                }
         }
     }
 
@@ -4587,14 +4611,11 @@ extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
-    PVOID next;
 
     if (!WinDivertHelperParsePacket((PVOID)pPacket, packetLen, NULL,
-            &ip_header, &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
-            &udp_header, NULL, NULL, &next, NULL) ||
-        next != NULL)
+            &ip_header, &ipv6_header, &icmp_header, &icmpv6_header,
+            &tcp_header, &udp_header, NULL, NULL, NULL, NULL))
     {
-        SetLastError(ERROR_INVALID_PARAMETER);
         return 0;
     }
     return WinDivertHashPacket(seed, ip_header, ipv6_header, icmp_header,

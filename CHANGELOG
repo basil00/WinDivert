@@ -263,5 +263,7 @@ WinDivert 2.0.0-rc
     - Add a new WinDivertHelperFormatFilter() helper function that formats a
       filter string into a normalized form.  It also can be used to
       "de-compile" the object format into a human readable form.
+    - Add a new WinDivertHelperDecrementTTL() function that decrements the
+      ip.TTL/ipv6.HopLimit field of a packet.
     - Add new WinDivertHelperNto*()/WinDivertHelperHton*() helper functions
       for swapping from network to host byte ordering, and vice versa.

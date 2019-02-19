@@ -457,7 +457,6 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
 static void windivert_queue_packet(context_t context, packet_t packet);
 static void windivert_reinject_packet(packet_t packet);
 static void windivert_free_packet(packet_t packet);
-static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4);
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b,
     BOOL big);
 static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
@@ -2486,7 +2485,8 @@ windivert_write_too_small_packet:
         }
 
         // Decrement TTL for impostor packets:
-        if (addr[i].Impostor && !windivert_decrement_ttl(data_copy, ipv4))
+        if (addr[i].Impostor &&
+                !WinDivertHelperDecrementTTL(data_copy, packet_len))
         {
             status_soft_error = STATUS_HOPLIMIT_EXCEEDED;
             windivert_free(data_copy);
@@ -4563,8 +4563,8 @@ static void windivert_reinject_packet(packet_t packet)
     }
 
     // Decrement TTL for impostor packets:
-    if (packet->impostor != 0 && !windivert_decrement_ttl(packet_data,
-            packet->ipv6 == 0))
+    if (packet->impostor != 0 &&
+            !WinDivertHelperDecrementTTL(packet_data, packet_len))
     {
         status = STATUS_HOPLIMIT_EXCEEDED;
         DEBUG_ERROR("failed to reinject ttl-exceeded impostor packet", status);
@@ -4630,46 +4630,6 @@ static void windivert_reinject_packet(packet_t packet)
 static void windivert_free_packet(packet_t packet)
 {
     windivert_free(packet);
-}
-
-/*
- * Decrement the TTL of a packet.
- */
-static BOOL windivert_decrement_ttl(PVOID data, BOOL ipv4)
-{
-    PWINDIVERT_IPHDR ip_header;
-    PWINDIVERT_IPV6HDR ipv6_header;
-
-    if (ipv4)
-    {
-        ip_header = (PWINDIVERT_IPHDR)data;
-        if (ip_header->TTL <= 1)
-        {
-            return FALSE;
-        }
-        ip_header->TTL--;
-
-        // Incremental checksum update:
-        if (ip_header->Checksum >= 0xFFFE)
-        {
-            ip_header->Checksum -= 0xFFFE;
-        }
-        else
-        {
-            ip_header->Checksum += 1;
-        }
-    }
-    else
-    {
-        ipv6_header = (PWINDIVERT_IPV6HDR)data;
-        if (ipv6_header->HopLimit <= 1)
-        {
-            return FALSE;
-        }
-        ipv6_header->HopLimit--;
-    }
-
-    return TRUE;
 }
 
 /*

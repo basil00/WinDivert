@@ -466,12 +466,10 @@ WinDivertHelperParsePacketExit:
         *pNextLen = next_len;
     }
 
-#ifndef WINDIVERT_KERNEL
-    if (!success)
+    if (ppNext == NULL && pNextLen == NULL && next != NULL)
     {
-        SetLastError(ERROR_INVALID_PARAMETER);
+        success = FALSE;
     }
-#endif
 
     return success;
 }
@@ -495,8 +493,7 @@ extern BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
 
     if (!WinDivertHelperParsePacket(pPacket, packetLen, NULL, &ip_header,
             &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
-            &udp_header, NULL, &payload_len, pPacket, NULL) ||
-        pPacket != NULL)
+            &udp_header, NULL, &payload_len, NULL, NULL))
     {
         return FALSE;
     }
@@ -652,5 +649,57 @@ static UINT16 WinDivertCalcChecksum(PVOID pseudo_header,
     sum += (sum >> 16);
     sum = ~sum;
     return (UINT16)sum;
+}
+
+/*
+ * Decrement the TTL.
+ */
+extern BOOL WinDivertHelperDecrementTTL(VOID *packet, UINT packetLen)
+{
+    PWINDIVERT_IPHDR ip_header;
+    PWINDIVERT_IPV6HDR ipv6_header;
+
+    if (packet == NULL || packetLen < sizeof(WINDIVERT_IPHDR))
+    {
+        return FALSE;
+    }
+
+    ip_header = (PWINDIVERT_IPHDR)packet;
+    switch (ip_header->Version)
+    {
+		case 4:
+	        if (ip_header->TTL <= 1)
+	        {
+	            return FALSE;
+	        }
+	        ip_header->TTL--;
+	
+	        // Incremental checksum update:
+	        if (ip_header->Checksum >= 0xFFFE)
+	        {
+	            ip_header->Checksum -= 0xFFFE;
+	        }
+	        else
+	        {
+	            ip_header->Checksum += 1;
+	        }
+            return TRUE;
+
+        case 6:
+            if (packetLen < sizeof(WINDIVERT_IPV6HDR))
+            {
+                return FALSE;
+            }
+            ipv6_header = (PWINDIVERT_IPV6HDR)packet;
+            if (ipv6_header->HopLimit <= 1)
+            {
+                return FALSE;
+            }
+            ipv6_header->HopLimit--;
+            return TRUE;
+
+        default:
+            return FALSE;
+    }
 }
 
