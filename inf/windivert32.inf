@@ -23,12 +23,6 @@ CopyFiles = WinDivertCalloutDriver.DriverFiles
 [DefaultInstall.Services]
 AddService = %ServiceName%,,WinDivertCalloutDriver.Service
 
-[DefaultUninstall]
-DelFiles = WinDivertCalloutDriver.DriverFiles
-
-[DefaultUninstall.Services]
-DelService = WinDivertCalloutDriver,0x200 ; SPSVCINST_STOPSERVICE
-
 [WinDivertCalloutDriver.DriverFiles]
 WinDivert32.sys,,,0x00000040 ; COPYFLG_OVERWRITE_OLDER_ONLY
 
@@ -41,8 +35,8 @@ ErrorControl = 1 ; SERVICE_ERROR_NORMAL
 ServiceBinary = %12%\WinDivert32.sys
 
 [Strings]
-%Basil% = "Basil"
-%DiskName% = "WinDivert Installation Disk"
-%Description% = "WinDivert Driver"
-%ServiceName% = "WinDivert"
-%ServiceDesc% = "WinDivert Driver"
+Basil = "Basil"
+DiskName = "WinDivert Installation Disk"
+Description = "WinDivert Driver"
+ServiceName = "WinDivert"
+ServiceDesc = "WinDivert Driver"
