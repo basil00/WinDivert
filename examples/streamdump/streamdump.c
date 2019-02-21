@@ -1,6 +1,6 @@
 /*
  * streamdump.c
- * (C) 2018, all rights reserved,
+ * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -39,8 +39,6 @@
  *
  * The program works by "reflecting" outbound TCP connections into inbound
  * TCP connections that are handled by a simple proxy server.
- *
- * This program also demonstrates WinDivert asynchronous I/O.
  *
  * usage: streamdump.exe port
  */
@@ -115,24 +113,6 @@ static void message(const char *msg, ...)
     message("warning: " msg, ## __VA_ARGS__)
 
 /*
- * Cleanup completed I/O requests.
- */
-static void cleanup(HANDLE ioport, OVERLAPPED *ignore)
-{
-    OVERLAPPED *overlapped;
-    DWORD iolen;
-    ULONG_PTR iokey = 0;
-
-    while (GetQueuedCompletionStatus(ioport, &iolen, &iokey, &overlapped, 0))
-    {
-        if (overlapped != ignore)
-        {
-            free(overlapped);
-        }
-    }
-}
-
-/*
  * Entry.
  */
 int __cdecl main(int argc, char **argv)
@@ -148,9 +128,6 @@ int __cdecl main(int argc, char **argv)
     WINDIVERT_ADDRESS addr;
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_TCPHDR tcp_header;
-    OVERLAPPED *poverlapped;
-    OVERLAPPED overlapped;
-    HANDLE ioport, event;
     DWORD len;
 
     // Init.
@@ -174,16 +151,6 @@ int __cdecl main(int argc, char **argv)
             GetLastError());
         exit(EXIT_FAILURE);
     }
-    ioport = CreateIoCompletionPort(INVALID_HANDLE_VALUE, NULL, 0, 0);
-    if (ioport == NULL)
-    {
-        error("failed to create I/O completion port (%d)", GetLastError());
-    }
-    event = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (event == NULL)
-    {
-        error("failed to create event (%d)", GetLastError());
-    }
 
     // Divert all traffic to/from `port', `proxy_port' and `alt_port'.
     r = snprintf(filter, sizeof(filter),
@@ -199,10 +166,6 @@ int __cdecl main(int argc, char **argv)
     if (handle == INVALID_HANDLE_VALUE)
     {
         error("failed to open the WinDivert device (%d)", GetLastError());
-    }
-    if (CreateIoCompletionPort(handle, ioport, 0, 0) == NULL)
-    {
-        error("failed to associate I/O completion port (%d)", GetLastError());
     }
 
     // Spawn proxy thread,
@@ -224,31 +187,11 @@ int __cdecl main(int argc, char **argv)
     // Main loop:
     while (TRUE)
     {
-        memset(&overlapped, 0, sizeof(overlapped));
-        ResetEvent(event);
-        overlapped.hEvent = event;
-        if (!WinDivertRecvEx(handle, packet, sizeof(packet), &packet_len, 0,
-                &addr, NULL, &overlapped))
+        if (WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
-            if (GetLastError() != ERROR_IO_PENDING)
-            {
-read_failed:
-                warning("failed to read packet (%d)", GetLastError());
-                continue;
-            }
-
-            // Timeout = 1s
-            while (WaitForSingleObject(event, 1000) == WAIT_TIMEOUT)
-            {
-                cleanup(ioport, &overlapped);
-            }
-            if (!GetOverlappedResult(handle, &overlapped, &len, FALSE))
-            {
-                goto read_failed;
-            }
-            packet_len = len;
+            warning("failed to read packet (%d)", GetLastError());
+            continue;
         }
-        cleanup(ioport, &overlapped);
 
         WinDivertHelperParsePacket(packet, packet_len, NULL, &ip_header, NULL,
             NULL, NULL, &tcp_header, NULL, NULL, NULL, NULL, NULL);
@@ -294,18 +237,7 @@ read_failed:
         }
 
         WinDivertHelperCalcChecksums(packet, packet_len, &addr, 0);
-        poverlapped = (OVERLAPPED *)malloc(sizeof(OVERLAPPED));
-        if (poverlapped == NULL)
-        {
-            error("failed to allocate memory");
-        }
-        memset(poverlapped, 0, sizeof(OVERLAPPED));
-        if (WinDivertSendEx(handle, packet, packet_len, NULL, 0, &addr,
-                sizeof(WINDIVERT_ADDRESS), poverlapped))
-        {
-            continue;
-        }
-        if (GetLastError() != ERROR_IO_PENDING)
+        if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
         {
             warning("failed to send packet (%d)", GetLastError());
             continue;
