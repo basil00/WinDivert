@@ -1,6 +1,6 @@
 /*
  * windivert_device.h
- * (C) 2018, all rights reserved,
+ * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -44,8 +44,11 @@
 #define WINDIVERT_KERNEL
 #include "windivert.h"
 
-#define WINDIVERT_VERSION                           2
+#define WINDIVERT_VERSION_MAJOR                     2
 #define WINDIVERT_VERSION_MINOR                     0
+
+#define WINDIVERT_MAGIC_DLL                         0xB9B4733C65DCE2C6ull
+#define WINDIVERT_MAGIC_SYS                         0x3A55EB5F1C9584F1ull
 
 #define WINDIVERT_STR2(s)                           #s
 #define WINDIVERT_STR(s)                            WINDIVERT_STR2(s)
@@ -53,11 +56,13 @@
 #define WINDIVERT_LSTR(s)                           WINDIVERT_LSTR2(s)
 
 #define WINDIVERT_VERSION_LSTR                                              \
-    WINDIVERT_LSTR(WINDIVERT_VERSION) L"."                                  \
+    WINDIVERT_LSTR(WINDIVERT_VERSION_MAJOR) L"."                            \
         WINDIVERT_LSTR(WINDIVERT_VERSION_MINOR)
 
 #define WINDIVERT_DEVICE_NAME                                               \
-    L"WinDivert" WINDIVERT_VERSION_LSTR
+    L"WinDivert"
+#define WINDIVERT_LAYER_NAME                                                \
+    WINDIVERT_DEVICE_NAME WINDIVERT_VERSION_LSTR
 
 #define WINDIVERT_FILTER_FIELD_ZERO                 0
 #define WINDIVERT_FILTER_FIELD_INBOUND              1
@@ -159,7 +164,6 @@
 /*
  * WinDivert layers.
  */
-#define WINDIVERT_LAYER_DEFAULT                     WINDIVERT_LAYER_NETWORK
 #define WINDIVERT_LAYER_MAX                         WINDIVERT_LAYER_REFLECT
 
 /*
@@ -211,7 +215,6 @@
 /*
  * WinDivert priorities.
  */
-#define WINDIVERT_PRIORITY_DEFAULT                  0
 #define WINDIVERT_PRIORITY_MAX                      WINDIVERT_PRIORITY_LOWEST
 #define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY_HIGHEST
 
@@ -219,14 +222,57 @@
  * WinDivert message definitions.
  */
 #pragma pack(push, 1)
-typedef struct
+typedef union
 {
-    UINT64 arg1;                    // argument #1
-    UINT64 arg2;                    // argument #2
+    struct
+    {
+        WINDIVERT_ADDRESS *addr;    // WINDIVERT_ADDRESS pointer.
+        UINT *addr_len_ptr;         // sizeof(addr) pointer.
+    } recv;
+    struct
+    {
+        const WINDIVERT_ADDRESS *addr;
+                                    // WINDIVERT_ADDRESS pointer.
+        UINT64 addr_len;            // sizeof(addr).
+    } send;
+    struct
+    {
+        WINDIVERT_LAYER layer;      // Handle layer.
+        UINT32 priority;            // Handle priority.
+        UINT64 flags;               // Handle flags.
+    } initialize;
+    struct
+    {
+        UINT64 flags;               // Filter flags.
+    } startup;
+    struct
+    {
+        WINDIVERT_SHUTDOWN how;     // WINDIVERT_SHUTDOWN_*
+    } shutdown;
+    struct
+    {
+        WINDIVERT_PARAM param;      // WINDIVERT_PARAM_*
+    } get_param;
+    struct
+    {
+        UINT64 val;                 // Value pointer.
+        WINDIVERT_PARAM param;      // WINDIVERT_PARAM_*
+    } set_param;
 } WINDIVERT_IOCTL, *PWINDIVERT_IOCTL;
 
 /*
- * WinDivert IOCTL structures.
+ * WinDivert initialization structure.
+ */
+typedef struct
+{
+    UINT64 magic;                   // Magic number (in/out).
+    UINT32 major;                   // Driver major version (in/out).
+    UINT32 minor;                   // Driver minor version (in/out).
+    UINT64 reserved[4];
+} WINDIVERT_VERSION, *PWINDIVERT_VERSION;
+
+/*
+ * WinDivert filter structure.
  */
 typedef struct
 {
@@ -241,30 +287,24 @@ typedef struct
 /*
  * IOCTL codes.
  */
-#define IOCTL_WINDIVERT_SHUTDOWN                                            \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x917, METHOD_IN_DIRECT, FILE_READ_DATA | \
+#define IOCTL_WINDIVERT_INITIALIZE                                          \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x921, METHOD_OUT_DIRECT, FILE_READ_DATA |\
+        FILE_WRITE_DATA)
+#define IOCTL_WINDIVERT_STARTUP                                             \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x922, METHOD_IN_DIRECT, FILE_READ_DATA | \
         FILE_WRITE_DATA)
 #define IOCTL_WINDIVERT_RECV                                                \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x918, METHOD_OUT_DIRECT, FILE_READ_DATA)
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x923, METHOD_OUT_DIRECT, FILE_READ_DATA)
 #define IOCTL_WINDIVERT_SEND                                                \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x919, METHOD_IN_DIRECT, FILE_READ_DATA | \
-        FILE_WRITE_DATA)
-#define IOCTL_WINDIVERT_START_FILTER                                        \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x91A, METHOD_IN_DIRECT, FILE_READ_DATA | \
-        FILE_WRITE_DATA)
-#define IOCTL_WINDIVERT_SET_LAYER                                           \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x91B, METHOD_IN_DIRECT, FILE_READ_DATA | \
-        FILE_WRITE_DATA)
-#define IOCTL_WINDIVERT_SET_PRIORITY                                        \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x91C, METHOD_IN_DIRECT, FILE_READ_DATA | \
-        FILE_WRITE_DATA)
-#define IOCTL_WINDIVERT_SET_FLAGS                                           \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x91D, METHOD_IN_DIRECT, FILE_READ_DATA | \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x924, METHOD_IN_DIRECT, FILE_READ_DATA | \
         FILE_WRITE_DATA)
 #define IOCTL_WINDIVERT_SET_PARAM                                           \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x91E, METHOD_IN_DIRECT, FILE_READ_DATA | \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x925, METHOD_IN_DIRECT, FILE_READ_DATA | \
         FILE_WRITE_DATA)
 #define IOCTL_WINDIVERT_GET_PARAM                                           \
-    CTL_CODE(FILE_DEVICE_NETWORK, 0x91F, METHOD_OUT_DIRECT, FILE_READ_DATA)
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x926, METHOD_OUT_DIRECT, FILE_READ_DATA)
+#define IOCTL_WINDIVERT_SHUTDOWN                                            \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x927, METHOD_IN_DIRECT, FILE_READ_DATA | \
+        FILE_WRITE_DATA)
 
 #endif      /* __WINDIVERT_DEVICE_H */

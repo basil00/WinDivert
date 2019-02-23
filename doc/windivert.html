@@ -234,8 +234,8 @@ The WinDivert driver can also be manually removed by issuing the following
 commands at the command prompt
 </p>
 <pre>
-sc stop WinDivert2.0
-sc delete WinDivert2.0
+sc stop WinDivert
+sc delete WinDivert
 </pre>
 <p>
 Note that this is not recommended as it will interfere with other
@@ -2744,10 +2744,7 @@ The sample programs are:
 <li><code>streamdump.exe</code>: A simple program that demonstrates how to
     handle streams using WinDivert.
     The basic idea is to divert outbound TCP connections to a local proxy
-    server which can capture or manipulate the stream.
-    The <code>streamdump</code> sample program also demonstrates usage of the
-    <a href="#divert_recv_ex"><code>WinDivertRecvEx()</code></a> and
-    <a href="#divert_send_ex"><code>WinDivertSendEx()</code></a> functions.</li>
+    server which can capture or manipulate the stream.</li>
 <li><code>flowtrack.exe</code>: A program that tracks all network flows
     to and from the local machine, including information such as the ID of the
     responsible process.

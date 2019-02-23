@@ -187,7 +187,7 @@ int __cdecl main(int argc, char **argv)
     // Main loop:
     while (TRUE)
     {
-        if (WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
         {
             warning("failed to read packet (%d)", GetLastError());
             continue;

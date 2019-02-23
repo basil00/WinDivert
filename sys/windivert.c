@@ -1,6 +1,6 @@
 /*
  * windivert.c
- * (C) 2018, all rights reserved,
+ * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -97,6 +97,7 @@ static void DEBUG_ERROR(PCCH format, NTSTATUS status, ...)
 #define DEBUG_ERROR(format, status, ...)
 #endif
 
+#define WINDIVERT_VERSION_MAJOR_MIN             2
 #define WINDIVERT_TAG                           'viDW'
 
 /*
@@ -159,6 +160,7 @@ struct context_s
     WDFWORKITEM worker;                         // Read worker.
     WINDIVERT_LAYER layer;                      // Context's layer.
     UINT64 flags;                               // Context's flags.
+    BOOL initialized;                           // Context initialized?
     BOOL shutdown_recv;                         // Shutdown recv.
     BOOL shutdown_send;                         // Shutdown send.
     BOOL shutdown_recv_enabled;                 // Shutdown recv enabled?
@@ -315,11 +317,10 @@ static MM_PAGE_PRIORITY no_exec_flag  = 0;
 /*
  * Priorities & weights.
  */
-static UINT32 windivert_context_priority(INT64 priority64)
+static UINT32 windivert_context_priority(UINT32 priority)
 {
-    UINT32 priority, increment;
-    priority64 += WINDIVERT_PRIORITY_MAX;       // Make positive
-    priority = (UINT32)(priority64 << 16);
+    UINT32 increment;
+    priority = (priority << 16);
     increment = (UINT32)InterlockedIncrement(&priority_counter);
     priority |= (increment & 0x0000FFFF);
     return priority;
@@ -539,12 +540,12 @@ DEFINE_GUID(WINDIVERT_SUBLAYER_AUTH_RECV_ACCEPT_IPV6_GUID,
  */
 static const struct layer_s windivert_layer_inbound_network_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerInboundNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer network (inbound IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutInboundNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout network (inbound IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterInboundNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter network (inbound IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerInboundNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer network (inbound IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutInboundNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout network (inbound IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterInboundNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter network (inbound IPv4)",
     &FWPM_LAYER_INBOUND_IPPACKET_V4,
     &WINDIVERT_SUBLAYER_INBOUND_IPV4_GUID,
     windivert_inbound_network_v4_classify,
@@ -556,12 +557,12 @@ static const struct layer_s windivert_layer_inbound_network_ipv4 =
 
 static const struct layer_s windivert_layer_outbound_network_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerOutboundNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer network (outbound IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutOutboundNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout network (outbound IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterOutboundNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter network (outbound IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerOutboundNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer network (outbound IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutOutboundNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout network (outbound IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterOutboundNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter network (outbound IPv4)",
     &FWPM_LAYER_OUTBOUND_IPPACKET_V4,
     &WINDIVERT_SUBLAYER_OUTBOUND_IPV4_GUID,
     windivert_outbound_network_v4_classify,
@@ -573,12 +574,12 @@ static const struct layer_s windivert_layer_outbound_network_ipv4 =
 
 static const struct layer_s windivert_layer_inbound_network_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerInboundNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer network (inbound IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutInboundNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout network (inbound IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterInboundNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter network (inbound IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerInboundNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer network (inbound IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutInboundNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout network (inbound IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterInboundNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter network (inbound IPv6)",
     &FWPM_LAYER_INBOUND_IPPACKET_V6,
     &WINDIVERT_SUBLAYER_INBOUND_IPV6_GUID,
     windivert_inbound_network_v6_classify,
@@ -590,12 +591,12 @@ static const struct layer_s windivert_layer_inbound_network_ipv6 =
 
 static const struct layer_s windivert_layer_outbound_network_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerOutboundNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer network (outbound IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutOutboundNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout network (outbound IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterOutboundNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter network (outbound IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerOutboundNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer network (outbound IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutOutboundNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout network (outbound IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterOutboundNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter network (outbound IPv6)",
     &FWPM_LAYER_OUTBOUND_IPPACKET_V6,
     &WINDIVERT_SUBLAYER_OUTBOUND_IPV6_GUID,
     windivert_outbound_network_v6_classify,
@@ -607,12 +608,12 @@ static const struct layer_s windivert_layer_outbound_network_ipv6 =
 
 static const struct layer_s windivert_layer_forward_network_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerForwardNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer network (forward IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutForwardNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout network (forward IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterForwardNetworkIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter network (forward IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerForwardNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer network (forward IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutForwardNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout network (forward IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterForwardNetworkIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter network (forward IPv4)",
     &FWPM_LAYER_IPFORWARD_V4,
     &WINDIVERT_SUBLAYER_FORWARD_IPV4_GUID,
     windivert_forward_network_v4_classify,
@@ -624,12 +625,12 @@ static const struct layer_s windivert_layer_forward_network_ipv4 =
 
 static const struct layer_s windivert_layer_forward_network_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerForwardNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer network (forward IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutForwardNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout network (forward IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterForwardNetworkIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter network (forward IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerForwardNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer network (forward IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutForwardNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout network (forward IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterForwardNetworkIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter network (forward IPv6)",
     &FWPM_LAYER_IPFORWARD_V6,
     &WINDIVERT_SUBLAYER_FORWARD_IPV6_GUID,
     windivert_forward_network_v6_classify,
@@ -641,12 +642,12 @@ static const struct layer_s windivert_layer_forward_network_ipv6 =
 
 static const struct layer_s windivert_layer_resource_assignment_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerResourceAssignmentIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer resource assignment (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutResourceAssignmentIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout resource assignment (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterResourceAssignmentIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter resource assignment (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerResourceAssignmentIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer resource assignment (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutResourceAssignmentIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout resource assignment (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterResourceAssignmentIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter resource assignment (IPv4)",
     &FWPM_LAYER_ALE_RESOURCE_ASSIGNMENT_V4,
     &WINDIVERT_SUBLAYER_RESOURCE_ASSIGNMENT_IPV4_GUID,
     windivert_resource_assignment_v4_classify,
@@ -658,12 +659,12 @@ static const struct layer_s windivert_layer_resource_assignment_ipv4 =
 
 static const struct layer_s windivert_layer_resource_assignment_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerResourceAssignmentIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer resource assignment (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutResourceAssignmentIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout resource assignment (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterResourceAssignmentIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter resource assignment (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerResourceAssignmentIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer resource assignment (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutResourceAssignmentIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout resource assignment (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterResourceAssignmentIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter resource assignment (IPv6)",
     &FWPM_LAYER_ALE_RESOURCE_ASSIGNMENT_V6,
     &WINDIVERT_SUBLAYER_RESOURCE_ASSIGNMENT_IPV6_GUID,
     windivert_resource_assignment_v6_classify,
@@ -675,12 +676,12 @@ static const struct layer_s windivert_layer_resource_assignment_ipv6 =
 
 static const struct layer_s windivert_layer_auth_connect_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerAuthConnectIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer auth connect (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutAuthConnectIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout auth connect (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterAuthConnectIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter auth connect (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerAuthConnectIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer auth connect (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutAuthConnectIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout auth connect (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterAuthConnectIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter auth connect (IPv4)",
     &FWPM_LAYER_ALE_AUTH_CONNECT_V4,
     &WINDIVERT_SUBLAYER_AUTH_CONNECT_IPV4_GUID,
     windivert_auth_connect_v4_classify,
@@ -692,12 +693,12 @@ static const struct layer_s windivert_layer_auth_connect_ipv4 =
 
 static const struct layer_s windivert_layer_auth_connect_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerAuthConnectIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer auth connect (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutAuthConnectIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout auth connect (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterAuthConnectIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter auth connect (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerAuthConnectIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer auth connect (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutAuthConnectIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout auth connect (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterAuthConnectIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter auth connect (IPv6)",
     &FWPM_LAYER_ALE_AUTH_CONNECT_V6,
     &WINDIVERT_SUBLAYER_AUTH_CONNECT_IPV6_GUID,
     windivert_auth_connect_v6_classify,
@@ -709,12 +710,12 @@ static const struct layer_s windivert_layer_auth_connect_ipv6 =
 
 static const struct layer_s windivert_layer_auth_listen_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerAuthListenIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer auth listen (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutAuthListenIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout auth listen (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterAuthListenIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter auth listen (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerAuthListenIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer auth listen (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutAuthListenIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout auth listen (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterAuthListenIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter auth listen (IPv4)",
     &FWPM_LAYER_ALE_AUTH_LISTEN_V4,
     &WINDIVERT_SUBLAYER_AUTH_LISTEN_IPV4_GUID,
     windivert_auth_listen_v4_classify,
@@ -726,12 +727,12 @@ static const struct layer_s windivert_layer_auth_listen_ipv4 =
 
 static const struct layer_s windivert_layer_auth_listen_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerAuthListenIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer auth listen (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutAuthListenIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout auth listen (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterAuthListenIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter auth listen (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerAuthListenIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer auth listen (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutAuthListenIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout auth listen (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterAuthListenIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter auth listen (IPv6)",
     &FWPM_LAYER_ALE_AUTH_LISTEN_V6,
     &WINDIVERT_SUBLAYER_AUTH_LISTEN_IPV6_GUID,
     windivert_auth_listen_v6_classify,
@@ -743,12 +744,12 @@ static const struct layer_s windivert_layer_auth_listen_ipv6 =
 
 static const struct layer_s windivert_layer_auth_recv_accept_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerAuthRecvAcceptIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer auth recv accept (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutAuthRecvAcceptIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout auth recv accept (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterAuthRecvAcceptIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter auth recv accept (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerAuthRecvAcceptIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer auth recv accept (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutAuthRecvAcceptIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout auth recv accept (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterAuthRecvAcceptIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter auth recv accept (IPv4)",
     &FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V4,
     &WINDIVERT_SUBLAYER_AUTH_RECV_ACCEPT_IPV4_GUID,
     windivert_auth_recv_accept_v4_classify,
@@ -760,12 +761,12 @@ static const struct layer_s windivert_layer_auth_recv_accept_ipv4 =
 
 static const struct layer_s windivert_layer_auth_recv_accept_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerAuthRecvAcceptIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer auth recv accept (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutAuthRecvAcceptIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout auth recv accept (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterAuthRecvAcceptIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter auth recv accept (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerAuthRecvAcceptIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer auth recv accept (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutAuthRecvAcceptIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout auth recv accept (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterAuthRecvAcceptIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter auth recv accept (IPv6)",
     &FWPM_LAYER_ALE_AUTH_RECV_ACCEPT_V6,
     &WINDIVERT_SUBLAYER_AUTH_RECV_ACCEPT_IPV6_GUID,
     windivert_auth_recv_accept_v6_classify,
@@ -777,12 +778,12 @@ static const struct layer_s windivert_layer_auth_recv_accept_ipv6 =
 
 static const struct layer_s windivert_layer_flow_established_ipv4 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerFlowEstablishedIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer flow established (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutFlowEstablishedIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" callout flow established (IPv4)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterFlowEstablishedIPv4",
-    L"" WINDIVERT_DEVICE_NAME L" filter flow established (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerFlowEstablishedIPv4",
+    L"" WINDIVERT_LAYER_NAME L" sublayer flow established (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutFlowEstablishedIPv4",
+    L"" WINDIVERT_LAYER_NAME L" callout flow established (IPv4)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterFlowEstablishedIPv4",
+    L"" WINDIVERT_LAYER_NAME L" filter flow established (IPv4)",
     &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V4,
     &WINDIVERT_SUBLAYER_FLOW_ESTABLISHED_IPV4_GUID,
     windivert_flow_established_v4_classify,
@@ -794,12 +795,12 @@ static const struct layer_s windivert_layer_flow_established_ipv4 =
 
 static const struct layer_s windivert_layer_flow_established_ipv6 =
 {
-    L"" WINDIVERT_DEVICE_NAME L"_SubLayerFlowEstablishedIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" sublayer flow established (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_CalloutFlowEstablishedIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" callout flow established (IPv6)",
-    L"" WINDIVERT_DEVICE_NAME L"_FilterFlowEstablishedIPv6",
-    L"" WINDIVERT_DEVICE_NAME L" filter flow established (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_SubLayerFlowEstablishedIPv6",
+    L"" WINDIVERT_LAYER_NAME L" sublayer flow established (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_CalloutFlowEstablishedIPv6",
+    L"" WINDIVERT_LAYER_NAME L" callout flow established (IPv6)",
+    L"" WINDIVERT_LAYER_NAME L"_FilterFlowEstablishedIPv6",
+    L"" WINDIVERT_LAYER_NAME L" filter flow established (IPv6)",
     &FWPM_LAYER_ALE_FLOW_ESTABLISHED_V6,
     &WINDIVERT_SUBLAYER_FLOW_ESTABLISHED_IPV6_GUID,
     windivert_flow_established_v6_classify,
@@ -1258,12 +1259,13 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->packet_queue_maxcounts =
         WINDIVERT_PARAM_QUEUE_TIME_DEFAULT * counts_per_ms;
     context->packet_queue_maxtime = WINDIVERT_PARAM_QUEUE_TIME_DEFAULT;
-    context->layer = WINDIVERT_LAYER_DEFAULT;
+    context->layer = 0;
     context->flags = 0;
+    context->initialized = FALSE;
     context->shutdown_recv = FALSE;
     context->shutdown_recv_enabled = FALSE;
     context->shutdown_send = FALSE;
-    context->priority = windivert_context_priority(WINDIVERT_PRIORITY_DEFAULT);
+    context->priority = 0;
     context->filter = NULL;
     context->filter_len = 0;
     context->filter_flags = 0;
@@ -2639,8 +2641,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
         DEBUG_ERROR("failed to retrieve input buffer", status);
         goto windivert_caller_context_error;
     }
-
-    if (inbuflen != sizeof(WINDIVERT_IOCTL))
+    if (inbuflen < sizeof(WINDIVERT_IOCTL))
     {
         status = STATUS_INVALID_PARAMETER;
         DEBUG_ERROR("input buffer not an ioctl message header", status);
@@ -2659,8 +2660,8 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     {
         case IOCTL_WINDIVERT_RECV:
             ioctl        = (PWINDIVERT_IOCTL)inbuf;
-            addr         = (PWINDIVERT_ADDRESS)ioctl->arg1;
-            addr_len_ptr = (UINT *)ioctl->arg2;
+            addr         = ioctl->recv.addr;
+            addr_len_ptr = ioctl->recv.addr_len_ptr;
             addr_len     = sizeof(WINDIVERT_ADDRESS);
             if (addr_len_ptr != NULL)
             {
@@ -2705,8 +2706,8 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
 
         case IOCTL_WINDIVERT_SEND:
             ioctl    = (PWINDIVERT_IOCTL)inbuf;
-            addr     = (PWINDIVERT_ADDRESS)ioctl->arg1;
-            addr_len = ioctl->arg2;
+            addr     = (PWINDIVERT_ADDRESS)ioctl->send.addr;
+            addr_len = ioctl->send.addr_len;
             if (addr_len < sizeof(WINDIVERT_ADDRESS) ||
                 addr_len > WINDIVERT_BATCH_MAX * sizeof(WINDIVERT_ADDRESS))
             {
@@ -2731,11 +2732,9 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
             addr = (PWINDIVERT_ADDRESS)WdfMemoryGetBuffer(memobj, NULL);
             break;
 
+        case IOCTL_WINDIVERT_INITIALIZE:
+        case IOCTL_WINDIVERT_STARTUP:
         case IOCTL_WINDIVERT_SHUTDOWN:
-        case IOCTL_WINDIVERT_START_FILTER:
-        case IOCTL_WINDIVERT_SET_LAYER:
-        case IOCTL_WINDIVERT_SET_PRIORITY:
-        case IOCTL_WINDIVERT_SET_FLAGS:
         case IOCTL_WINDIVERT_SET_PARAM:
         case IOCTL_WINDIVERT_GET_PARAM:
             break;
@@ -2788,15 +2787,37 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     DEBUG("IOCTL: I/O control request (context=%p)", context);
 
     // Get the buffers and do sanity checks.
-    status = WdfRequestRetrieveInputBuffer(request, 0, &inbuf, &inbuflen);
-    if (!NT_SUCCESS(status))
+    switch (code)
     {
-        DEBUG_ERROR("failed to retrieve input buffer", status);
-        goto windivert_ioctl_exit;
+        case IOCTL_WINDIVERT_INITIALIZE:
+        case IOCTL_WINDIVERT_STARTUP:
+        case IOCTL_WINDIVERT_SHUTDOWN:
+        case IOCTL_WINDIVERT_SET_PARAM:
+        case IOCTL_WINDIVERT_GET_PARAM:
+            status = WdfRequestRetrieveInputBuffer(request, 0, &inbuf,
+                &inbuflen);
+            if (!NT_SUCCESS(status))
+            {
+                DEBUG_ERROR("failed to retrieve input buffer", status);
+                goto windivert_ioctl_exit;
+            }
+            if (inbuflen < sizeof(WINDIVERT_IOCTL))
+            {
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("input buffer too small", status);
+                goto windivert_ioctl_exit;
+            }
+            break;
+        default:
+            inbuf = NULL;
+            inbuflen = 0;
+            break;
     }
     switch (code)
     {
-        case IOCTL_WINDIVERT_START_FILTER: case IOCTL_WINDIVERT_GET_PARAM:
+        case IOCTL_WINDIVERT_INITIALIZE:
+        case IOCTL_WINDIVERT_STARTUP:
+        case IOCTL_WINDIVERT_GET_PARAM:
             status = WdfRequestRetrieveOutputBuffer(request, 0, &outbuf,
                 &outbuflen);
             if (!NT_SUCCESS(status))
@@ -2832,43 +2853,106 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             }
             break;
 
-        case IOCTL_WINDIVERT_SHUTDOWN:
+        case IOCTL_WINDIVERT_INITIALIZE:
         {
-            UINT64 how;
-
+            PWINDIVERT_VERSION version;
+            WINDIVERT_LAYER layer;
+            UINT32 priority;
+            UINT64 flags;
+            INT16 priority16;
+            
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            how = ioctl->arg1;
+            version = (WINDIVERT_VERSION *)outbuf;
+            if (outbuflen != sizeof(WINDIVERT_VERSION) ||
+                version->magic != WINDIVERT_MAGIC_DLL ||
+                version->major < WINDIVERT_VERSION_MAJOR_MIN)
+            {
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("failed to initialize; invalid init buffer",
+                    status);
+                goto windivert_ioctl_exit;
+            }
+            
+            layer = ioctl->initialize.layer;
+            priority = ioctl->initialize.priority;
+            flags = ioctl->initialize.flags;
+            version->magic = WINDIVERT_MAGIC_SYS;
+            version->major = WINDIVERT_VERSION_MAJOR;
+            version->minor = WINDIVERT_VERSION_MINOR;
+            
+            switch ((UINT32)layer)
+            {
+                case WINDIVERT_LAYER_NETWORK:
+                case WINDIVERT_LAYER_NETWORK_FORWARD:
+                case WINDIVERT_LAYER_FLOW:
+                case WINDIVERT_LAYER_SOCKET:
+                case WINDIVERT_LAYER_REFLECT:
+                    break;
+                default:
+                    status = STATUS_INVALID_PARAMETER;
+                    DEBUG_ERROR("failed to set layer; invalid value", status);
+                    goto windivert_ioctl_exit;
+            }
+
+            if (priority > 2 * WINDIVERT_PRIORITY_MAX)
+            {
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("failed to set priority; value out of range",
+                    status);
+                goto windivert_ioctl_exit;
+            }
+            priority16 = (INT16)priority - WINDIVERT_PRIORITY_MAX;
+            priority = windivert_context_priority(priority);
+
+            if (!WINDIVERT_FLAGS_VALID(flags))
+            {
+windivert_ioctl_bad_flags:
+                status = STATUS_INVALID_PARAMETER;
+                DEBUG_ERROR("failed to set flags; invalid flags value",
+                    status);
+                goto windivert_ioctl_exit;
+            }
+            switch ((UINT32)layer)
+            {
+                case WINDIVERT_LAYER_FLOW:
+                case WINDIVERT_LAYER_REFLECT:
+                    if ((flags & WINDIVERT_FLAG_SNIFF) == 0 ||
+                        (flags & WINDIVERT_FLAG_RECV_ONLY) == 0)
+                    {
+                        goto windivert_ioctl_bad_flags;
+                    }
+                    break;
+
+                case WINDIVERT_LAYER_SOCKET:
+                    if ((flags & WINDIVERT_FLAG_RECV_ONLY) == 0)
+                    {
+                        goto windivert_ioctl_bad_flags;
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-            if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+            if (context->state != WINDIVERT_CONTEXT_STATE_OPENING ||
+                    context->initialized)
             {
                 KeReleaseInStackQueuedSpinLock(&lock_handle);
                 status = STATUS_INVALID_DEVICE_STATE;
                 goto windivert_ioctl_exit;
             }
-            switch (how)
-            {
-                case WINDIVERT_SHUTDOWN_RECV:
-                    context->shutdown_recv = TRUE;
-                    break;
-                case WINDIVERT_SHUTDOWN_SEND:
-                    context->shutdown_send = TRUE;
-                    break;
-                case WINDIVERT_SHUTDOWN_BOTH:
-                    context->shutdown_recv = context->shutdown_send = TRUE;
-                    break;
-                default:
-                    KeReleaseInStackQueuedSpinLock(&lock_handle);
-                    status = STATUS_INVALID_PARAMETER;
-                    DEBUG_ERROR("failed to shutdown handle; invalid how",
-                        status);
-                    goto windivert_ioctl_exit;
-            }
+            context->layer = (WINDIVERT_LAYER)layer;
+            context->priority16 = priority16;
+            context->priority = priority;
+            context->flags = flags;
+            context->initialized = TRUE;
             KeReleaseInStackQueuedSpinLock(&lock_handle);
-            windivert_read_service(context);
+
             break;
         }
- 
-        case IOCTL_WINDIVERT_START_FILTER:
+
+        case IOCTL_WINDIVERT_STARTUP:
         {
             BOOL inbound, outbound, ipv4, ipv6;
             PIRP irp;
@@ -2878,7 +2962,7 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             UINT8 filter_len;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            filter_flags = ioctl->arg1;
+            filter_flags = ioctl->startup.flags;
             if ((filter_flags & ~WINDIVERT_FILTER_FLAGS_ALL) != 0)
             {
                 status = STATUS_INVALID_PARAMETER;
@@ -2886,13 +2970,11 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
                 goto windivert_ioctl_exit;
             }
  
-            filter = NULL;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-            if (context->state != WINDIVERT_CONTEXT_STATE_OPENING)
+            if (context->state != WINDIVERT_CONTEXT_STATE_OPENING ||
+                    !context->initialized)
             {
-windivert_ioctl_bad_start_state:
                 KeReleaseInStackQueuedSpinLock(&lock_handle);
-                windivert_free((PVOID)filter);
                 status = STATUS_INVALID_DEVICE_STATE;
                 goto windivert_ioctl_exit;
             }
@@ -2918,29 +3000,10 @@ windivert_ioctl_bad_start_state:
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
             {
-                goto windivert_ioctl_bad_start_state;
-            }
-            flags = context->flags;
-            switch (layer)
-            {
-                case WINDIVERT_LAYER_FLOW:
-                case WINDIVERT_LAYER_REFLECT:
-                    if ((flags & WINDIVERT_FLAG_SNIFF) == 0 ||
-                        (flags & WINDIVERT_FLAG_RECV_ONLY) == 0)
-                    {
-                        goto windivert_ioctl_bad_start_state;
-                    }
-                    break;
-
-                case WINDIVERT_LAYER_SOCKET:
-                    if ((flags & WINDIVERT_FLAG_RECV_ONLY) == 0)
-                    {
-                        goto windivert_ioctl_bad_start_state;
-                    }
-                    break;
-
-                default:
-                    break;
+                KeReleaseInStackQueuedSpinLock(&lock_handle);
+                windivert_free((PVOID)filter);
+                status = STATUS_INVALID_DEVICE_STATE;
+                goto windivert_ioctl_exit;
             }
             context->filter                 = filter;
             context->filter_len             = filter_len;
@@ -2962,98 +3025,12 @@ windivert_ioctl_bad_start_state:
             break;
         }
 
-        case IOCTL_WINDIVERT_SET_LAYER:
+        case IOCTL_WINDIVERT_SHUTDOWN:
         {
-            UINT64 layer;
+            WINDIVERT_SHUTDOWN how;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            layer = ioctl->arg1;
-            switch (layer)
-            {
-                case WINDIVERT_LAYER_NETWORK:
-                case WINDIVERT_LAYER_NETWORK_FORWARD:
-                case WINDIVERT_LAYER_FLOW:
-                case WINDIVERT_LAYER_SOCKET:
-                case WINDIVERT_LAYER_REFLECT:
-                    break;
-                default:
-                    status = STATUS_INVALID_PARAMETER;
-                    DEBUG_ERROR("failed to set layer; invalid value", status);
-                    goto windivert_ioctl_exit;
-            }
-            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-            if (context->state != WINDIVERT_CONTEXT_STATE_OPENING)
-            {
-                KeReleaseInStackQueuedSpinLock(&lock_handle);
-                status = STATUS_INVALID_DEVICE_STATE;
-                goto windivert_ioctl_exit;
-            }
-            context->layer = (WINDIVERT_LAYER)layer;
-            KeReleaseInStackQueuedSpinLock(&lock_handle);
-            break;
-        }
-
-        case IOCTL_WINDIVERT_SET_PRIORITY:
-        {
-            UINT32 priority32;
-            INT64 priority64;
-
-            ioctl = (PWINDIVERT_IOCTL)inbuf;
-            priority64 = (INT64)ioctl->arg1 - WINDIVERT_PRIORITY_MAX;
-            if (priority64 < WINDIVERT_PRIORITY_MIN ||
-                priority64 > WINDIVERT_PRIORITY_MAX)
-            {
-                status = STATUS_INVALID_PARAMETER;
-                DEBUG_ERROR("failed to set priority; value out of range",
-                    status);
-                goto windivert_ioctl_exit;
-            }
-            priority32 = windivert_context_priority(priority64);
-            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-            if (context->state != WINDIVERT_CONTEXT_STATE_OPENING)
-            {
-                KeReleaseInStackQueuedSpinLock(&lock_handle);
-                status = STATUS_INVALID_DEVICE_STATE;
-                goto windivert_ioctl_exit;
-            }
-            context->priority16 = (INT16)priority64;
-            context->priority = priority32;
-            KeReleaseInStackQueuedSpinLock(&lock_handle);
-            break;
-        }
-
-        case IOCTL_WINDIVERT_SET_FLAGS:
-        {
-            UINT64 flags;
-            
-            ioctl = (PWINDIVERT_IOCTL)inbuf;
-            flags = ioctl->arg1;
-            if (!WINDIVERT_FLAGS_VALID(flags))
-            {
-                status = STATUS_INVALID_PARAMETER;
-                DEBUG_ERROR("failed to set flags; invalid flags value",
-                    status);
-                goto windivert_ioctl_exit;
-            }
-            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-            if (context->state != WINDIVERT_CONTEXT_STATE_OPENING)
-            {
-                KeReleaseInStackQueuedSpinLock(&lock_handle);
-                status = STATUS_INVALID_DEVICE_STATE;
-                goto windivert_ioctl_exit;
-            }
-            context->flags = flags;
-            KeReleaseInStackQueuedSpinLock(&lock_handle);
-            break;
-        }
-
-        case IOCTL_WINDIVERT_SET_PARAM:
-        {
-            UINT64 param, value;
-
-            ioctl = (PWINDIVERT_IOCTL)inbuf;
-            param = ioctl->arg1;
-            value = ioctl->arg2;
+            how = ioctl->shutdown.how;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
             {
@@ -3061,7 +3038,44 @@ windivert_ioctl_bad_start_state:
                 status = STATUS_INVALID_DEVICE_STATE;
                 goto windivert_ioctl_exit;
             }
-            switch (param)
+            switch ((UINT32)how)
+            {
+                case WINDIVERT_SHUTDOWN_RECV:
+                    context->shutdown_recv = TRUE;
+                    break;
+                case WINDIVERT_SHUTDOWN_SEND:
+                    context->shutdown_send = TRUE;
+                    break;
+                case WINDIVERT_SHUTDOWN_BOTH:
+                    context->shutdown_recv = context->shutdown_send = TRUE;
+                    break;
+                default:
+                    KeReleaseInStackQueuedSpinLock(&lock_handle);
+                    status = STATUS_INVALID_PARAMETER;
+                    DEBUG_ERROR("failed to shutdown handle; invalid how",
+                        status);
+                    goto windivert_ioctl_exit;
+            }
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
+            windivert_read_service(context);
+            break;
+        }
+ 
+        case IOCTL_WINDIVERT_SET_PARAM:
+        {
+            UINT64 param, value;
+
+            ioctl = (PWINDIVERT_IOCTL)inbuf;
+            param = ioctl->set_param.param;
+            value = ioctl->set_param.val;
+            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+            if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+            {
+                KeReleaseInStackQueuedSpinLock(&lock_handle);
+                status = STATUS_INVALID_DEVICE_STATE;
+                goto windivert_ioctl_exit;
+            }
+            switch ((UINT32)param)
             {
                 case WINDIVERT_PARAM_QUEUE_LEN:
                     if (value < WINDIVERT_PARAM_QUEUE_LEN_MIN ||
@@ -3120,7 +3134,7 @@ windivert_ioctl_bad_start_state:
             UINT64 param;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            param = ioctl->arg1;
+            param = ioctl->get_param.param;
             if (outbuflen != sizeof(UINT64))
             {
                 status = STATUS_INVALID_PARAMETER;
@@ -3136,7 +3150,7 @@ windivert_ioctl_bad_start_state:
                 status = STATUS_INVALID_DEVICE_STATE;
                 goto windivert_ioctl_exit;
             }
-            switch (param)
+            switch ((UINT32)param)
             {
                 case WINDIVERT_PARAM_QUEUE_LEN:
                     *valptr = context->packet_queue_maxlength;
