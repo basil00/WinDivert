@@ -365,6 +365,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     UINT obj_len;
     ERROR comp_err;
     DWORD err;
+    BOOL sniff;
     HANDLE handle;
     SC_HANDLE service;
     UINT64 filter_flags;
@@ -404,7 +405,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
-    filter_flags = WinDivertAnalyzeFilter(layer, object, obj_len);
+    sniff = ((flags & WINDIVERT_FLAG_SNIFF) != 0);
+    filter_flags = WinDivertAnalyzeFilter(layer, sniff, object, obj_len);
 
     // Attempt to open the WinDivert device:
     handle = CreateFile(L"\\\\.\\" WINDIVERT_DEVICE_NAME,

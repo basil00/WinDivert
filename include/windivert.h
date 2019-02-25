@@ -143,13 +143,14 @@ typedef struct
     UINT64 IPChecksum:1;                /* Packet has valid IPv4 checksum? */
     UINT64 TCPChecksum:1;               /* Packet has valid TCP checksum? */
     UINT64 UDPChecksum:1;               /* Packet has valid UDP checksum? */
-    UINT64 Reserved:41;
+    UINT64 Reserved1:41;
     union
     {
         WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
         WINDIVERT_DATA_FLOW Flow;       /* Flow layer data. */
         WINDIVERT_DATA_SOCKET Socket;   /* Socket layer data. */
         WINDIVERT_DATA_REFLECT Reflect; /* Reflect layer data. */
+        UINT8 Reserved2[48];
     };
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
 
@@ -163,11 +164,14 @@ typedef enum
                                         /* Flow established. */
     WINDIVERT_EVENT_FLOW_DELETED = 2,   /* Flow deleted. */
     WINDIVERT_EVENT_SOCKET_BIND = 3,    /* Socket bind. */
-    WINDIVERT_EVENT_SOCKET_LISTEN = 4,  /* Socket listen. */
+    WINDIVERT_EVENT_SOCKET_UNBIND = 4,  /* Socket unbind. */
     WINDIVERT_EVENT_SOCKET_CONNECT = 5, /* Socket connect. */
-    WINDIVERT_EVENT_SOCKET_ACCEPT = 6,  /* Socket accept. */
-    WINDIVERT_EVENT_REFLECT_OPEN = 7,   /* WinDivert handle opened. */
-    WINDIVERT_EVENT_REFLECT_CLOSE = 8,  /* WinDivert handle closed. */
+    WINDIVERT_EVENT_SOCKET_DISCONNECT = 6,
+                                        /* Socket disconnect. */
+    WINDIVERT_EVENT_SOCKET_LISTEN = 7,  /* Socket listen. */
+    WINDIVERT_EVENT_SOCKET_ACCEPT = 8,  /* Socket accept. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 9,   /* WinDivert handle opened. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 10, /* WinDivert handle closed. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*
@@ -179,8 +183,7 @@ typedef enum
 #define WINDIVERT_FLAG_READ_ONLY        WINDIVERT_FLAG_RECV_ONLY
 #define WINDIVERT_FLAG_SEND_ONLY        0x0008
 #define WINDIVERT_FLAG_WRITE_ONLY       WINDIVERT_FLAG_SEND_ONLY
-#define WINDIVERT_FLAG_RECV_PARTIAL     0x0010
-#define WINDIVERT_FLAG_NO_INSTALL       0x0020
+#define WINDIVERT_FLAG_NO_INSTALL       0x0010
 
 /*
  * WinDivert parameters.

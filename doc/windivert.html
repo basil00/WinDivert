@@ -401,14 +401,19 @@ correspond to socket operations, such as:
 </p>
 <ul>
 <li> <code>WINDIVERT_EVENT_SOCKET_BIND</code>: A <code>bind()</code> operation.</li>
-<li> <code>WINDIVERT_EVENT_SOCKET_LISTEN</code>: A <code>listen()</code> operation.</li>
+<li> <code>WINDIVERT_EVENT_SOCKET_UNBIND</code>: A previous binding is
+    removed.</li>
 <li> <code>WINDIVERT_EVENT_SOCKET_CONNECT</code>: A <code>connect()</code>
     operation.</li>
+<li> <code>WINDIVERT_EVENT_SOCKET_DISCONNECT</code>: A previous connection
+    is terminated.</li>
+<li> <code>WINDIVERT_EVENT_SOCKET_LISTEN</code>: A <code>listen()</code> operation.</li>
 <li> <code>WINDIVERT_EVENT_SOCKET_ACCEPT</code>: An <code>accept()</code>
     operation.</li>
 </ul>
 <p>
-Socket events can be blocked but not injected.
+Socket events, except for <code>UNBIND</code>/<code>DISCONNECT</code>,
+can be blocked, and no socket event can be injected.
 Process ID information is available at this layer.
 Due to technical limitations, the
 <code>WINDIVERT_LAYER_SOCKET</code> layer cannot capture events that
@@ -429,8 +434,12 @@ These events can be captured, but not injected nor blocked.
 Process ID information is available at this layer,
 meaning that it is possible to determine which (if any) process is using
 WinDivert.
-The layer also returns a <q>pseudo packet</q> that encodes the filter string
-associated with the event.
+The layer also returns an <q>object</q> representation of the filter string
+used to open the handle.
+The object representation can be converted back into a human-readable
+filter string using the
+<a href="#divert_helper_format_filter"><code>WinDivertHelperFormatFilter()</code></a>
+function.
 The <code>WINDIVERT_LAYER_REFLECT</code> layer can also capture events that
 occurred before the handle was opened.
 </p>
@@ -626,7 +635,7 @@ fields form the network 5-tuple associated with the operation.
 For IPv4, the <code>Socket.LocalAddr</code> and <code>Socket.RemoteAddr</code>
 fields will be IPv4-mapped IPv6 addresses.
 The <code>WINDIVERT_EVENT_SOCKET_BIND</code> and
-<code>WINDIVERT_EVENT_SOCKET_LISTEN</code> events will occur before a
+<code>WINDIVERT_EVENT_SOCKET_LISTEN</code> events can occur before a
 connection attempt has been made, meaning that the
 <code>Socket.RemoteAddr</code> and <code>Socket.RemotePort</code> fields
 for these events will be zero.
@@ -955,21 +964,6 @@ An alias for <code>WINDIVERT_FLAG_SEND_ONLY</code>.
 </tr>
 <tr>
 <td>
-<code>WINDIVERT_FLAG_RECV_PARTIAL</code>
-</td>
-<td>
-This flags enables <q>partial receives</q>.
-By default, if a packet is too big for the buffer passed to
-<a href="#divert_recv"><code>WinDivertRecv()</code></a>, the operation
-will fail with <code>ERROR_INSUFFICIENT_BUFFER</code>.
-This flag silences this error and only copies part of the packet
-up to the buffer size.
-The <code>WINDIVERT_FLAG_RECV_PARTIAL</code> behavior was the default
-on older (pre-2.0) versions of WinDivert.
-</td>
-</tr>
-<tr>
-<td>
 <code>WINDIVERT_FLAG_NO_INSTALL</code>
 </td>
 <td>
@@ -985,8 +979,7 @@ This flag is useful for querying the WinDivert state using a
 <p>
 Note that any combination of
 <code>(WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP)</code> or
-<code>(WINDIVERT_FLAG_RECV_ONLY | WINDIVERT_FLAG_SEND_ONLY)</code> or
-<code>(WINDIVERT_FLAG_RECV_PARTIAL | WINDIVERT_FLAG_SEND_ONLY)</code>
+<code>(WINDIVERT_FLAG_RECV_ONLY | WINDIVERT_FLAG_SEND_ONLY)</code> 
 are considered invalid.
 </p>
 <p>
@@ -1165,10 +1158,11 @@ For layers that do support capturing, the captured packet will be written to
 the <code>pPacket</code> buffer.
 If non-<code>NULL</code>, then the total number of bytes
 written to <code>pPacket</code> will be written to <code>recvLen</code>.
-Partial receives (where the packet data is truncated) is supported provided
-the handle was opened with the <code>WINDIVERT_FLAG_RECV_PARTIAL</code> flag set,
-otherwise the operation will fail with <code>ERROR_INSUFFICIENT_BUFFER</code>
-if the <code>pPacket</code> buffer is too small.
+If the <code>pPacket</code> buffer is too small, the packet will be
+truncated and the operation will fail with the
+<code>ERROR_INSUFFICIENT_BUFFER</code> error code.
+This error can be ignored if the application only intends to receive part
+of the packet, e.g., the IP headers only.
 For layers that do not capture packets, the <code>pPacket</code> parameter
 should be <code>NULL</code> and <code>packetLen</code> should be zero.
 </p><p>
@@ -2372,8 +2366,8 @@ Formats the given filter string or object.
 This function is mainly useful for <q>decompiling</q> the filter object
 representation back into a human-readable filter string representation.
 One application is the <code>WINDIVERT_LAYER_REFLECT</code> layer,
-where a <q>pseudo packet</q> containing a filter object is returned by
-<a href="#divert_recv"><code>WinDivertRecv()</code></a>.
+where the filter object associated with the reflection event is
+returned by <a href="#divert_recv"><code>WinDivertRecv()</code></a>.
 </p>
 </dd></dl>
 
@@ -2635,9 +2629,11 @@ The possible macros are:
 <tr><td><code>PACKET</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td><code>WINDIVERT_EVENT_NETWORK_PACKET</code></td></tr>
 <tr><td><code>ESTABLISHED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_ESTABLISHED</code></td></tr>
 <tr><td><code>DELETED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_DELETED</code></td></tr>
-<tr><td><code>ACCEPT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_ACCEPT</code></td></tr>
 <tr><td><code>BIND</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_BIND</code></td></tr>
+<tr><td><code>UNBIND</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_UNBIND</code></td></tr>
 <tr><td><code>CONNECT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_CONNECT</code></td></tr>
+<tr><td><code>DISCONNECT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_DISCONNECT</code></td></tr>
+<tr><td><code>ACCEPT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_ACCEPT</code></td></tr>
 <tr><td><code>LISTEN</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_LISTEN</code></td></tr>
 <tr><td><code>OPEN</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_EVENT_REFLECT_OPEN</code></td></tr>
 <tr><td><code>CLOSE</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_EVENT_REFLECT_CLOSE</code></td></tr>

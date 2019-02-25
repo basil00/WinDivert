@@ -173,7 +173,6 @@ int __cdecl main(int argc, char **argv)
     static UINT8 packet[MAX_PACKET];
     static char path[MAX_PATH+1];
     static char filter_str[MAX_FILTER_LEN];
-    PVOID object;
     DWORD path_len;
     BOOL or;
     WINDIVERT_ADDRESS addr;
@@ -369,11 +368,6 @@ usage:
                 printf("%sSEND_ONLY", (or? "|": ""));
                 or = TRUE;
             }
-            if ((addr.Reflect.Flags & WINDIVERT_FLAG_RECV_PARTIAL) != 0)
-            {
-                printf("%sRECV_PARTIAL", (or? "|": ""));
-                or = TRUE;
-            }
             if ((addr.Reflect.Flags & WINDIVERT_FLAG_NO_INSTALL) != 0)
             {
                 printf("%sNO_INSTALL", (or? "|": ""));
@@ -389,9 +383,7 @@ usage:
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         fputs(" filter=", stdout);
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
-        WinDivertHelperParsePacket(packet, packet_len, NULL, NULL, NULL, NULL,
-            NULL, NULL, NULL, &object, NULL, NULL, NULL);
-        if (WinDivertHelperFormatFilter((char *)object, addr.Reflect.Layer,
+        if (WinDivertHelperFormatFilter((char *)packet, addr.Reflect.Layer,
             filter_str, sizeof(filter_str)))
         {
             printf("\"%s\"", filter_str);

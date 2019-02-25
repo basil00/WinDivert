@@ -147,7 +147,9 @@ typedef enum
     TOKEN_EVENT_ESTABLISHED,
     TOKEN_EVENT_DELETED,
     TOKEN_EVENT_BIND,
+    TOKEN_EVENT_UNBIND,
     TOKEN_EVENT_CONNECT,
+    TOKEN_EVENT_DISCONNECT,
     TOKEN_EVENT_LISTEN,
     TOKEN_EVENT_ACCEPT,
     TOKEN_EVENT_OPEN,
@@ -514,8 +516,14 @@ static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer,
         case TOKEN_EVENT_BIND:
             *val = WINDIVERT_EVENT_SOCKET_BIND;
             return (layer == WINDIVERT_LAYER_SOCKET);
+        case TOKEN_EVENT_UNBIND:
+            *val = WINDIVERT_EVENT_SOCKET_UNBIND;
+            return (layer == WINDIVERT_LAYER_SOCKET);
         case TOKEN_EVENT_CONNECT:
             *val = WINDIVERT_EVENT_SOCKET_CONNECT;
+            return (layer == WINDIVERT_LAYER_SOCKET);
+        case TOKEN_EVENT_DISCONNECT:
+            *val = WINDIVERT_EVENT_SOCKET_DISCONNECT;
             return (layer == WINDIVERT_LAYER_SOCKET);
         case TOKEN_EVENT_LISTEN:
             *val = WINDIVERT_EVENT_SOCKET_LISTEN;
@@ -547,6 +555,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"CLOSE",               TOKEN_EVENT_CLOSE,         L____R},
         {"CONNECT",             TOKEN_EVENT_CONNECT,       L___S_},
         {"DELETED",             TOKEN_EVENT_DELETED,       L__F__},
+        {"DISCONNECT",          TOKEN_EVENT_DISCONNECT,    L___S_},
         {"ESTABLISHED",         TOKEN_EVENT_ESTABLISHED,   L__F__},
         {"FLOW",                TOKEN_FLOW,                L____R},
         {"LISTEN",              TOKEN_EVENT_LISTEN,        L___S_},
@@ -556,6 +565,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"PACKET",              TOKEN_EVENT_PACKET,        LNM___},
         {"REFLECT",             TOKEN_REFLECT,             L____R},
         {"SOCKET",              TOKEN_SOCKET,              L____R},
+        {"UNBIND",              TOKEN_EVENT_UNBIND,        L___S_},
         {"and",                 TOKEN_AND,                 LNMFSR},
         {"event",               TOKEN_EVENT,               LNMFSR},
         {"false",               TOKEN_FALSE,               LNMFSR},
@@ -1968,7 +1978,7 @@ static void WinDivertEmitFilter(PEXPR *stack, UINT len, UINT16 label,
  * Analyze a filter object.
  */
 static UINT64 WinDivertAnalyzeFilter(WINDIVERT_LAYER layer,
-    PWINDIVERT_FILTER filter, UINT length)
+    BOOL sniff, PWINDIVERT_FILTER filter, UINT length)
 {
     BOOL result;
     UINT64 flags = 0;
@@ -2041,9 +2051,25 @@ static UINT64 WinDivertAnalyzeFilter(WINDIVERT_LAYER layer,
             result = WinDivertCondExecFilter(filter, length,
                 WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_SOCKET_BIND);
             flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_BIND: 0);
+            if (sniff)
+            {
+                result = WinDivertCondExecFilter(filter, length,
+                    WINDIVERT_FILTER_FIELD_EVENT,
+                    WINDIVERT_EVENT_SOCKET_UNBIND);
+                flags |=
+                    (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_UNBIND: 0);
+            }
             result = WinDivertCondExecFilter(filter, length,
                 WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_SOCKET_CONNECT);
             flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_CONNECT: 0);
+            if (sniff)
+            {
+                result = WinDivertCondExecFilter(filter, length,
+                    WINDIVERT_FILTER_FIELD_EVENT,
+                    WINDIVERT_EVENT_SOCKET_DISCONNECT);
+                flags |=
+                    (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_DISCONNECT: 0);
+            }
             result = WinDivertCondExecFilter(filter, length,
                 WINDIVERT_FILTER_FIELD_EVENT, WINDIVERT_EVENT_SOCKET_LISTEN);
             flags |= (result? WINDIVERT_FILTER_FLAG_EVENT_SOCKET_LISTEN: 0);
@@ -4210,8 +4236,12 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
                 {
                     case WINDIVERT_EVENT_SOCKET_BIND:
                         WinDivertPutString(stream, "BIND"); break;
+                    case WINDIVERT_EVENT_SOCKET_UNBIND:
+                        WinDivertPutString(stream, "UNBIND"); break;
                     case WINDIVERT_EVENT_SOCKET_CONNECT:
                         WinDivertPutString(stream, "CONNECT"); break;
+                    case WINDIVERT_EVENT_SOCKET_DISCONNECT:
+                        WinDivertPutString(stream, "DISCONNECT"); break;
                     case WINDIVERT_EVENT_SOCKET_LISTEN:
                         WinDivertPutString(stream, "LISTEN"); break;
                     case WINDIVERT_EVENT_SOCKET_ACCEPT:

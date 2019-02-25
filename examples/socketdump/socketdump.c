@@ -103,22 +103,34 @@ int __cdecl main(int argc, char **argv)
             continue;
         }
 
-        SetConsoleTextAttribute(console, FOREGROUND_GREEN);
         switch (addr.Event)
         {
             case WINDIVERT_EVENT_SOCKET_BIND:
+                SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("BIND");
                 break;
+            case WINDIVERT_EVENT_SOCKET_UNBIND:
+                SetConsoleTextAttribute(console, FOREGROUND_RED);
+                printf("UNBIND");
+                break;
             case WINDIVERT_EVENT_SOCKET_LISTEN:
+                SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("LISTEN");
                 break;
             case WINDIVERT_EVENT_SOCKET_CONNECT:
+                SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("CONNECT");
                 break;
+            case WINDIVERT_EVENT_SOCKET_DISCONNECT:
+                SetConsoleTextAttribute(console, FOREGROUND_RED);
+                printf("DISCONNECT");
+                break;
             case WINDIVERT_EVENT_SOCKET_ACCEPT:
+                SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("ACCEPT");
                 break;
             default:
+                SetConsoleTextAttribute(console, FOREGROUND_BLUE);
                 printf("???");
                 break;
         }
