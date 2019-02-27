@@ -144,18 +144,19 @@ struct context_s
     KSPIN_LOCK lock;                            // Context-wide lock.
     WDFDEVICE device;                           // Context's device.
     WDFFILEOBJECT object;                       // Context's parent object.
+    PEPROCESS process;                          // Context's process.
     LIST_ENTRY flow_set;                        // All active flows.
     UINT32 flow_v4_callout_id;                  // Flow established callout id.
     UINT32 flow_v6_callout_id;                  // Flow established callout id.
     LIST_ENTRY work_queue;                      // Work queue.
-    ULONG work_queue_length;                    // Work queue length.
     LIST_ENTRY packet_queue;                    // Packet queue.
-    ULONG packet_queue_length;                  // Packet queue length.
-    ULONG packet_queue_maxlength;               // Packet queue max length.
-    ULONG packet_queue_size;                    // Packet queue size (in bytes).
-    ULONG packet_queue_maxsize;                 // Packet queue max size.
+    ULONGLONG work_queue_length;                // Work queue length.
+    ULONGLONG packet_queue_length;              // Packet queue length.
+    ULONGLONG packet_queue_maxlength;           // Packet queue max length.
+    ULONGLONG packet_queue_size;                // Packet queue size (in bytes).
+    ULONGLONG packet_queue_maxsize;             // Packet queue max size.
     LONGLONG packet_queue_maxcounts;            // Packet queue max counts.
-    ULONG packet_queue_maxtime;                 // Packet queue max time.
+    ULONGLONG packet_queue_maxtime;             // Packet queue max time.
     WDFQUEUE read_queue;                        // Read queue.
     WDFWORKITEM worker;                         // Read worker.
     WINDIVERT_LAYER layer;                      // Context's layer.
@@ -181,10 +182,8 @@ typedef struct context_s context_s;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(context_s, windivert_context_get);
 
 #define WINDIVERT_TIMEOUT(context, t0, t1)                                  \
-    ((context)->layer == WINDIVERT_LAYER_NETWORK ||                         \
-     (context)->layer == WINDIVERT_LAYER_NETWORK_FORWARD?                   \
-     ((t1) >= (t0)? (t1) - (t0): (t0) - (t1)) >                             \
-        (context)->packet_queue_maxcounts: FALSE)
+     (((t1) >= (t0)? (t1) - (t0): (t0) - (t1)) >                            \
+        (context)->packet_queue_maxcounts)
 
 /*
  * WinDivert Layer information.
@@ -257,6 +256,9 @@ struct packet_s
     UINT64 tcp_checksum:1;                  // Packet has TCP checksum?
     UINT64 udp_checksum:1;                  // Packet has UDP checksum?
     UINT64 match:1;                         // Packet matches filter?
+    UINT64 padding:8;                       // Padding for alignment.
+    UINT64 packet_size:32;                  // Packet total size.
+    PVOID object;                           // Object associated with packet.
     UINT32 priority;                        // Packet priority.
     UINT32 packet_len;                      // Length of the packet.
     WINDIVERT_DATA_ALIGN UINT8 data[];      // Packet/layer data.
@@ -471,10 +473,10 @@ static void windivert_network_classify(context_t context,
     IN BOOL loopback, IN UINT advance, IN OUT void *data,
     OUT FWPS_CLASSIFY_OUT0 *result);
 static BOOL windivert_queue_work(context_t context, PVOID packet,
-    ULONG packet_len, PNET_BUFFER_LIST buffers, WINDIVERT_LAYER layer,
-    PVOID layer_data, WINDIVERT_EVENT event, UINT64 flags, UINT32 priority,
-    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor, BOOL match,
-    LONGLONG timestamp);
+    ULONG packet_len, PNET_BUFFER_LIST buffers, PVOID object,
+    WINDIVERT_LAYER layer, PVOID layer_data, WINDIVERT_EVENT event,
+    UINT64 flags, UINT32 priority, BOOL ipv4, BOOL outbound, BOOL loopback,
+    BOOL impostor, BOOL match, LONGLONG timestamp);
 static void windivert_queue_packet(context_t context, packet_t packet);
 static void windivert_reinject_packet(packet_t packet);
 static void windivert_free_packet(packet_t packet);
@@ -1369,6 +1371,7 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     WDF_WORKITEM_CONFIG item_config;
     WDF_OBJECT_ATTRIBUTES obj_attrs;
     FWPM_SESSION0 session;
+    PIRP irp;
     NTSTATUS status = STATUS_SUCCESS;
     UINT8 i;
     context_t context = windivert_context_get(object);
@@ -1376,6 +1379,7 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     DEBUG("CREATE: creating a new WinDivert context (context=%p)", context);
 
     // Initialise the new context:
+    RtlZeroMemory(context, sizeof(struct context_s));
     context->state  = WINDIVERT_CONTEXT_STATE_OPENING;
     context->device = device;
     context->object = object;
@@ -1399,6 +1403,7 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->filter_len = 0;
     context->filter_flags = 0;
     context->worker = NULL;
+    context->process = NULL;
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
     {
         context->installed[i] = FALSE;
@@ -1452,6 +1457,15 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
         goto windivert_create_exit;
     }
     RtlZeroMemory(&context->reflect, sizeof(context->reflect));
+    irp = WdfRequestWdmGetIrp(request);
+    context->process = IoGetRequestorProcess(irp);
+    if (context->process == NULL)
+    {
+        status = STATUS_INVALID_DEVICE_REQUEST;
+        DEBUG_ERROR("no process associated with IRP", status);
+        goto windivert_create_exit;
+    }
+    ObfReferenceObject(context->process);
 
 windivert_create_exit:
 
@@ -1466,6 +1480,10 @@ windivert_create_exit:
         if (context->worker != NULL)
         {
             WdfObjectDelete(context->worker);
+        }
+        if (context->process != NULL)
+        {
+            ObDereferenceObject(context->process);
         }
         if (context->engine_handle != NULL)
         {
@@ -1899,7 +1917,7 @@ windivert_cleanup_error:
         entry = RemoveHeadList(&context->packet_queue);
         packet = CONTAINING_RECORD(entry, struct packet_s, entry);
         context->packet_queue_length--;
-        context->packet_queue_size -= packet->packet_len;
+        context->packet_queue_size -= packet->packet_size;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         timeout = WINDIVERT_TIMEOUT(context, packet->timestamp, timestamp);
         if (!sniff_mode && !timeout)
@@ -2002,6 +2020,7 @@ extern VOID windivert_destroy(IN WDFOBJECT object)
     windivert_uninstall_callouts(context, WINDIVERT_CONTEXT_STATE_CLOSED);
     FwpmEngineClose0(context->engine_handle);
     windivert_free((PVOID)filter);
+    ObDereferenceObject(context->process);
 }
 
 /*
@@ -2227,7 +2246,7 @@ static void windivert_read_service_request(context_t context, packet_t packet,
             else
             {
                 context->packet_queue_length--;
-                context->packet_queue_size -= new_packet->packet_len;
+                context->packet_queue_size -= new_packet->packet_size;
             }
         }
         KeReleaseInStackQueuedSpinLock(&lock_handle);
@@ -2446,7 +2465,7 @@ static void windivert_read_service(context_t context)
             }
         }
         context->packet_queue_length--;
-        context->packet_queue_size -= packet->packet_len;
+        context->packet_queue_size -= packet->packet_size;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
 
         windivert_read_service_request(context, packet, timestamp, request);
@@ -3099,7 +3118,7 @@ windivert_ioctl_bad_flags:
         case IOCTL_WINDIVERT_STARTUP:
         {
             BOOL inbound, outbound, ipv4, ipv6;
-            PIRP irp;
+            PEPROCESS process;
             LONGLONG timestamp;
             UINT64 filter_flags;
             UINT32 process_id;
@@ -3124,6 +3143,7 @@ windivert_ioctl_bad_flags:
             }
             context->state = WINDIVERT_CONTEXT_STATE_OPEN;
             layer = context->layer;
+            process = context->process;
             KeReleaseInStackQueuedSpinLock(&lock_handle);
 
             ioctl_filter = (const WINDIVERT_FILTER *)outbuf;
@@ -3137,8 +3157,7 @@ windivert_ioctl_bad_flags:
                 goto windivert_ioctl_exit;
             }
             filter_len = ioctl_filter_len / sizeof(WINDIVERT_FILTER);
-            irp = WdfRequestWdmGetIrp(request);
-            process_id = (UINT32)IoGetRequestorProcessId(irp);
+            process_id = (UINT32)PsGetProcessId(process);
             timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
 
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -3714,7 +3733,7 @@ static void windivert_network_classify(context_t context,
     while (!sniff_mode && buffer_itr != buffer_fst)
     {
         ok = windivert_queue_work(context, (PVOID)buffer_itr,
-            NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
+            NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, /*object=*/NULL, layer,
             (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
             flags, priority, ipv4, outbound, loopback, impostor,
             /*match=*/FALSE, timestamp);
@@ -3727,7 +3746,7 @@ static void windivert_network_classify(context_t context,
 
     // STEP (2): Queue the first matching packet buffer_fst:
     ok = windivert_queue_work(context, (PVOID)buffer_itr,
-        NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
+        NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, /*object=*/NULL, layer,
         (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
         flags, priority, ipv4, outbound, loopback, impostor, /*match=*/TRUE,
         timestamp);
@@ -3752,7 +3771,7 @@ static void windivert_network_classify(context_t context,
             timestamp, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET, ipv4,
             outbound, loopback, impostor, filter);
         ok = windivert_queue_work(context, (PVOID)buffer_itr,
-            NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, layer,
+            NET_BUFFER_DATA_LENGTH(buffer_itr), buffers, /*object=*/NULL, layer,
             (PVOID)network_data, /*event=*/WINDIVERT_EVENT_NETWORK_PACKET,
             flags, priority, ipv4, outbound, loopback, impostor, match,
             timestamp);
@@ -3908,9 +3927,10 @@ static void windivert_flow_established_classify(context_t context,
     if (match)
     {
         ok = windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
-            /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW, (PVOID)flow_data,
-            /*event=*/WINDIVERT_EVENT_FLOW_ESTABLISHED, flags, /*priority=*/0,
-            ipv4, outbound, loopback, /*impostor=*/FALSE, match, timestamp);
+            /*buffers=*/NULL, /*object=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
+            (PVOID)flow_data, /*event=*/WINDIVERT_EVENT_FLOW_ESTABLISHED,
+            flags, /*priority=*/0, ipv4, outbound, loopback, /*impostor=*/FALSE,
+            match, timestamp);
         if (!ok)
         {
             WdfObjectDereference(object);
@@ -4028,7 +4048,7 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     if (match)
     {
         (VOID)windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
-            /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
+            /*buffers=*/NULL, /*object=*/NULL, /*layer=*/WINDIVERT_LAYER_FLOW,
             (PVOID)&flow->data, /*event=*/WINDIVERT_EVENT_FLOW_DELETED, flags,
             /*priority=*/0, !flow->ipv6, flow->outbound, flow->loopback,
             /*impostor=*/FALSE, match, timestamp);
@@ -4550,7 +4570,7 @@ static void windivert_socket_classify(context_t context,
     if (match)
     {
         ok = windivert_queue_work(context, /*packet=*/NULL, /*packet_len=*/0,
-            /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_SOCKET,
+            /*buffers=*/NULL, /*object=*/NULL, /*layer=*/WINDIVERT_LAYER_SOCKET,
             (PVOID)socket_data, event, flags, /*priority=*/0, ipv4, outbound,
             loopback, /*impostor=*/FALSE, match, timestamp);
         if (!ok)
@@ -4612,15 +4632,16 @@ VOID windivert_worker(IN WDFWORKITEM item)
  * Queue work.
  */
 static BOOL windivert_queue_work(context_t context, PVOID packet,
-    ULONG packet_len, PNET_BUFFER_LIST buffers, WINDIVERT_LAYER layer,
-    PVOID layer_data, WINDIVERT_EVENT event, UINT64 flags, UINT32 priority,
-    BOOL ipv4, BOOL outbound, BOOL loopback, BOOL impostor, BOOL match,
-    LONGLONG timestamp)
+    ULONG packet_len, PNET_BUFFER_LIST buffers, PVOID object,
+    WINDIVERT_LAYER layer, PVOID layer_data, WINDIVERT_EVENT event,
+    UINT64 flags, UINT32 priority, BOOL ipv4, BOOL outbound, BOOL loopback,
+    BOOL impostor, BOOL match, LONGLONG timestamp)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PNET_BUFFER buffer;
     packet_t work;
     PVOID packet_data;
+    ULONG packet_size;
     UINT8 *data;
     PLIST_ENTRY old_entry;
     NDIS_TCP_IP_CHECKSUM_NET_BUFFER_LIST_INFO checksums;
@@ -4675,9 +4696,9 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
                 // Cannot handle oversized packet
                 return TRUE;
             }
-            work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_NETWORK, packet_len),
-                FALSE);
+            packet_size = WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_NETWORK,
+                packet_len);
+            work = (packet_t)windivert_malloc(packet_size, FALSE);
             if (work == NULL)
             {
                 return TRUE;
@@ -4713,8 +4734,8 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
 
         case WINDIVERT_LAYER_FLOW:
             flow_data = (PWINDIVERT_DATA_FLOW)layer_data;
-            work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_FLOW, 0), FALSE);
+            packet_size = WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_FLOW, 0);
+            work = (packet_t)windivert_malloc(packet_size, FALSE);
             if (work == NULL)
             {
                 return TRUE;
@@ -4727,8 +4748,8 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
  
         case WINDIVERT_LAYER_SOCKET:
             socket_data = (PWINDIVERT_DATA_SOCKET)layer_data;
-            work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_SOCKET, 0), FALSE);
+            packet_size = WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_SOCKET, 0);
+            work = (packet_t)windivert_malloc(packet_size, FALSE);
             if (work == NULL)
             {
                 return TRUE;
@@ -4741,9 +4762,9 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
 
         case WINDIVERT_LAYER_REFLECT:
             reflect_data = (PWINDIVERT_DATA_REFLECT)layer_data;
-            work = (packet_t)windivert_malloc(
-                WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_REFLECT, packet_len),
-                FALSE);
+            packet_size = WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_REFLECT,
+                packet_len);
+            work = (packet_t)windivert_malloc(packet_size, FALSE);
             if (work == NULL)
             {
                 return TRUE;
@@ -4770,8 +4791,14 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
     work->tcp_checksum = (tcp_checksum? 1: 0);
     work->udp_checksum = (udp_checksum? 1: 0);
     work->match        = match;
+    work->packet_size  = packet_size;
     work->priority     = priority;
     work->timestamp    = timestamp;
+    work->object       = object;
+    if (object != NULL)
+    {
+        ObfReferenceObject(object);
+    }
 
     old_entry = NULL;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -4832,7 +4859,7 @@ static void windivert_queue_packet(context_t context, packet_t packet)
             windivert_reinject_packet(packet);
             return;
         }
-        if (packet->packet_len > context->packet_queue_maxsize)
+        if (packet->packet_size > context->packet_queue_maxsize)
         {
             // (Corner case) the packet is larger than the max queue size:
             KeReleaseInStackQueuedSpinLock(&lock_handle);
@@ -4848,7 +4875,7 @@ static void windivert_queue_packet(context_t context, packet_t packet)
             return;
         }
 
-        if (context->packet_queue_size + packet->packet_len >
+        if (context->packet_queue_size + packet->packet_size >
                 context->packet_queue_maxsize ||
             context->packet_queue_length + 1 > context->packet_queue_maxlength)
         {
@@ -4856,7 +4883,7 @@ static void windivert_queue_packet(context_t context, packet_t packet)
             old_entry = RemoveHeadList(&context->packet_queue);
             old_packet = CONTAINING_RECORD(old_entry, struct packet_s, entry);
             context->packet_queue_length--;
-            context->packet_queue_size -= old_packet->packet_len;
+            context->packet_queue_size -= old_packet->packet_size;
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             DEBUG("DROP: packet queue is full, dropping packet");
             windivert_free_packet(old_packet);
@@ -4869,7 +4896,7 @@ static void windivert_queue_packet(context_t context, packet_t packet)
             // Queue the packet:
             InsertTailList(&context->packet_queue, &packet->entry);
             context->packet_queue_length++;
-            context->packet_queue_size += packet->packet_len;
+            context->packet_queue_size += packet->packet_size;
             break;
         }
     }
@@ -4986,6 +5013,10 @@ static void windivert_reinject_packet(packet_t packet)
  */
 static void windivert_free_packet(packet_t packet)
 {
+    if (packet->object != NULL)
+    {
+        ObDereferenceObject(packet->object);
+    }
     windivert_free(packet);
 }
 
@@ -6473,9 +6504,14 @@ static void windivert_reflect_event_notify(context_t context,
     PLIST_ENTRY entry;
     context_t waiter;
     const WINDIVERT_FILTER *filter;
-    PVOID packet = NULL;
+    PVOID packet = NULL, process;
     ULONG packet_len;
+    UINT64 flags;
     BOOL match;
+
+    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    process = (PVOID)context->process;
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     entry = reflect_waiters.Flink;
     while (entry != &reflect_waiters)
@@ -6484,6 +6520,7 @@ static void windivert_reflect_event_notify(context_t context,
         entry = entry->Flink;
         KeAcquireInStackQueuedSpinLock(&waiter->lock, &lock_handle);
         filter = waiter->filter;
+        flags  = waiter->flags;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         match = windivert_filter(/*buffer=*/NULL,
             /*layer=*/WINDIVERT_LAYER_REFLECT, (PVOID)&context->reflect.data,
@@ -6498,8 +6535,8 @@ static void windivert_reflect_event_notify(context_t context,
             packet = windivert_reflect_packet(context, &packet_len);
         }
         (VOID)windivert_queue_work(waiter, packet, packet_len,
-            /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_REFLECT,
-            (PVOID)&context->reflect.data, event, /*flags=*/0, /*priority=*/0,
+            /*buffers=*/NULL, process, /*layer=*/WINDIVERT_LAYER_REFLECT,
+            (PVOID)&context->reflect.data, event, flags, /*priority=*/0,
             /*ipv4=*/TRUE, /*outbound=*/FALSE, /*loopback=*/FALSE,
             /*impostor=*/FALSE, /*match=*/TRUE, timestamp);
     }
@@ -6516,8 +6553,9 @@ static void windivert_reflect_established_notify(context_t context,
     BOOL match, ok;
     context_t waiter;
     const WINDIVERT_FILTER *filter;
-    PVOID packet;
+    PVOID packet, process;
     ULONG packet_len;
+    UINT64 flags;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
@@ -6526,6 +6564,7 @@ static void windivert_reflect_established_notify(context_t context,
         return;
     }
     filter = context->filter;
+    flags = context->flags;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     entry = reflect_contexts.Flink;
@@ -6542,12 +6581,15 @@ static void windivert_reflect_established_notify(context_t context,
             continue;
         }
         packet = windivert_reflect_packet(waiter, &packet_len);
+        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+        process = (PVOID)waiter->process;
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
         ok = windivert_queue_work(context, packet, packet_len,
-            /*buffers=*/NULL, /*layer=*/WINDIVERT_LAYER_REFLECT,
+            /*buffers=*/NULL, process, /*layer=*/WINDIVERT_LAYER_REFLECT,
             (PVOID)&waiter->reflect.data,
-            /*event=*/WINDIVERT_EVENT_REFLECT_OPEN, /*flags=*/0,
-            /*priority=*/0, /*ipv4=*/TRUE, /*outbound=*/FALSE,
-            /*loopback=*/FALSE, /*impostor=*/FALSE, /*match=*/TRUE, timestamp);
+            /*event=*/WINDIVERT_EVENT_REFLECT_OPEN, flags, /*priority=*/0,
+            /*ipv4=*/TRUE, /*outbound=*/FALSE, /*loopback=*/FALSE,
+            /*impostor=*/FALSE, /*match=*/TRUE, timestamp);
         if (!ok)
         {
             break;

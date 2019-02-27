@@ -1,6 +1,6 @@
 /*
  * windivertctl.c
- * (C) 2018, all rights reserved,
+ * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -51,19 +51,6 @@
 #define MAX_FILTER_LEN      30000
 
 /*
- * Process info.
- */
-typedef struct INFO
-{
-    UINT32 process_id;
-    UINT32 ref_count;
-    HANDLE process;
-    struct INFO *next;
-} INFO, *PINFO;
-
-static INFO *open = NULL;       // All open handles
-
-/*
  * Modes.
  */
 typedef enum
@@ -72,95 +59,6 @@ typedef enum
     WATCH,
     KILLALL
 } MODE;
-
-/*
- * Add a new process.
- */
-static HANDLE add_process(UINT32 process_id)
-{
-    PINFO info = open;
-    HANDLE process;
-
-    while (info != NULL)
-    {
-        if (info->process_id == process_id)
-        {
-            info->ref_count++;
-            return info->process;
-        }
-        info = info->next;
-    }
-
-    process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
-        FALSE, process_id);
-    info = (INFO *)malloc(sizeof(INFO));
-    if (info == NULL)
-    {
-        fprintf(stderr, "error: failed to allocate memory (%d)\n",
-            GetLastError());
-        exit(EXIT_FAILURE);
-    }
-    info->process_id = process_id;
-    info->process    = process;
-    info->ref_count  = 1;
-    info->next       = open;
-    open = info;
-    return process;
-}
-
-/*
- * Lookup a process.
- */
-static HANDLE lookup_process(UINT32 process_id)
-{
-    PINFO info = open;
-
-    while (info != NULL)
-    {
-        if (info->process_id == process_id)
-        {
-            return info->process;
-        }
-        info = info->next;
-    }
-}
-
-/*
- * Remove an old process.
- */
-static void remove_process(UINT32 process_id)
-{
-    PINFO info = open, prev = NULL;
-
-    while (info != NULL)
-    {
-        if (info->process_id == process_id)
-        {
-            info->ref_count--;
-            if (info->ref_count > 0)
-            {
-                return;
-            }
-            break;
-        }
-        prev = info;
-        info = info->next;
-    }
-
-    if (info->process != NULL)
-    {
-        CloseHandle(info->process);
-    }
-    if (prev != NULL)
-    {
-        prev->next = info->next;
-    }
-    else
-    {
-        open = info->next;
-    }
-    free(info);
-}
 
 /*
  * Entry.
@@ -243,6 +141,17 @@ usage:
             GetLastError());
         return EXIT_FAILURE;
     }
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LEN,
+            WINDIVERT_PARAM_QUEUE_LEN_MAX) ||
+        !WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_SIZE,
+            WINDIVERT_PARAM_QUEUE_SIZE_MAX) ||
+        !WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_TIME,
+            WINDIVERT_PARAM_QUEUE_TIME_MAX))
+    {
+        fprintf(stderr, "error: failed to set WinDivert handle params (%d)\n",
+            GetLastError());
+        return EXIT_FAILURE;
+    }
 
     // Main loop:
     console = GetStdHandle(STD_OUTPUT_HANDLE);
@@ -262,7 +171,6 @@ usage:
         {
             case WINDIVERT_EVENT_REFLECT_OPEN:
                 // Open handle:
-                process = add_process(addr.Reflect.ProcessId);
                 if (mode == KILLALL)
                 {
                     SetConsoleTextAttribute(console, FOREGROUND_RED);
@@ -282,7 +190,6 @@ usage:
                 {
                     continue;
                 }
-                process = lookup_process(addr.Reflect.ProcessId);
                 SetConsoleTextAttribute(console, FOREGROUND_RED);
                 fputs("CLOSE", stdout);
                 break;
@@ -291,6 +198,9 @@ usage:
                 fputs("???", stdout);
                 break;
         }
+        process = OpenProcess(
+            PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE,
+            FALSE, addr.Reflect.ProcessId);
         SetConsoleTextAttribute(console,
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         fputs(" time=", stdout);
@@ -309,6 +219,7 @@ usage:
         if (process != NULL)
         {
             path_len = GetProcessImageFileName(process, path, sizeof(path));
+            CloseHandle(process);
         }
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
         printf("%s", (path_len != 0? path: "???"));
@@ -391,11 +302,6 @@ usage:
         SetConsoleTextAttribute(console,
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         putchar('\n');
-
-        if (addr.Event == WINDIVERT_EVENT_REFLECT_CLOSE)
-        {
-            remove_process(addr.Reflect.ProcessId);
-        }
     }
 
     if (!WinDivertClose(handle))

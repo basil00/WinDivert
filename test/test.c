@@ -1017,16 +1017,14 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     }
 
     // (1) Open WinDivert handles:
-    handle[0] = WinDivertOpen(object, WINDIVERT_LAYER_NETWORK, 777,
-        WINDIVERT_FLAG_RECV_PARTIAL);
+    handle[0] = WinDivertOpen(object, WINDIVERT_LAYER_NETWORK, 777, 0);
     if (handle[0] == INVALID_HANDLE_VALUE)
     {
         fprintf(stderr, "error: failed to open WinDivert handle for filter "
             "\"%s\" (err = %d)\n", filter, GetLastError());
         goto failed;
     }
-    handle[1] = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 888, 
-        WINDIVERT_FLAG_RECV_PARTIAL);
+    handle[1] = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 888, 0);
     if (handle[1] == INVALID_HANDLE_VALUE)
     {
         fprintf(stderr, "error: failed to open WinDivert handle "
@@ -1241,8 +1239,7 @@ static DWORD monitor_worker(LPVOID arg)
                 GetLastError());
             exit(EXIT_FAILURE);
         }
-        WinDivertHelperParsePacket(packet, packet_len, NULL, NULL, NULL, NULL,
-            NULL, NULL, NULL, (void **)&object_2, NULL, NULL, NULL);
+        object_2 = packet;
         if (strcmp(object_1, object_2) != 0)
         {
             // Filter is not the same.

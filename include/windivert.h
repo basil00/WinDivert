@@ -1,6 +1,6 @@
 /*
  * windivert.h
- * (C) 2018, all rights reserved,
+ * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -300,12 +300,12 @@ extern WINDIVERTEXPORT BOOL WinDivertGetParam(
  */
 #define WINDIVERT_PRIORITY_LOWEST           30000
 #define WINDIVERT_PRIORITY_HIGHEST          (-WINDIVERT_PRIORITY_LOWEST)
-#define WINDIVERT_PARAM_QUEUE_LEN_DEFAULT   2048
-#define WINDIVERT_PARAM_QUEUE_LEN_MIN       16
+#define WINDIVERT_PARAM_QUEUE_LEN_DEFAULT   4096
+#define WINDIVERT_PARAM_QUEUE_LEN_MIN       32
 #define WINDIVERT_PARAM_QUEUE_LEN_MAX       16384
-#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT  1000        /* 1s */
-#define WINDIVERT_PARAM_QUEUE_TIME_MIN      20          /* 20ms */
-#define WINDIVERT_PARAM_QUEUE_TIME_MAX      8000        /* 8s */
+#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT  2000        /* 2s */
+#define WINDIVERT_PARAM_QUEUE_TIME_MIN      100         /* 100ms */
+#define WINDIVERT_PARAM_QUEUE_TIME_MAX      16000       /* 16s */
 #define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT  4194304     /* 4MB */
 #define WINDIVERT_PARAM_QUEUE_SIZE_MIN      65535       /* 64KB */
 #define WINDIVERT_PARAM_QUEUE_SIZE_MAX      33554432    /* 32MB */
