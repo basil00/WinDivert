@@ -141,8 +141,8 @@ usage:
             GetLastError());
         return EXIT_FAILURE;
     }
-    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LEN,
-            WINDIVERT_PARAM_QUEUE_LEN_MAX) ||
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LENGTH,
+            WINDIVERT_PARAM_QUEUE_LENGTH_MAX) ||
         !WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_SIZE,
             WINDIVERT_PARAM_QUEUE_SIZE_MAX) ||
         !WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_TIME,
@@ -163,7 +163,7 @@ usage:
             {
                 break;
             }
-            fprintf(stderr, "failed to event (%d)\n", GetLastError());
+            fprintf(stderr, "failed to receive event (%d)\n", GetLastError());
             continue;
         }
 

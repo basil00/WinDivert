@@ -234,7 +234,7 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(req_context_s, windivert_req_context_get);
  *
  * Note the packet data must be pointer-aligned.
  */
-#define WINDIVERT_WORK_QUEUE_LEN_MAX        4096
+#define WINDIVERT_WORK_QUEUE_LENGTH_MAX     4096
 #ifdef _WIN64
 #define WINDIVERT_ALIGN_SIZE                8
 #define WINDIVERT_DATA_ALIGN                __declspec(align(8))
@@ -1385,7 +1385,7 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     context->object = object;
     context->work_queue_length = 0;
     context->packet_queue_length = 0;
-    context->packet_queue_maxlength = WINDIVERT_PARAM_QUEUE_LEN_DEFAULT;
+    context->packet_queue_maxlength = WINDIVERT_PARAM_QUEUE_LENGTH_DEFAULT;
     context->packet_queue_size = 0;
     context->packet_queue_maxsize = WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT;
     context->packet_queue_maxcounts =
@@ -3240,9 +3240,9 @@ windivert_ioctl_bad_flags:
             }
             switch ((UINT32)param)
             {
-                case WINDIVERT_PARAM_QUEUE_LEN:
-                    if (value < WINDIVERT_PARAM_QUEUE_LEN_MIN ||
-                        value > WINDIVERT_PARAM_QUEUE_LEN_MAX)
+                case WINDIVERT_PARAM_QUEUE_LENGTH:
+                    if (value < WINDIVERT_PARAM_QUEUE_LENGTH_MIN ||
+                        value > WINDIVERT_PARAM_QUEUE_LENGTH_MAX)
                     {
                         KeReleaseInStackQueuedSpinLock(&lock_handle);
                         status = STATUS_INVALID_PARAMETER;
@@ -3315,7 +3315,7 @@ windivert_ioctl_bad_flags:
             }
             switch ((UINT32)param)
             {
-                case WINDIVERT_PARAM_QUEUE_LEN:
+                case WINDIVERT_PARAM_QUEUE_LENGTH:
                     *valptr = context->packet_queue_maxlength;
                     break;
                 case WINDIVERT_PARAM_QUEUE_TIME:
@@ -3323,6 +3323,12 @@ windivert_ioctl_bad_flags:
                     break;
                 case WINDIVERT_PARAM_QUEUE_SIZE:
                     *valptr = context->packet_queue_maxsize;
+                    break;
+                case WINDIVERT_PARAM_VERSION_MAJOR:
+                    *valptr = WINDIVERT_VERSION_MAJOR;
+                    break;
+                case WINDIVERT_PARAM_VERSION_MINOR:
+                    *valptr = WINDIVERT_VERSION_MINOR;
                     break;
                 default:
                     KeReleaseInStackQueuedSpinLock(&lock_handle);
@@ -4819,7 +4825,7 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
         work->match = FALSE;
     }
     context->work_queue_length++;
-    if (context->work_queue_length > WINDIVERT_WORK_QUEUE_LEN_MAX)
+    if (context->work_queue_length > WINDIVERT_WORK_QUEUE_LENGTH_MAX)
     {
         // The work queue is full; as an emergency we drop packets.
         old_entry = RemoveHeadList(&context->work_queue);

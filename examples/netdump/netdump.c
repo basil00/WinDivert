@@ -1,6 +1,6 @@
 /*
  * netdump.c
- * (C) 2018, all rights reserved,
+ * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -118,15 +118,24 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Max-out the packet queue:
-    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LEN, 8192))
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LENGTH, 
+            WINDIVERT_PARAM_QUEUE_LENGTH_MAX))
     {
         fprintf(stderr, "error: failed to set packet queue length (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }
-    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_TIME, 2048))
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_TIME,
+            WINDIVERT_PARAM_QUEUE_TIME_MAX))
     {
         fprintf(stderr, "error: failed to set packet queue time (%d)\n",
+            GetLastError());
+        exit(EXIT_FAILURE);
+    }
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_SIZE,
+            WINDIVERT_PARAM_QUEUE_SIZE_MAX))
+    {
+        fprintf(stderr, "error: failed to set packet queue size (%d)\n",
             GetLastError());
         exit(EXIT_FAILURE);
     }

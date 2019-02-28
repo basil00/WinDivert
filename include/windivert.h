@@ -190,11 +190,13 @@ typedef enum
  */
 typedef enum
 {
-    WINDIVERT_PARAM_QUEUE_LEN  = 0,     /* Packet queue length. */
+    WINDIVERT_PARAM_QUEUE_LENGTH = 0,   /* Packet queue length. */
     WINDIVERT_PARAM_QUEUE_TIME = 1,     /* Packet queue time. */
     WINDIVERT_PARAM_QUEUE_SIZE = 2,     /* Packet queue size. */
+    WINDIVERT_PARAM_VERSION_MAJOR = 3,  /* Driver version (major). */
+    WINDIVERT_PARAM_VERSION_MINOR = 4,  /* Driver version (minor). */
 } WINDIVERT_PARAM, *PWINDIVERT_PARAM;
-#define WINDIVERT_PARAM_MAX             WINDIVERT_PARAM_QUEUE_SIZE
+#define WINDIVERT_PARAM_MAX             WINDIVERT_PARAM_VERSION_MINOR
 
 /*
  * WinDivert shutdown parameter.
@@ -298,18 +300,18 @@ extern WINDIVERTEXPORT BOOL WinDivertGetParam(
 /*
  * WinDivert constants.
  */
-#define WINDIVERT_PRIORITY_LOWEST           30000
-#define WINDIVERT_PRIORITY_HIGHEST          (-WINDIVERT_PRIORITY_LOWEST)
-#define WINDIVERT_PARAM_QUEUE_LEN_DEFAULT   4096
-#define WINDIVERT_PARAM_QUEUE_LEN_MIN       32
-#define WINDIVERT_PARAM_QUEUE_LEN_MAX       16384
-#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT  2000        /* 2s */
-#define WINDIVERT_PARAM_QUEUE_TIME_MIN      100         /* 100ms */
-#define WINDIVERT_PARAM_QUEUE_TIME_MAX      16000       /* 16s */
-#define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT  4194304     /* 4MB */
-#define WINDIVERT_PARAM_QUEUE_SIZE_MIN      65535       /* 64KB */
-#define WINDIVERT_PARAM_QUEUE_SIZE_MAX      33554432    /* 32MB */
-#define WINDIVERT_BATCH_MAX                 0xFF        /* 255 */
+#define WINDIVERT_PRIORITY_LOWEST               30000
+#define WINDIVERT_PRIORITY_HIGHEST              (-WINDIVERT_PRIORITY_LOWEST)
+#define WINDIVERT_PARAM_QUEUE_LENGTH_DEFAULT    4096
+#define WINDIVERT_PARAM_QUEUE_LENGTH_MIN        32
+#define WINDIVERT_PARAM_QUEUE_LENGTH_MAX        16384
+#define WINDIVERT_PARAM_QUEUE_TIME_DEFAULT      2000        /* 2s */
+#define WINDIVERT_PARAM_QUEUE_TIME_MIN          100         /* 100ms */
+#define WINDIVERT_PARAM_QUEUE_TIME_MAX          16000       /* 16s */
+#define WINDIVERT_PARAM_QUEUE_SIZE_DEFAULT      4194304     /* 4MB */
+#define WINDIVERT_PARAM_QUEUE_SIZE_MIN          65535       /* 64KB */
+#define WINDIVERT_PARAM_QUEUE_SIZE_MAX          33554432    /* 32MB */
+#define WINDIVERT_BATCH_MAX                     0xFF        /* 255 */
 
 /****************************************************************************/
 /* WINDIVERT HELPER API                                                     */

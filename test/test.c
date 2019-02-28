@@ -1004,6 +1004,7 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     HANDLE event[2] = {NULL, NULL};
     BOOL random, result, ipv4;
     LARGE_INTEGER end;
+    UINT64 val;
 
     *diff = 0;
 
@@ -1029,6 +1030,33 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     {
         fprintf(stderr, "error: failed to open WinDivert handle "
             "(err = %d)\n", GetLastError());
+        goto failed;
+    }
+    if (!WinDivertSetParam(handle[0], WINDIVERT_PARAM_QUEUE_LENGTH,
+            WINDIVERT_PARAM_QUEUE_LENGTH_MAX) ||
+        !WinDivertGetParam(handle[0], WINDIVERT_PARAM_QUEUE_LENGTH, &val) ||
+        val != WINDIVERT_PARAM_QUEUE_LENGTH_MAX)
+    {
+        fprintf(stderr, "error: failed to set WINDIVERT_PARAM_QUEUE_LENGTH "
+            "parameter (err = %d)\n", GetLastError());
+        goto failed;
+    }
+    if (!WinDivertSetParam(handle[0], WINDIVERT_PARAM_QUEUE_SIZE,
+            WINDIVERT_PARAM_QUEUE_SIZE_MAX) ||
+        !WinDivertGetParam(handle[0], WINDIVERT_PARAM_QUEUE_SIZE, &val) ||
+        val != WINDIVERT_PARAM_QUEUE_SIZE_MAX)
+    {
+        fprintf(stderr, "error: failed to set WINDIVERT_PARAM_QUEUE_SIZE "
+            "parameter (err = %d)\n", GetLastError());
+        goto failed;
+    }
+    if (!WinDivertSetParam(handle[0], WINDIVERT_PARAM_QUEUE_TIME,
+            WINDIVERT_PARAM_QUEUE_TIME_MAX) ||
+        !WinDivertGetParam(handle[0], WINDIVERT_PARAM_QUEUE_TIME, &val) ||
+        val != WINDIVERT_PARAM_QUEUE_TIME_MAX)
+    {
+        fprintf(stderr, "error: failed to set WINDIVERT_PARAM_QUEUE_TIME "
+            "parameter (err = %d)\n", GetLastError());
         goto failed;
     }
 

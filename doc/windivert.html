@@ -753,6 +753,16 @@ have a valid digital signature
 </tr>
 <tr>
 <td>
+<code>ERROR_DRIVER_FAILED_PRIOR_UNLOAD</code>
+</td>
+<td>
+654
+</td>
+<td>
+An incompatible version of the WinDivert driver is currently loaded.
+</td>
+<tr>
+<td>
 <code>ERROR_SERVICE_DOES_NOT_EXIST</code>
 </td>
 <td>
@@ -1658,14 +1668,14 @@ Description
 </tr>
 <tr>
 <td>
-<code>WINDIVERT_PARAM_QUEUE_LEN</code>
+<code>WINDIVERT_PARAM_QUEUE_LENGTH</code>
 </td>
 <td>
 Sets the maximum length of the packet queue for
 <a href="#divert_recv"><code>WinDivertRecv()</code></a>.
-The default value is <code>WINDIVERT_PARAM_QUEUE_LEN_DEFAULT</code>,
-the minimum is <code>WINDIVERT_PARAM_QUEUE_LEN_MIN</code>, and the maximum
-is <code>WINDIVERT_PARAM_QUEUE_LEN_MAX</code>.
+The default value is <code>WINDIVERT_PARAM_QUEUE_LENGTH_DEFAULT</code>,
+the minimum is <code>WINDIVERT_PARAM_QUEUE_LENGTH_MIN</code>, and the maximum
+is <code>WINDIVERT_PARAM_QUEUE_LENGTH_MAX</code>.
 </td>
 </tr>
 <tr>
@@ -1725,9 +1735,38 @@ Use <code>GetLastError()</code> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
 Gets a WinDivert parameter.
-See <a href="#divert_set_param"><code>WinDivertSetParam()</code></a> for the list
-of parameters.
+This function supports all the parameters from
+<a href="#divert_set_param"><code>WinDivertSetParam()</code></a>,
+and the following additional <q>read-only</q> parameters:
 </p>
+<center>
+<table border="1" cellpadding="5" width="75%">
+<tr>
+<th>
+Parameter
+</th>
+<th>
+Description
+</th>
+</tr>
+<tr>
+<td>
+<code>WINDIVERT_PARAM_VERSION_MAJOR</code>
+</td>
+<td>
+Returns the major version of the driver.
+</td>
+</tr>
+<tr>
+<td>
+<code>WINDIVERT_PARAM_VERSION_MINOR</code>
+</td>
+<td>
+Returns the minor version of the driver.
+</td>
+</tr>
+</table>
+</center>
 </dd></dl>
 
 <hr>
@@ -2576,16 +2615,9 @@ Due to technical limitations, this field is not supported by the
 <code>WINDIVERT_LAYER_NETWORK*</code> layers.
 That said, it is usually possible to associate process IDs to network packets 
 matching the same network 5-tuple.
-</p><p>
 Note that a fundamental race condition exists between the <code>processId</code>
-and the termination of the corresponding process.
-By the time an event is received using
-<a href="#divert_recv"><code>WinDivertRecv()</code></a>,
-it is possible that the process has already terminated and 
-the ID has been reassigned to an unrelated process.
-This problem can be partly mitigated by comparing the timestamp
-(<code>addr.Timestamp</code>) with the creation time of the process.
-If the process is newer, then the ID has been reassigned.
+and the termination of the corresponding process, see
+the <a href="#known_issues">know issues</a> listed below.
 </p><p>
 The <code>packet*[i]</code>, <code>tcp.Payload*[i]</code> and
 <code>udp.Payload*[i]</code> fields take an <i>index</i> parameter (<code>i</code>).
@@ -2812,13 +2844,12 @@ See the <code>netdump.exe</code> sample program for an example of this usage.
 <a name="known_issues"><h2>9. Known Issues</h2></a>
 
 <p>
-There are some limitations to the WinDivert package.
-They are:
+WinDivert has some known limitations listed below:
 </p>
 <ul>
 <li><i>Injecting inbound ICMP/ICMPv6 messages</i>:
-    Calling <a href="#divert_send"><code>WinDivertSend()</code></a> will fail with
-    an error for certain types of inbound ICMP/ICMPv6 messages.
+    Calling <a href="#divert_send"><code>WinDivertSend()</code></a> will fail
+    with an error for certain types of inbound ICMP/ICMPv6 messages.
     This is probably because the Windows TCP/IP stack does not handle
     such messages.
     Such errors are harmless and can be ignored.
@@ -2861,6 +2892,22 @@ They are:
     (e.g. some buggy NAT implementations)
     that incorrectly assume packets to be in-order.
     </li>
+<li><i>A race condition exists between <q><code>addr.*.processId</code></q> and
+    process termination.</i>
+    By the time an event is received using
+    <a href="#divert_recv"><code>WinDivertRecv()</code></a>,
+    it is possible that the process responsible for the event has already
+    terminated.
+    Furthermore, it is also possible that the <code>processId</code> has been
+    reassigned to an unrelated process.
+    This problem can be partly mitigated by comparing the timestamp
+    (<code>addr.Timestamp</code>) with the creation time of the process.
+    If the process is newer, then the ID has been reassigned.
+    This race condition does <b>not</b> affect the
+    <code>WINDIVERT_EVENT_REFLECT_OPEN</code> event.
+    In this special case, the <code>addr.Reflect.processId</code> is
+    guaranteed to be valid until the corresponding close event is
+    received or dropped.</li>
 </ul>
 
 <hr>
