@@ -2857,7 +2857,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
             if (addr != NULL)
             {
                 status = WdfRequestProbeAndLockUserBufferForWrite(request,
-                    addr, addr_len, &memobj);
+                    addr, (size_t)addr_len, &memobj);
                 if (!NT_SUCCESS(status))
                 {
                     DEBUG_ERROR("invalid address for RECV ioctl", status);
@@ -2886,7 +2886,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
                 goto windivert_caller_context_error;
             }
             status = WdfRequestProbeAndLockUserBufferForRead(request, addr,
-                addr_len, &memobj);
+                (size_t)addr_len, &memobj);
             if (!NT_SUCCESS(status))
             {
                 DEBUG_ERROR("invalid address for SEND ioctl", status);
