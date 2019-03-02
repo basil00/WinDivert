@@ -57,7 +57,8 @@ typedef enum
 {
     LIST,
     WATCH,
-    KILLALL
+    KILL,
+    UNINSTALL
 } MODE;
 
 /*
@@ -77,13 +78,16 @@ int __cdecl main(int argc, char **argv)
     ULONGLONG freq, start_count;
     LARGE_INTEGER li;
     MODE mode;
+    SC_HANDLE manager = NULL, service = NULL;
+    SERVICE_STATUS status;
     const char *filter = "true";
     const char *err_str = NULL;
 
     if (argc != 2 && argc != 3)
     {
 usage:
-        fprintf(stderr, "usage: %s (list|watch|killall) [filter]\n", argv[0]);
+        fprintf(stderr, "usage: %s (list|watch|kill) [filter]\n", argv[0]);
+        fprintf(stderr, "       %s uninstall\n");
         exit(EXIT_FAILURE);
     }
     if (strcmp(argv[1], "list") == 0)
@@ -94,9 +98,17 @@ usage:
     {
         mode = WATCH;
     }
-    else if (strcmp(argv[1], "killall") == 0)
+    else if (strcmp(argv[1], "kill") == 0)
     {
-        mode = KILLALL;
+        mode = KILL;
+    }
+    else if (strcmp(argv[1], "uninstall") == 0)
+    {
+        if (argc != 2)
+        {
+            goto usage;
+        }
+        mode = UNINSTALL;
     }
     else
     {
@@ -116,7 +128,7 @@ usage:
     // Open WinDivert REFLECT handle:
     handle = WinDivertOpen(filter, WINDIVERT_LAYER_REFLECT, priority, 
         WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY |
-            (mode == WATCH? 0: WINDIVERT_FLAG_NO_INSTALL));
+            (mode == WATCH || mode == UNINSTALL? 0: WINDIVERT_FLAG_NO_INSTALL));
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (mode != WATCH && GetLastError() == ERROR_SERVICE_DOES_NOT_EXIST)
@@ -153,6 +165,31 @@ usage:
         return EXIT_FAILURE;
     }
 
+    // Stop the WinDivert service.
+    if (mode == UNINSTALL)
+    {
+        manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+        if (manager == NULL)
+        {
+            fprintf(stderr, "error: failed to open service manager (%d)\n",
+                GetLastError());
+            return EXIT_FAILURE;
+        }
+        service = OpenService(manager, "WinDivert", SERVICE_ALL_ACCESS);
+        if (service == NULL)
+        {
+            fprintf(stderr, "error: failed to open WinDivert service (%d)\n",
+                GetLastError());
+            return EXIT_FAILURE;
+        }
+        if (!ControlService(service, SERVICE_CONTROL_STOP, &status))
+        {
+            fprintf(stderr, "error: failed to stop WinDivert service (%d)\n",
+                GetLastError());
+            return EXIT_FAILURE;
+        }
+    }
+
     // Main loop:
     console = GetStdHandle(STD_OUTPUT_HANDLE);
     while (TRUE)
@@ -171,11 +208,10 @@ usage:
         {
             case WINDIVERT_EVENT_REFLECT_OPEN:
                 // Open handle:
-                if (mode == KILLALL)
+                if (mode == KILL || mode == UNINSTALL)
                 {
                     SetConsoleTextAttribute(console, FOREGROUND_RED);
                     fputs("KILL", stdout);
-                    TerminateProcess(process, 0);
                 }
                 else
                 {
@@ -219,6 +255,10 @@ usage:
         if (process != NULL)
         {
             path_len = GetProcessImageFileName(process, path, sizeof(path));
+            if (mode == KILL || mode == UNINSTALL)
+            {
+                TerminateProcess(process, 0);
+            }
             CloseHandle(process);
         }
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
@@ -303,6 +343,19 @@ usage:
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         putchar('\n');
     }
+
+    if (mode == UNINSTALL)
+    {
+        SetConsoleTextAttribute(console, FOREGROUND_RED);
+        fputs("UNINSTALL", stdout);
+        SetConsoleTextAttribute(console,
+            FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+        puts(" WinDivert");
+
+        CloseServiceHandle(service);
+        CloseServiceHandle(manager);
+    }
+
 
     if (!WinDivertClose(handle))
     {
