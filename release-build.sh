@@ -50,6 +50,7 @@ do
     echo "BUILD $NAME"
     INSTALL=install/$NAME
     echo "\tmake $INSTALL..."
+    rm -rf $INSTALL
     mkdir -p $INSTALL
     echo "\tcopy $INSTALL/README..."
     cp README $INSTALL
@@ -90,35 +91,43 @@ do
     cp install/$TARGET/i386/webfilter.exe $INSTALL/x86
     echo "\tcopy $INSTALL/x86/streamdump.exe..."
     cp install/$TARGET/i386/streamdump.exe $INSTALL/x86
-    echo "\tcopy $INSTALL/i386/flowtrack.exe..."
-    cp install/$TARGET/i386/flowtrack.exe $INSTALL/amd64
+    echo "\tcopy $INSTALL/x86/flowtrack.exe..."
+    cp install/$TARGET/i386/flowtrack.exe $INSTALL/x86
+    echo "\tcopy $INSTALL/x86/socketdump.exe..."
+    cp install/$TARGET/i386/socketdump.exe $INSTALL/x86
+    echo "\tcopy $INSTALL/x86/windivertctl.exe..."
+    cp install/$TARGET/i386/windivertctl.exe $INSTALL/x86
     if [ -d "install/$TARGET/amd64" ]
     then
         echo "\tmake $INSTALL/amd64..."
-        mkdir -p $INSTALL/amd64
+        mkdir -p $INSTALL/x64
         echo "\tcopy $INSTALL/amd64/WinDivert64.sys..."
-        cp install/$TARGET/amd64/WinDivert64.sys $INSTALL/amd64
+        cp install/$TARGET/amd64/WinDivert64.sys $INSTALL/x64
         if ! grep "DigiCert High Assurance EV Root" \
-            $INSTALL/amd64/WinDivert64.sys 2>&1 >/dev/null
+            $INSTALL/x64/WinDivert64.sys 2>&1 >/dev/null
         then
-            echo -e "\t\033[33mWARNING\033[0m: unsigned WinDivert64.sys..."
+            echo "\t\033[33mWARNING\033[0m: unsigned WinDivert64.sys..."
         fi
-        echo "\tcopy $INSTALL/amd64/WinDivert.lib..."
-        cp install/$TARGET/amd64/WinDivert.lib $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/WinDivert.dll..."
-        cp install/$TARGET/amd64/WinDivert.dll $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/netdump.exe..."
-        cp install/$TARGET/amd64/netdump.exe $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/netfilter.exe..."
-        cp install/$TARGET/amd64/netfilter.exe $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/passtru.exe..."
-        cp install/$TARGET/amd64/passthru.exe $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/webfilter.exe..."
-        cp install/$TARGET/amd64/webfilter.exe $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/streamdump.exe..."
-        cp install/$TARGET/amd64/streamdump.exe $INSTALL/amd64
-        echo "\tcopy $INSTALL/amd64/flowtrack.exe..."
-        cp install/$TARGET/amd64/flowtrack.exe $INSTALL/amd64
+        echo "\tcopy $INSTALL/x64/WinDivert.lib..."
+        cp install/$TARGET/amd64/WinDivert.lib $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/WinDivert.dll..."
+        cp install/$TARGET/amd64/WinDivert.dll $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/netdump.exe..."
+        cp install/$TARGET/amd64/netdump.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/netfilter.exe..."
+        cp install/$TARGET/amd64/netfilter.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/passtru.exe..."
+        cp install/$TARGET/amd64/passthru.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/webfilter.exe..."
+        cp install/$TARGET/amd64/webfilter.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/streamdump.exe..."
+        cp install/$TARGET/amd64/streamdump.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/flowtrack.exe..."
+        cp install/$TARGET/amd64/flowtrack.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/socketdump.exe..."
+        cp install/$TARGET/amd64/socketdump.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/windivertctl.exe..."
+        cp install/$TARGET/amd64/windivertctl.exe $INSTALL/x64
     else
         echo "\tWARNING: skipping missing AMD64 build..."
     fi
