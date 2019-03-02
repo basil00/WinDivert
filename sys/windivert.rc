@@ -1,6 +1,6 @@
 /*
  * windivert.rc
- * (C) 2018, all rights reserved,
+ * (C) 2019, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -38,7 +38,7 @@
 #define VER_FILETYPE                VFT_DRV
 #define VER_FILESUBTYPE             VFT2_DRV_NETWORK
 #define VER_FILEDESCRIPTION_STR     \
-    "The WinDivert driver " \
+    "The WinDivert 2.0 driver " \
     "[URL: https://reqrypt.org/windivert.html] " \
     "[Bitcoin: 1C5vZVSbizPeZ8ydTYhUfm4LA2cNwBfcYh]"
 #define VER_INTERNALNAME_STR        "WinDivert.sys"

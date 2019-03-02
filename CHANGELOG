@@ -256,6 +256,9 @@ WinDivert 2.0.0-rc
       * WINDIVERT_SHUTDOWN_SEND: Disable the sending of new packets.
       * WINDIVERT_SHUTDOWN_BOTH: Equivalent to
         (WINDIVERT_SHUTDOWN_RECV | WINDIVERT_SHUTDOWN_SEND).
+    - Add new "read-only" WinDivert parameters:
+      * WINDIVERT_PARAM_VERSION_MAJOR: Driver version (major).
+      * WINDIVERT_PARAM_VERSION_MINOR: Driver version (minor).
     - Add a new WinDivertHelperHashPacket() helper function that calculates
       a 64bit hash value of a packet.
     - Add new WinDivertHelperFormatIPv4Address() and
