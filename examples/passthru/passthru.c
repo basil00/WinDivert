@@ -47,9 +47,7 @@
 
 #include "windivert.h"
 
-#define MAXBUF      400000
-#define MAXBATCH    0xFF
-
+#define MTU 1500
 static int batch = 1;
 
 static DWORD passthru(LPVOID arg);
@@ -78,7 +76,7 @@ int __cdecl main(int argc, char **argv)
     {
         batch = atoi(argv[3]);
     }
-    if (batch <= 0 || batch > MAXBATCH)
+    if (batch <= 0 || batch > WINDIVERT_BATCH_MAX)
     {
         fprintf(stderr, "error: invalid batch size\n");
         exit(EXIT_FAILURE);
@@ -110,7 +108,7 @@ int __cdecl main(int argc, char **argv)
             (LPVOID)handle, 0, NULL);
         if (thread == NULL)
         {
-            fprintf(stderr, "error: failed to start passthru thread (%u)\n",
+            fprintf(stderr, "error: failed to start passthru thread (%d)\n",
                 GetLastError());
             exit(EXIT_FAILURE);
         }
@@ -125,17 +123,27 @@ int __cdecl main(int argc, char **argv)
 // Passthru thread.
 static DWORD passthru(LPVOID arg)
 {
-    UINT8 packet[MAXBUF];
+    UINT8 *packet;
     UINT packet_len, addr_len;
-    WINDIVERT_ADDRESS addr[MAXBATCH];
+    WINDIVERT_ADDRESS *addr;
     HANDLE handle = (HANDLE)arg;
+
+    packet = (UINT8 *)malloc(batch * MTU);
+    addr = (WINDIVERT_ADDRESS *)malloc(batch * sizeof(WINDIVERT_ADDRESS));
+    if (packet == NULL || addr == NULL)
+    {
+        fprintf(stderr, "error: failed to allocate buffer (%d)\n",
+            GetLastError());
+        exit(EXIT_FAILURE);
+    }
 
     // Main loop:
     while (TRUE)
     {
         // Read a matching packet.
-        addr_len = batch * sizeof(WINDIVERT_ADDRESS);
-        if (!WinDivertRecvEx(handle, packet, sizeof(packet), &packet_len, 0,
+        packet_len = batch * MTU;
+        addr_len   = batch * sizeof(WINDIVERT_ADDRESS);
+        if (!WinDivertRecvEx(handle, packet, packet_len, &packet_len, 0,
                 addr, &addr_len, NULL))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
