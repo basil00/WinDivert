@@ -284,7 +284,7 @@ static UINT8 WinDivertSkipExtHeaders(UINT8 proto, UINT8 **header, UINT *len)
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
 extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
-    UINT8 *pProtocol, PWINDIVERT_IPHDR *ppIpHdr, PWINDIVERT_IPV6HDR *ppIpv6Hdr,
+    PWINDIVERT_IPHDR *ppIpHdr, PWINDIVERT_IPV6HDR *ppIpv6Hdr, UINT8 *pProtocol,
     PWINDIVERT_ICMPHDR *ppIcmpHdr, PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
     PWINDIVERT_TCPHDR *ppTcpHdr, PWINDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
     UINT *pDataLen, PVOID *ppNext, UINT *pNextLen)
@@ -491,8 +491,8 @@ extern BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     PWINDIVERT_UDPHDR udp_header;
     UINT payload_len, checksum_len;
 
-    if (!WinDivertHelperParsePacket(pPacket, packetLen, NULL, &ip_header,
-            &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
+    if (!WinDivertHelperParsePacket(pPacket, packetLen, &ip_header,
+            &ipv6_header, NULL, &icmp_header, &icmpv6_header, &tcp_header,
             &udp_header, NULL, &payload_len, NULL, NULL))
     {
         return FALSE;

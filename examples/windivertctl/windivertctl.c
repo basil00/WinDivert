@@ -66,7 +66,7 @@ typedef enum
  */
 int __cdecl main(int argc, char **argv)
 {
-    HANDLE handle, process, console;
+    HANDLE handle, process, console, mutex;
     INT16 priority = -333;      // Arbitrary.
     UINT packet_len;
     static UINT8 packet[MAX_PACKET];
@@ -128,7 +128,7 @@ usage:
     // Open WinDivert REFLECT handle:
     handle = WinDivertOpen(filter, WINDIVERT_LAYER_REFLECT, priority, 
         WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY |
-            (mode == WATCH || mode == UNINSTALL? 0: WINDIVERT_FLAG_NO_INSTALL));
+            (mode == WATCH? 0: WINDIVERT_FLAG_NO_INSTALL));
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (mode != WATCH && GetLastError() == ERROR_SERVICE_DOES_NOT_EXIST)
@@ -165,36 +165,11 @@ usage:
         return EXIT_FAILURE;
     }
 
-    // Stop the WinDivert service.
-    if (mode == UNINSTALL)
-    {
-        manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
-        if (manager == NULL)
-        {
-            fprintf(stderr, "error: failed to open service manager (%d)\n",
-                GetLastError());
-            return EXIT_FAILURE;
-        }
-        service = OpenService(manager, "WinDivert", SERVICE_ALL_ACCESS);
-        if (service == NULL)
-        {
-            fprintf(stderr, "error: failed to open WinDivert service (%d)\n",
-                GetLastError());
-            return EXIT_FAILURE;
-        }
-        if (!ControlService(service, SERVICE_CONTROL_STOP, &status))
-        {
-            fprintf(stderr, "error: failed to stop WinDivert service (%d)\n",
-                GetLastError());
-            return EXIT_FAILURE;
-        }
-    }
-
     // Main loop:
     console = GetStdHandle(STD_OUTPUT_HANDLE);
     while (TRUE)
     {
-        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &packet_len, &addr))
         {
             if (mode != WATCH && GetLastError() == ERROR_NO_DATA)
             {
@@ -344,24 +319,75 @@ usage:
         putchar('\n');
     }
 
-    if (mode == UNINSTALL)
-    {
-        SetConsoleTextAttribute(console, FOREGROUND_RED);
-        fputs("UNINSTALL", stdout);
-        SetConsoleTextAttribute(console,
-            FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-        puts(" WinDivert");
-
-        CloseServiceHandle(service);
-        CloseServiceHandle(manager);
-    }
-
-
     if (!WinDivertClose(handle))
     {
         fprintf(stderr, "error: failed to close WinDivert handle (%d)\n",
             GetLastError());
         return EXIT_FAILURE;
+    }
+
+    if (mode == UNINSTALL)
+    {
+        // Stop & delete the WinDivert service:
+        mutex = CreateMutex(NULL, FALSE, "WinDivertDriverInstallMutex");
+        if (mutex == NULL)
+        {
+            fprintf(stderr, "error: failed to create WinDivert driver "
+                "install mutex (%d)\n", GetLastError());
+            return EXIT_FAILURE;
+        }
+        switch (WaitForSingleObject(mutex, INFINITE))
+        {
+            case WAIT_OBJECT_0: case WAIT_ABANDONED:
+                break;
+            default:
+                fprintf(stderr, "error: failed to acquire WinDivert driver "
+                    "install mutex (%d)\n", GetLastError());
+                return EXIT_FAILURE;
+        }
+        manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
+        if (manager == NULL)
+        {
+            fprintf(stderr, "error: failed to open service manager (%d)\n",
+                GetLastError());
+            return EXIT_FAILURE;
+        }
+        service = OpenService(manager, "WinDivert", SERVICE_ALL_ACCESS);
+        if (service == NULL)
+        {
+            fprintf(stderr, "error: failed to open WinDivert service (%d)\n",
+                GetLastError());
+            return EXIT_FAILURE;
+        }
+        if (!ControlService(service, SERVICE_CONTROL_STOP, &status))
+        {
+            fprintf(stderr, "error: failed to stop WinDivert service (%d)\n",
+                GetLastError());
+            return EXIT_FAILURE;
+        }
+        if (status.dwCurrentState != SERVICE_STOPPED)
+        {
+            fprintf(stderr, "error: failed to stop WinDivert service");
+            return EXIT_FAILURE;
+        }
+        if (!DeleteService(service) &&
+            GetLastError() != ERROR_SERVICE_MARKED_FOR_DELETE)
+        {
+            fprintf(stderr, "error: failed to delete WinDivert service (%d)\n",
+                GetLastError());
+            return EXIT_FAILURE;
+        }
+        CloseServiceHandle(service);
+        CloseServiceHandle(manager);
+
+        SetConsoleTextAttribute(console, FOREGROUND_GREEN);
+        fputs("UNINSTALL", stdout);
+        SetConsoleTextAttribute(console,
+            FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
+        puts(" WinDivert");
+
+        ReleaseMutex(mutex);
+        CloseHandle(mutex);
     }
 
     return 0;

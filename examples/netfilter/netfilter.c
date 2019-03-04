@@ -193,17 +193,17 @@ int __cdecl main(int argc, char **argv)
     while (TRUE)
     {
         // Read a matching packet.
-        if (!WinDivertRecv(handle, packet, sizeof(packet), &recv_addr,
-                &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &packet_len,
+                &recv_addr))
         {
             fprintf(stderr, "warning: failed to read packet\n");
             continue;
         }
        
         // Print info about the matching packet.
-        WinDivertHelperParsePacket(packet, packet_len, NULL, &ip_header,
-            &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
-            &udp_header, NULL, &payload_len, NULL, NULL);
+        WinDivertHelperParsePacket(packet, packet_len, &ip_header, &ipv6_header,
+            NULL, &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
+            &payload_len, NULL, NULL);
         if (ip_header == NULL && ipv6_header == NULL)
         {
             continue;
@@ -292,7 +292,7 @@ int __cdecl main(int argc, char **argv)
                 WinDivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET),
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)reset, sizeof(TCPPACKET),
-                        &send_addr, NULL))
+                        NULL, &send_addr))
                 {
                     fprintf(stderr, "warning: failed to send TCP reset (%d)\n",
                         GetLastError());
@@ -319,7 +319,7 @@ int __cdecl main(int argc, char **argv)
                 WinDivertHelperCalcChecksums((PVOID)resetv6,
                     sizeof(TCPV6PACKET), &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)resetv6, sizeof(TCPV6PACKET),
-                        &send_addr, NULL))
+                        NULL, &send_addr))
                 {
                     fprintf(stderr, "warning: failed to send TCP (IPV6) "
                         "reset (%d)\n", GetLastError());
@@ -344,8 +344,8 @@ int __cdecl main(int argc, char **argv)
                 send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length,
                     &send_addr, 0);
-                if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, &send_addr,
-                    NULL))
+                if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, NULL,
+                        &send_addr))
                 {
                     fprintf(stderr, "warning: failed to send ICMP message "
                         "(%d)\n", GetLastError());
@@ -368,7 +368,7 @@ int __cdecl main(int argc, char **argv)
                 WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length,
                     &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnrv6, icmpv6_length,
-                        &send_addr, NULL))
+                        NULL, &send_addr))
                 {
                     fprintf(stderr, "warning: failed to send ICMPv6 message "
                         "(%d)\n", GetLastError());

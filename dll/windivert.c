@@ -219,10 +219,25 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
  */
 static SC_HANDLE WinDivertDriverInstall(VOID)
 {
-    DWORD err, retries = 2;
+    DWORD err;
     SC_HANDLE manager = NULL, service = NULL;
     wchar_t windivert_sys[MAX_PATH+1];
-    SERVICE_STATUS status;
+    HANDLE mutex = NULL;
+
+    // Create & lock a named mutex.  This is to stop two processes trying
+    // to start the driver at the same time.
+    mutex = CreateMutex(NULL, FALSE, L"WinDivertDriverInstallMutex");
+    if (mutex == NULL)
+    {
+        return NULL;
+    }
+    switch (WaitForSingleObject(mutex, INFINITE))
+    {
+        case WAIT_OBJECT_0: case WAIT_ABANDONED:
+            break;
+        default:
+            return NULL;
+    }
 
     // Open the service manager:
     manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
@@ -232,7 +247,6 @@ static SC_HANDLE WinDivertDriverInstall(VOID)
     }
 
     // Check if the WinDivert service already exists; if so, start it.
-WinDivertDriverInstallReTry:
     service = OpenService(manager, WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
     if (service != NULL)
     {
@@ -254,11 +268,8 @@ WinDivertDriverInstallReTry:
     {
         if (GetLastError() == ERROR_SERVICE_EXISTS) 
         {
-            if (retries != 0)
-            {
-                retries--;
-                goto WinDivertDriverInstallReTry;
-            }
+            service = OpenService(manager, WINDIVERT_DEVICE_NAME,
+                SERVICE_ALL_ACCESS);
         }
         goto WinDivertDriverInstallExit;
     }
@@ -278,8 +289,6 @@ WinDivertDriverInstallExit:
             else
             {
                 // Failed to start service; clean-up:
-                ControlService(service, SERVICE_CONTROL_STOP, &status);
-                DeleteService(service);
                 CloseServiceHandle(service);
                 service = NULL;
                 SetLastError(err);
@@ -292,6 +301,8 @@ WinDivertDriverInstallExit:
     {
         CloseServiceHandle(manager);
     }
+    ReleaseMutex(mutex);
+    CloseHandle(mutex);
     SetLastError(err);
     
     return service;
@@ -442,7 +453,6 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
             INVALID_HANDLE_VALUE);
 
         // Schedule the service to be deleted (once all handles are closed).
-        DeleteService(service);
         CloseServiceHandle(service);
 
         if (handle == INVALID_HANDLE_VALUE)
@@ -492,14 +502,14 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
  * Receive a WinDivert packet.
  */
 extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
-    PWINDIVERT_ADDRESS addr, UINT *readlen)
+    UINT *readLen, PWINDIVERT_ADDRESS addr)
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
     ioctl.recv.addr = addr;
     ioctl.recv.addr_len_ptr = NULL;
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, &ioctl,
-        pPacket, packetLen, readlen);
+        pPacket, packetLen, readLen);
 }
 
 /*
@@ -534,14 +544,14 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
  * Send a WinDivert packet.
  */
 extern BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
-    const WINDIVERT_ADDRESS *addr, UINT *writelen)
+    UINT *writeLen, const WINDIVERT_ADDRESS *addr)
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
     ioctl.send.addr = addr;
     ioctl.send.addr_len = sizeof(WINDIVERT_ADDRESS);
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, &ioctl,
-        (PVOID)pPacket, packetLen, writelen);
+        (PVOID)pPacket, packetLen, writeLen);
 }
 
 /*

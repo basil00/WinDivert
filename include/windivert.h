@@ -227,8 +227,8 @@ extern WINDIVERTEXPORT BOOL WinDivertRecv(
     __in        HANDLE handle,
     __out_opt   VOID *pPacket,
     __in        UINT packetLen,
-    __out_opt   WINDIVERT_ADDRESS *pAddr,
-    __out_opt   UINT *pReadLen);
+    __out_opt   UINT *pRecvLen,
+    __out_opt   WINDIVERT_ADDRESS *pAddr);
 
 /*
  * Receive (read) a packet from a WinDivert handle.
@@ -237,7 +237,7 @@ extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
     __in        HANDLE handle,
     __out_opt   VOID *pPacket,
     __in        UINT packetLen,
-    __out_opt   UINT *pReadLen,
+    __out_opt   UINT *pRecvLen,
     __in        UINT64 flags,
     __out       WINDIVERT_ADDRESS *pAddr,
     __inout_opt UINT *pAddrLen,
@@ -250,8 +250,8 @@ extern WINDIVERTEXPORT BOOL WinDivertSend(
     __in        HANDLE handle,
     __in        const VOID *pPacket,
     __in        UINT packetLen,
-    __in        const WINDIVERT_ADDRESS *pAddr,
-    __out_opt   UINT *pWriteLen);
+    __out_opt   UINT *pSendLen,
+    __in        const WINDIVERT_ADDRESS *pAddr);
 
 /*
  * Send (write/inject) a packet to a WinDivert handle.
@@ -260,7 +260,7 @@ extern WINDIVERTEXPORT BOOL WinDivertSendEx(
     __in        HANDLE handle,
     __in        const VOID *pPacket,
     __in        UINT packetLen,
-    __out_opt   UINT *pWriteLen,
+    __out_opt   UINT *pSendLen,
     __in        UINT64 flags,
     __in        const WINDIVERT_ADDRESS *pAddr,
     __in        UINT addrLen,
@@ -480,9 +480,9 @@ extern WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
 extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __in        const VOID *pPacket,
     __in        UINT packetLen,
-    __out_opt   UINT8 *pProtocol,
     __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt   PWINDIVERT_IPV6HDR *ppIpv6Hdr,
+    __out_opt   UINT8 *pProtocol,
     __out_opt   PWINDIVERT_ICMPHDR *ppIcmpHdr,
     __out_opt   PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
     __out_opt   PWINDIVERT_TCPHDR *ppTcpHdr,

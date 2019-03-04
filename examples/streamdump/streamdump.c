@@ -187,13 +187,13 @@ int __cdecl main(int argc, char **argv)
     // Main loop:
     while (TRUE)
     {
-        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &packet_len, &addr))
         {
             warning("failed to read packet (%d)", GetLastError());
             continue;
         }
 
-        WinDivertHelperParsePacket(packet, packet_len, NULL, &ip_header, NULL,
+        WinDivertHelperParsePacket(packet, packet_len, &ip_header, NULL, NULL,
             NULL, NULL, &tcp_header, NULL, NULL, NULL, NULL, NULL);
         if (ip_header == NULL || tcp_header == NULL)
         {
@@ -237,7 +237,7 @@ int __cdecl main(int argc, char **argv)
         }
 
         WinDivertHelperCalcChecksums(packet, packet_len, &addr, 0);
-        if (!WinDivertSend(handle, packet, packet_len, &addr, NULL))
+        if (!WinDivertSend(handle, packet, packet_len, NULL, &addr))
         {
             warning("failed to send packet (%d)", GetLastError());
             continue;

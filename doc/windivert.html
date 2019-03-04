@@ -61,15 +61,16 @@
 <li><a href="#filter_usage">7.2 Filter Usage</a></li>
 </ul>
 </li>
-<li><a href="#samples">8. Samples</a></li>
-<li><a href="#known_issues">9. Known Issues</a></li>
-<li><a href="#license">10. License</a></li>
+<li><a href="#performance">8. Performance</a></li>
+<li><a href="#samples">9. Samples</a></li>
+<li><a href="#known_issues">10. Known Issues</a></li>
+<li><a href="#license">11. License</a></li>
 </ul>
 
 <hr>
 <a name="introduction"><h2>1. Introduction</h2></a>
 <p>
-WinDivert is a user-mode 
+WinDivert is a powerful user-mode 
 capture/sniffing/modification/blocking/re-injection package for
 Windows 7, Windows 8 and Windows 10.
 WinDivert can be used to implement user-mode packet filters, packet sniffers,
@@ -93,8 +94,8 @@ The main features of the WinDivert are:
 </ul>
 <p>
 WinDivert provides similar functionality to
-<code>divert</code> sockets from FreeBSD/MacOS, <code>NETLINK</code> sockets from
-Linux.
+<code>divert</code> sockets from FreeBSD/MacOS, <code>NETLINK</code> sockets
+from Linux.
 </p>
 
 <hr>
@@ -231,17 +232,22 @@ To uninstall, simply delete the <code>WinDivert.dll</code>,
 <code>WinDivert32.sys</code>, and <code>WinDivert64.sys</code> files.
 If already running, the WinDivert driver will be automatically
 uninstalled during the next machine reboot.
-The WinDivert driver can also be manually removed by issuing the following
+The WinDivert driver can also be manually removed by (1) terminating
+all processes that are using WinDivert, and (2) issuing the following
 commands at the command prompt
 </p>
 <pre>
-sc stop WinDivert
-sc delete WinDivert
+    sc stop WinDivert
+    sc delete WinDivert
 </pre>
 <p>
-Note that this is not recommended as it will interfere with other
-applications that depend on WinDivert.
+Alternatively, the WinDivert driver can be removed by using the
+<code>windivertctl.exe</code> <a href="#samples">sample program</a> by
+issuing the following command:
 </p>
+<pre>
+    windivertctl uninstall
+</pre>
 
 <hr>
 <a name="programming_api"><h2>5. Programming API</h2></a>
@@ -1031,7 +1037,7 @@ and so on, provided the packet matches the handle's filter.
 A packet is only diverted once per priority level, so handles should not
 share priority levels unless they use mutually exclusive filters.
 Otherwise it is not defined which handle will receive the packet first.
-Lower <code>priority</code> values represent higher priorities, with
+Higher <code>priority</code> values represent higher priorities, with
 <code>WINDIVERT_PRIORITY_HIGHEST</code> being the highest priority,
 <code>0</code> the middle (and a good default) priority,
 and <code>WINDIVERT_PRIORITY_LOWEST</code> the lowest priority.
@@ -1180,8 +1186,8 @@ BOOL <b>WinDivertRecv</b>(
     __in HANDLE handle,
     __out_opt PVOID pPacket,
     __in UINT packetLen,
-    __out_opt WINDIVERT_ADDRESS *pAddr,
-    __out_opt UINT *recvLen
+    __out_opt UINT *pRecvLen,
+    __out_opt WINDIVERT_ADDRESS *pAddr
 );
 </pre>
 </td></tr></table>
@@ -1192,10 +1198,10 @@ BOOL <b>WinDivertRecv</b>(
      <a href="#divert_open"><code>WinDivertOpen()</code></a>.</li>
 <li> <code>pPacket</code>: An optional buffer for the captured packet.</li>
 <li> <code>packetLen</code>: The length of the <code>pPacket</code> buffer.</li>
+<li> <code>pRecvLen</code>: The total number of bytes written to <code>pPacket</code>.
+     Can be <code>NULL</code> if this information is not required.</li>
 <li> <code>pAddr</code>: An optional buffer for the
     <a href="#divert_address">address</a> of the captured packet/event.</li>
-<li> <code>recvLen</code>: The total number of bytes written to <code>pPacket</code>.
-     Can be <code>NULL</code> if this information is not required.</li>
 </ul>
 <p>
 <b>Return Value</b><br>
@@ -1307,7 +1313,7 @@ Data?
 For layers that do support capturing, the captured packet will be written to
 the <code>pPacket</code> buffer.
 If non-<code>NULL</code>, then the total number of bytes
-written to <code>pPacket</code> will be written to <code>recvLen</code>.
+written to <code>pPacket</code> will be written to <code>pRecvLen</code>.
 If the <code>pPacket</code> buffer is too small, the packet will be
 truncated and the operation will fail with the
 <code>ERROR_INSUFFICIENT_BUFFER</code> error code.
@@ -1347,7 +1353,7 @@ BOOL <b>WinDivertRecvEx</b>(
     __in HANDLE handle,
     __out VOID *pPacket,
     __in UINT packetLen,
-    __out_opt UINT *recvLen,
+    __out_opt UINT *pRecvLen,
     __in UINT64 flags,
     __out_opt WINDIVERT_ADDRESS *pAddr,
     __inout_opt UINT *pAddrLen,
@@ -1363,7 +1369,7 @@ BOOL <b>WinDivertRecvEx</b>(
 <li> <code>pPacket</code>: A buffer for the captured packet(s).</li>
 <li> <code>packetLen</code>: The length of the <code>pPacket</code> buffer in
     bytes.</li>
-<li> <code>recvLen</code>: The total number of bytes written to <code>pPacket</code>.
+<li> <code>pRecvLen</code>: The total number of bytes written to <code>pPacket</code>.
      Can be <code>NULL</code> if this information is not required.</li>
 <li> <code>flags</code>: Reserved, set to zero.</li>
 <li> <code>pAddr</code>: The
@@ -1437,8 +1443,8 @@ BOOL <b>WinDivertSend</b>(
     __in HANDLE handle,
     __in const VOID *pPacket,
     __in UINT packetLen,
-    __in const WINDIVERT_ADDRESS *pAddr,
-    __out_opt UINT *sendLen
+    __out_opt UINT *pSendLen,
+    __in const WINDIVERT_ADDRESS *pAddr
 );
 </pre>
 </td></tr></table>
@@ -1449,10 +1455,10 @@ BOOL <b>WinDivertSend</b>(
      <a href="#divert_open"><code>WinDivertOpen()</code></a>.</li>
 <li> <code>pPacket</code>: A buffer containing a packet to be injected.</li>
 <li> <code>packetLen</code>: The total length of the <code>pPacket</code> buffer.</li> 
+<li> <code>pSendLen</code>: The total number of bytes injected.
+     Can be <code>NULL</code> if this information is not required.</li>
 <li> <code>pAddr</code>: The
     <a href="#divert_address">address</a> of the injected packet.</li>
-<li> <code>sendLen</code>: The total number of bytes injected.
-     Can be <code>NULL</code> if this information is not required.</li>
 </ul>
 <p>
 <b>Return Value</b><br>
@@ -1608,7 +1614,7 @@ BOOL <b>WinDivertSendEx</b>(
     __in HANDLE handle,
     __in const VOID *pPacket,
     __in UINT packetLen,
-    __out_opt UINT *sendLen,
+    __out_opt UINT *pSendLen,
     __in UINT64 flags,
     __in const WINDIVERT_ADDRESS *pAddr,
     __in UINT addrLen,
@@ -1623,7 +1629,7 @@ BOOL <b>WinDivertSendEx</b>(
      <a href="#divert_open"><code>WinDivertOpen()</code></a>.</li>
 <li> <code>pPacket</code>: A buffer containing the packet(s) to be injected.</li>
 <li> <code>packetLen</code>: The total length of the buffer <code>pPacket</code>.</li>
-<li> <code>sendLen</code>: The total number of bytes injected.
+<li> <code>pSendLen</code>: The total number of bytes injected.
      Can be <code>NULL</code> if this information is not required.</li>
 <li> <code>flags</code>: Reserved, set to zero.</li>
 <li> <code>pAddr</code>: The
@@ -2105,9 +2111,9 @@ UDP header definition.
 BOOL <b>WinDivertHelperParsePacket</b>(
     __in PVOID pPacket,
     __in UINT packetLen,
-    __out_opt UINT8 *pProtocol,
     __out_opt PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt PWINDIVERT_IPV6HDR *ppIpv6Hdr,
+    __out_opt UINT8 *pProtocol,
     __out_opt PWINDIVERT_ICMPHDR *ppIcmpHdr,
     __out_opt PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
     __out_opt PWINDIVERT_TCPHDR *ppTcpHdr,
@@ -2124,9 +2130,9 @@ BOOL <b>WinDivertHelperParsePacket</b>(
 <ul>
 <li> <code>pPacket</code>: The packet(s) to be parsed.</li>
 <li> <code>packetLen</code>: The total length of the packet(s) <code>pPacket</code>.</li>
-<li> <code>pProtocol</code>: Output transport protocol.</li>
 <li> <code>ppIpHdr</code>: Output pointer to a <code>WINDIVERT_IPHDR</code>.</li>
 <li> <code>ppIpv6Hdr</code>: Output pointer to a <code>WINDIVERT_IPV6HDR</code>.</li>
+<li> <code>pProtocol</code>: Output transport protocol.</li>
 <li> <code>ppIcmpHdr</code>: Output pointer to a <code>WINDIVERT_ICMPHDR</code>.</li>
 <li> <code>ppIcmpv6Hdr</code>: Output pointer to a <code>WINDIVERT_ICMPV6HDR</code>.</li>
 <li> <code>ppTcpHdr</code>: Output pointer to a <code>WINDIVERT_TCPHDR</code>.</li>
@@ -2333,7 +2339,7 @@ Convert an IPv6 address into a string.
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCalcChecksums</b>(
-    __inout PVOID pPacket,
+    __inout VOID *pPacket,
     __in UINT packetLen,
     __out_opt WINDIVERT_ADDRESS *pAddr,
     __in UINT64 flags
@@ -2874,7 +2880,65 @@ find the optimal solution.
 </p>
 
 <hr>
-<a name="samples"><h2>8. Samples</h2></a>
+<a name="performance"><h2>8. Performance</h2></a>
+
+<p>
+Using WinDivert to redirect network traffic to/from a user application incurs
+performance overheads, such as copying packet data and user/kernel mode
+context switching.
+Under heavy load (&geq;1Gbps) these overheads can be significant.
+The following techniques can be used to
+reduce overheads (in order of importance):
+</p>
+<ol>
+<li><i>Selective Filter</i>: Only select the subset of network traffic
+    the user application is interested in.
+    Non-matching traffic will continue to use the default path without
+    incurring additional overheads.</li>
+<li><i>Batch Mode</i>: The
+    <a href="#divert_recv_ex">WinDivertRecvEx()</a> and
+    <a href="#divert_send_ex">WinDivertSendEx()</a> functions
+    support <i>batching</i> that allows several packets to be
+    received/sent at once.
+    This can significantly reduce the overheads relating to
+    user/kernel mode context switching.</li>
+<li><i>Multi-threading</i>: It is possible to spread packet processing
+    over multiple threads ensuring that the user application does not
+    become a bottleneck.
+    That said, sometimes spawning too many threads can degrade performance.
+    </li>
+<li><i>Small Buffers</i>: Large buffers generally incur more overhead
+    compared to smaller buffers.
+    In general, the buffer size should reflect the expected usage
+    as closely as possible.</li>
+<li><i>Simple Filters</i>: 
+    Currently WinDivert does not optimize the filter compilation, so it
+    is up to the user application to ensure the filter is simple/optimized.
+    </li>
+<li><i>Overlapped I/O</i>: This allows the user application to do
+    additional tasks at the same time as receive/send operations, which may
+    improve performance for some applications.
+    It is also possible for a single thread to initiate several
+    receive/send operations at once.
+    However, using overlapped I/O can be tricky, and it is important
+    that all buffers passed to
+    <a href="#divert_recv_ex">WinDivertRecvEx()</a> or
+    <a href="#divert_send_ex">WinDivertSendEx()</a> 
+    (including the <code>OVERLAPPED</code> structure)
+    are not modified by the user application until the operation
+    completes.</li>
+<li><i>Queue length/size/time</i>: If these values are too small then some
+    packets may be dropped under heavy load.
+    These values can be controlled using the
+    <a href="#divert_set_param">WinDivertSetParam()</a> function.</li>
+</ol>
+<p>
+The <code>passthru.exe</code> <a href="#samples">sample program</a> can
+be used to experiment with different batch sizes and thread counts.
+</p>
+
+<hr>
+<a name="samples"><h2>9. Samples</h2></a>
 
 <p>
 Some samples have been provided to demonstrate the WinDivert API.
@@ -2905,9 +2969,8 @@ The sample programs are:
     <code>-j REJECT</code> option.</li>
 <li><code>passthru.exe</code>: A simple program that simply re-injects every
     packet it captures.
-    This example is multi-threaded, where multiple threads are processing
-    packets from a single handle.
-    This example is useful for performance testing, and as a starting point
+    This example has a configurable batch-size and thread count,
+    and so is useful for performance testing or as a starting point
     for more interesting applications.</li>
 <li><code>streamdump.exe</code>: A simple program that demonstrates how to
     handle streams using WinDivert.
@@ -2924,9 +2987,11 @@ The sample programs are:
     The <code>socketdump</code> sample demonstrates the
     <code>WINDIVERT_LAYER_SOCKET</code> layer.</li>
 <li><code>windivertctl.exe</code> allows the user to query which processes
-    are using WinDivert via the <code>list</code> or <code>monitor</code>
+    are using WinDivert via the <code>list</code> or <code>watch</code>
     commands, or to terminate all such processes using the
-    <code>killall</code> command.
+    <code>kill</code> command.
+    The <code>windivertctl.exe</code> can also forcibly remove the
+    WinDivert driver using the <code>uninstall</code> command.
     The <code>windivertctl</code> sample demonstrates the
     <code>WINDIVERT_LAYER_REFLECT</code> layer.</li>
 </ul>
@@ -2956,7 +3021,7 @@ capture-modify-reinject loop:
     // Main capture-modify-inject loop:
     while (TRUE)
     {
-        if (!WinDivertRecv(handle, packet, sizeof(packet), &amp;addr, &amp;packetLen))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &amp;packetLen, &amp;addr))
         {
             // Handle recv error
             continue;
@@ -2965,7 +3030,7 @@ capture-modify-reinject loop:
         // Modify packet.
 
         WinDivertHelperCalcChecksums(packet, packetLen, &amp;addr, 0);
-        if (!WinDivertSend(handle, packet, packetLen, &amp;addr, NULL))
+        if (!WinDivertSend(handle, packet, packetLen, NULL, &amp;addr))
         {
             // Handle send error
             continue;
@@ -2981,7 +3046,7 @@ See the <code>netdump.exe</code> sample program for an example of this usage.
 </p>
 
 <hr>
-<a name="known_issues"><h2>9. Known Issues</h2></a>
+<a name="known_issues"><h2>10. Known Issues</h2></a>
 
 <p>
 WinDivert has some known limitations listed below:
@@ -3038,8 +3103,8 @@ WinDivert has some known limitations listed below:
     <a href="#divert_recv"><code>WinDivertRecv()</code></a>,
     it is possible that the process responsible for the event has already
     terminated.
-    Furthermore, it is also possible that the <code>processId</code> has been
-    reassigned to an unrelated process.
+    Furthermore, it is theoretically possible that the
+    <code>processId</code> has been reassigned to an unrelated process.
     This problem can be partly mitigated by comparing the timestamp
     (<code>addr.Timestamp</code>) with the creation time of the process.
     If the process is newer, then the ID has been reassigned.
@@ -3048,13 +3113,13 @@ WinDivert has some known limitations listed below:
     In this special case, the <code>addr.Reflect.processId</code> is
     guaranteed to be valid until the corresponding
     <code>WINDIVERT_EVENT_REFLECT_CLOSE</code> event is
-    received by the user application or dropped
+    received by the user application or is dropped
     (filter mismatch or timeout).
 	</li>
 </ul>
 
 <hr>
-<a name="license"><h2>10. License</h2></a>
+<a name="license"><h2>11. License</h2></a>
 <p>
 WinDivert is dual-licensed under your choice of either the
 <a href="http://www.gnu.org/licenses/lgpl-3.0.txt">GNU Lesser General

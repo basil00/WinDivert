@@ -263,7 +263,7 @@ int __cdecl main(int argc, char **argv)
     // Main loop:
     while (TRUE)
     {
-        if (!WinDivertRecv(handle, NULL, 0, &addr, &packet_len))
+        if (!WinDivertRecv(handle, NULL, 0, NULL, &addr))
         {
             fprintf(stderr, "failed to read packet (%d)\n", GetLastError());
             continue;

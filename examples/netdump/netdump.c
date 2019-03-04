@@ -148,7 +148,7 @@ int __cdecl main(int argc, char **argv)
     while (TRUE)
     {
         // Read a matching packet.
-        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &packet_len, &addr))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
                 GetLastError());
@@ -156,9 +156,9 @@ int __cdecl main(int argc, char **argv)
         }
 
         // Print info about the matching packet.
-        WinDivertHelperParsePacket(packet, packet_len, NULL, &ip_header,
-            &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
-            &udp_header, NULL, NULL, NULL, NULL);
+        WinDivertHelperParsePacket(packet, packet_len, &ip_header, &ipv6_header,
+            NULL, &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
+            NULL, NULL, NULL);
         if (ip_header == NULL && ipv6_header == NULL)
         {
             fprintf(stderr, "warning: junk packet\n");

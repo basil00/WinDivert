@@ -61,7 +61,6 @@ int __cdecl main(int argc, char **argv)
     char local_str[INET6_ADDRSTRLEN+1], remote_str[INET6_ADDRSTRLEN+1];
     char *filename;
     DWORD path_len;
-    UINT packet_len;
     WINDIVERT_ADDRESS addr;
 
     switch (argc)
@@ -97,7 +96,7 @@ int __cdecl main(int argc, char **argv)
     console = GetStdHandle(STD_OUTPUT_HANDLE);
     while (TRUE)
     {
-        if (!WinDivertRecv(handle, NULL, 0, &addr, &packet_len))
+        if (!WinDivertRecv(handle, NULL, 0, NULL, &addr))
         {
             fprintf(stderr, "failed to read packet (%d)\n", GetLastError());
             continue;

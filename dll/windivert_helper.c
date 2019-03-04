@@ -2460,7 +2460,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 return FALSE;
             }
             if (!WinDivertHelperParsePacket((PVOID)packet, packet_len,
-                    &protocol, &iphdr, &ipv6hdr, &icmphdr, &icmpv6hdr,
+                    &iphdr, &ipv6hdr, &protocol, &icmphdr, &icmpv6hdr,
                     &tcphdr, &udphdr, NULL, &payload_len, NULL, NULL))
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
@@ -4642,9 +4642,9 @@ extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
 
-    if (!WinDivertHelperParsePacket((PVOID)pPacket, packetLen, NULL,
-            &ip_header, &ipv6_header, &icmp_header, &icmpv6_header,
-            &tcp_header, &udp_header, NULL, NULL, NULL, NULL))
+    if (!WinDivertHelperParsePacket((PVOID)pPacket, packetLen, &ip_header,
+            &ipv6_header, NULL, &icmp_header, &icmpv6_header, &tcp_header,
+            &udp_header, NULL, NULL, NULL, NULL))
     {
         return 0;
     }
