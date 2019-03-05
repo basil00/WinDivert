@@ -1091,8 +1091,8 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     addr_send.IPChecksum  = FALSE;
     addr_send.TCPChecksum = FALSE;
     addr_send.UDPChecksum = FALSE;
-    if (!WinDivertSend(inject_handle, (PVOID)packet, packet_len, &addr_send,
-            NULL))
+    if (!WinDivertSend(inject_handle, (PVOID)packet, packet_len, NULL,
+            &addr_send))
     {
         fprintf(stderr, "error: failed to inject test packet (err = %d)\n",
             GetLastError());
@@ -1261,7 +1261,7 @@ static DWORD monitor_worker(LPVOID arg)
         // (1) Read the reflected filter:
         WinDivertHelperCompileFilter(tests[i].filter, WINDIVERT_LAYER_NETWORK,
             object_1, sizeof(object_1), NULL, NULL);
-        if (!WinDivertRecv(handle, packet, sizeof(packet), &addr, &packet_len))
+        if (!WinDivertRecv(handle, packet, sizeof(packet), &packet_len, &addr))
         {
             fprintf(stderr, "error: failed to read OPEN event (err = %d)\n",
                 GetLastError());
