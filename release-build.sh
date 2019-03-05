@@ -77,6 +77,11 @@ do
     then
         echo "\t\033[33mWARNING\033[0m: unsigned WinDivert32.sys..."
     fi
+    if [ -d "install/$TARGET/amd64" ]
+    then
+        echo "\tcopy $INSTALL/amd64/WinDivert64.sys..."
+        cp install/$TARGET/amd64/WinDivert64.sys $INSTALL/x86
+    fi
     echo "\tcopy $INSTALL/x86/WinDivert.lib..."
     cp install/$TARGET/i386/WinDivert.lib $INSTALL/x86
     echo "\tcopy $INSTALL/x86/WinDivert.dll..."
@@ -97,6 +102,8 @@ do
     cp install/$TARGET/i386/socketdump.exe $INSTALL/x86
     echo "\tcopy $INSTALL/x86/windivertctl.exe..."
     cp install/$TARGET/i386/windivertctl.exe $INSTALL/x86
+    echo "\tcopy $INSTALL/x86/test.exe..."
+    cp install/$TARGET/i386/test.exe $INSTALL/x86
     if [ -d "install/$TARGET/amd64" ]
     then
         echo "\tmake $INSTALL/amd64..."
@@ -128,6 +135,8 @@ do
         cp install/$TARGET/amd64/socketdump.exe $INSTALL/x64
         echo "\tcopy $INSTALL/x64/windivertctl.exe..."
         cp install/$TARGET/amd64/windivertctl.exe $INSTALL/x64
+        echo "\tcopy $INSTALL/x64/test.exe..."
+        cp install/$TARGET/amd64/test.exe $INSTALL/x64
     else
         echo "\tWARNING: skipping missing AMD64 build..."
     fi

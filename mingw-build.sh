@@ -97,18 +97,22 @@ do
         $CC -s -O2 -Iinclude/ examples/streamdump/streamdump.c \
             -o "install/MINGW/$CPU/streamdump.exe" -lWinDivert -lws2_32 \
             -L"install/MINGW/$CPU/"
-        echo "\tcopy install/MINGW/$CPU/flowtrack.exe..."
+        echo "\tbuild install/MINGW/$CPU/flowtrack.exe..."
         $CC -s -O2 -Iinclude/ examples/flowtrack/flowtrack.c \
             -o "install/MINGW/$CPU/flowtrack.exe" -lWinDivert -lpsapi \
             -lshlwapi -L"install/MINGW/$CPU/"
-        echo "\tcopy install/MINGW/$CPU/windivertctl.exe..."
+        echo "\tbuild install/MINGW/$CPU/windivertctl.exe..."
         $CC -s -O2 -Iinclude/ examples/windivertctl/windivertctl.c \
             -o "install/MINGW/$CPU/windivertctl.exe" -lWinDivert \
             -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
-        echo "\tcopy install/MINGW/$CPU/socketdump.exe..."
+        echo "\tbuild install/MINGW/$CPU/socketdump.exe..."
         $CC -s -O2 -Iinclude/ examples/socketdump/socketdump.c \
             -o "install/MINGW/$CPU/socketdump.exe" -lWinDivert \
             -lpsapi -lshlwapi -L"install/MINGW/$CPU/"
+        echo "\tbuild install/MINGW/$CPU/test.exe..."
+        $CC -s -O2 -Iinclude/ test/test.c \
+            -o "install/MINGW/$CPU/test.exe" -lWinDivert \
+            -L"install/MINGW/$CPU/"
         if [ $HAVE_SYS = yes ]
         then
             echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
