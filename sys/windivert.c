@@ -317,7 +317,7 @@ static MM_PAGE_PRIORITY no_write_flag = 0;
 static MM_PAGE_PRIORITY no_exec_flag  = 0;
 
 /*
- * Priorities & weights.
+ * Priorities.
  */
 static UINT32 windivert_context_priority(UINT32 priority)
 {
@@ -327,9 +327,6 @@ static UINT32 windivert_context_priority(UINT32 priority)
     priority |= (increment & 0x0000FFFF);
     return priority;
 }
-
-#define WINDIVERT_FILTER_WEIGHT(priority)                                   \
-    ((UINT64)((UINT64)UINT32_MAX - (priority)))
 
 /*
  * Prototypes.
@@ -1674,7 +1671,7 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     engine_handle = context->engine_handle;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
-    weight = WINDIVERT_FILTER_WEIGHT(priority);
+    weight = (UINT64)priority;
     
     RtlZeroMemory(&scallout, sizeof(scallout));
     scallout.calloutKey              = callout_guid;
@@ -1876,7 +1873,6 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
     WDFWORKITEM worker;
     LONGLONG timestamp;
     BOOL sniff_mode, timeout, forward;
-    UINT priority;
     NTSTATUS status;
     
     DEBUG("CLEANUP: cleaning up WinDivert context (context=%p)", context);
@@ -1897,7 +1893,6 @@ windivert_cleanup_error:
     context->state = WINDIVERT_CONTEXT_STATE_CLOSING;
     sniff_mode = ((context->flags & WINDIVERT_FLAG_SNIFF) != 0);
     forward = (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-    priority = context->priority;
     while (!IsListEmpty(&context->flow_set))
     {
         entry = RemoveHeadList(&context->flow_set);
@@ -3664,7 +3659,7 @@ static void windivert_network_classify(context_t context,
         packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF)
     {
         packet_priority = (UINT32)packet_context;
-        if (packet_priority >= priority)
+        if (packet_priority <= priority)
         {
             WdfObjectDereference(object);
             return;

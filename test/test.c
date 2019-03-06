@@ -855,9 +855,9 @@ int main(void)
     // Open handles to:
     // (1) stop normal traffic from interacting with the tests; and
     // (2) stop test packets escaping to the Internet or TCP/IP stack.
-    upper_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, -999,
+    upper_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 9999,
         WINDIVERT_FLAG_DROP);
-    lower_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 999,
+    lower_handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, -9999,
         WINDIVERT_FLAG_DROP);
     if (upper_handle == INVALID_HANDLE_VALUE ||
         lower_handle == INVALID_HANDLE_VALUE)
@@ -1018,14 +1018,14 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     }
 
     // (1) Open WinDivert handles:
-    handle[0] = WinDivertOpen(object, WINDIVERT_LAYER_NETWORK, 777, 0);
+    handle[0] = WinDivertOpen(object, WINDIVERT_LAYER_NETWORK, 8888, 0);
     if (handle[0] == INVALID_HANDLE_VALUE)
     {
         fprintf(stderr, "error: failed to open WinDivert handle for filter "
             "\"%s\" (err = %d)\n", filter, GetLastError());
         goto failed;
     }
-    handle[1] = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 888, 0);
+    handle[1] = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 7777, 0);
     if (handle[1] == INVALID_HANDLE_VALUE)
     {
         fprintf(stderr, "error: failed to open WinDivert handle "
@@ -1244,7 +1244,7 @@ static DWORD monitor_worker(LPVOID arg)
     PWINDIVERT_IPHDR iphdr;
     UINT i;
 
-    snprintf(filter, sizeof(filter), "processId=%d and priority=777 and "
+    snprintf(filter, sizeof(filter), "processId=%d and priority=8888 and "
         "event=OPEN", GetCurrentProcessId());
     HANDLE handle = WinDivertOpen(filter, WINDIVERT_LAYER_REFLECT, 0,
         WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY);

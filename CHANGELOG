@@ -276,3 +276,7 @@ WinDivert 2.0.0-rc
       ip.TTL/ipv6.HopLimit field of a packet.
     - Add new WinDivertHelperNto*()/WinDivertHelperHton*() helper functions
       for swapping from network to host byte ordering, and vice versa.
+    - WinDivertOpen() priorities now are ascending, meaning that higher
+      values correspond to higher priorities.
+    - The last two arguments for WinDivertRecv() and WinDivertSend() have been
+      swapped.

@@ -219,8 +219,8 @@
 /*
  * WinDivert priorities.
  */
-#define WINDIVERT_PRIORITY_MAX                      WINDIVERT_PRIORITY_LOWEST
-#define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY_HIGHEST
+#define WINDIVERT_PRIORITY_MAX                      WINDIVERT_PRIORITY_HIGHEST
+#define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY_LOWEST
 
 /*
  * WinDivert message definitions.
