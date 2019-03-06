@@ -362,7 +362,7 @@ Here, the layer capabilities are:
 <ul>
 <li> (Block?) the layer can block events/packets;</li>
 <li> (Inject?) the layer can inject new events/packets;</li>
-<li> (Data?) whether the layer returns packet data or not; and</li>
+<li> (Data?) whether the layer returns packets/data or not; and</li>
 <li> (PID?) whether the ID for the process associated with
      an event/packet is available at this layer, or not.
 </ul>
@@ -1256,17 +1256,20 @@ Receives a single captured packet/event matching the filter passed to
 <a href="#divert_open"><code>WinDivertOpen()</code></a>.
 The received packet/event is guaranteed to match the filter.
 </p><p>
-Only some <a href="#divert_layers">layers</a> can capture packet data, as
+Only some <a href="#divert_layers">layers</a> can capture packets/data, as
 summarized below:
 </p>
 <center>
-<table border="1" cellpadding="5" width="40%">
+<table border="1" cellpadding="5" width="75%">
 <tr>
 <th>
 Layer
 </th>
 <th>
 Data?
+</th>
+<th>
+Description
 </th>
 </tr>
 <tr>
@@ -1276,6 +1279,9 @@ Data?
 <td>
 &#10004;
 </td>
+<td>
+Network packet.
+</td>
 </tr>
 <tr>
 <td>
@@ -1284,6 +1290,9 @@ Data?
 <td>
 &#10004;
 </td>
+<td>
+Network packet.
+</td>
 </tr>
 <tr>
 <td>
@@ -1291,12 +1300,18 @@ Data?
 </td>
 <td>
 </td>
+<td>
+-
+</td>
 </tr>
 <tr>
 <td>
 <code>WINDIVERT_LAYER_SOCKET</code>
 </td>
 <td>
+</td>
+<td>
+-
 </td>
 </tr>
 <tr>
@@ -1306,12 +1321,15 @@ Data?
 <td>
 &#10004;
 </td>
+<td>
+Filter object.
+</td>
 </tr>
 </table>
 </center>
 <p>
-For layers that do support capturing, the captured packet will be written to
-the <code>pPacket</code> buffer.
+For layers that do support capturing, the captured packet/data will be written
+to the <code>pPacket</code> buffer.
 If non-<code>NULL</code>, then the total number of bytes
 written to <code>pPacket</code> will be written to <code>pRecvLen</code>.
 If the <code>pPacket</code> buffer is too small, the packet will be
@@ -1319,7 +1337,7 @@ truncated and the operation will fail with the
 <code>ERROR_INSUFFICIENT_BUFFER</code> error code.
 This error can be ignored if the application only intends to receive part
 of the packet, e.g., the IP headers only.
-For layers that do not capture packets, the <code>pPacket</code> parameter
+For layers that do not capture packets/data, the <code>pPacket</code> parameter
 should be <code>NULL</code> and <code>packetLen</code> should be zero.
 </p><p>
 If non-<code>NULL</code>, the <a href="#divert_address">address</a> of the
