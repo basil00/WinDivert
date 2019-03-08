@@ -370,13 +370,6 @@ usage:
             fprintf(stderr, "error: failed to stop WinDivert service");
             return EXIT_FAILURE;
         }
-        if (!DeleteService(service) &&
-            GetLastError() != ERROR_SERVICE_MARKED_FOR_DELETE)
-        {
-            fprintf(stderr, "error: failed to delete WinDivert service (%d)\n",
-                GetLastError());
-            return EXIT_FAILURE;
-        }
         CloseServiceHandle(service);
         CloseServiceHandle(manager);
 

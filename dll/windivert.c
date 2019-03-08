@@ -83,7 +83,7 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr);
  */
 static BOOLEAN WinDivertUse32Bit(void);
 static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str);
-static SC_HANDLE WinDivertDriverInstall(VOID);
+static BOOLEAN WinDivertDriverInstall(VOID);
 
 /*
  * Include the helper API implementation.
@@ -217,26 +217,27 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
 /*
  * Install the WinDivert driver.
  */
-static SC_HANDLE WinDivertDriverInstall(VOID)
+static BOOLEAN WinDivertDriverInstall(VOID)
 {
     DWORD err;
     SC_HANDLE manager = NULL, service = NULL;
     wchar_t windivert_sys[MAX_PATH+1];
     HANDLE mutex = NULL;
+    BOOL success = TRUE;
 
     // Create & lock a named mutex.  This is to stop two processes trying
     // to start the driver at the same time.
     mutex = CreateMutex(NULL, FALSE, L"WinDivertDriverInstallMutex");
     if (mutex == NULL)
     {
-        return NULL;
+        return FALSE;
     }
     switch (WaitForSingleObject(mutex, INFINITE))
     {
         case WAIT_OBJECT_0: case WAIT_ABANDONED:
             break;
         default:
-            return NULL;
+            return FALSE;
     }
 
     // Open the service manager:
@@ -276,23 +277,21 @@ static SC_HANDLE WinDivertDriverInstall(VOID)
 
 WinDivertDriverInstallExit:
 
+    success = (service != NULL);
     if (service != NULL)
     {
         // Start the service:
-        if (!StartService(service, 0, NULL))
+        success = StartService(service, 0, NULL);
+        if (!success)
         {
-            err = GetLastError();
-            if (err == ERROR_SERVICE_ALREADY_RUNNING)
-            {
-                SetLastError(0);
-            }
-            else
-            {
-                // Failed to start service; clean-up:
-                CloseServiceHandle(service);
-                service = NULL;
-                SetLastError(err);
-            }
+            success = (GetLastError() == ERROR_SERVICE_ALREADY_RUNNING);
+        }
+        else
+        {
+            // Mark the service for deletion.  This will cause the driver to
+            // unload if (1) there are no more open handles, and (2) the
+            // service is STOPPED or on system reboot.
+            (VOID)DeleteService(service);
         }
     }
 
@@ -301,11 +300,15 @@ WinDivertDriverInstallExit:
     {
         CloseServiceHandle(manager);
     }
+    if (service != NULL)
+    {
+        CloseServiceHandle(service);
+    }
     ReleaseMutex(mutex);
     CloseHandle(mutex);
     SetLastError(err);
     
-    return service;
+    return success;
 }
 
 /*
@@ -378,7 +381,6 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     DWORD err;
     BOOL sniff;
     HANDLE handle;
-    SC_HANDLE service;
     UINT64 filter_flags;
     WINDIVERT_IOCTL ioctl;
     WINDIVERT_VERSION version;
@@ -438,8 +440,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
             return INVALID_HANDLE_VALUE;
         }
         SetLastError(0);
-        service = WinDivertDriverInstall();
-        if (service == NULL)
+        if (!WinDivertDriverInstall())
         {
             if (GetLastError() == 0)
             {
@@ -451,9 +452,6 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
             GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
             INVALID_HANDLE_VALUE);
-
-        // Schedule the service to be deleted (once all handles are closed).
-        CloseServiceHandle(service);
 
         if (handle == INVALID_HANDLE_VALUE)
         {
