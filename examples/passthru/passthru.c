@@ -37,7 +37,7 @@
  * This program does nothing except divert packets and re-inject them.  This is
  * useful for performance testing.
  *
- * usage: netdump.exe windivert-filter num-threads
+ * usage: passthru.exe [windivert-filter] [num-threads] [batch-size] [priority]
  */
 
 #include <winsock2.h>
@@ -48,7 +48,12 @@
 #include "windivert.h"
 
 #define MTU 1500
-static int batch = 1;
+
+typedef struct
+{
+    HANDLE handle;
+    int batch;
+} CONFIG, *PCONFIG;
 
 static DWORD passthru(LPVOID arg);
 
@@ -57,37 +62,53 @@ static DWORD passthru(LPVOID arg);
  */
 int __cdecl main(int argc, char **argv)
 {
-    int num_threads, priority = 0, i;
+    const char *filter = "true";
+    int threads = 1, batch = 1, priority = 0;
+    int i;
     HANDLE handle, thread;
+    CONFIG config;
 
-    if (argc < 3 || argc > 5)
+    if (argc > 5)
     {
-        fprintf(stderr, "usage: %s filter num-threads [batch] [priority]\n",
-            argv[0]);
+        fprintf(stderr, "usage: %s [filter] [num-threads] [batch-size] "
+            "[priority]\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    num_threads = atoi(argv[2]);
-    if (num_threads < 1 || num_threads > 64)
+    if (argc >= 2)
     {
-        fprintf(stderr, "error: invalid number of threads\n");
-        exit(EXIT_FAILURE);
+        filter = argv[1];
+    }
+    if (argc >= 3)
+    {
+        threads = atoi(argv[2]);
+        if (threads < 1 || threads > 64)
+        {
+            fprintf(stderr, "error: invalid number of threads\n");
+            exit(EXIT_FAILURE);
+        }
     }
     if (argc >= 4)
     {
         batch = atoi(argv[3]);
-    }
-    if (batch <= 0 || batch > WINDIVERT_BATCH_MAX)
-    {
-        fprintf(stderr, "error: invalid batch size\n");
-        exit(EXIT_FAILURE);
+        if (batch <= 0 || batch > WINDIVERT_BATCH_MAX)
+        {
+            fprintf(stderr, "error: invalid batch size\n");
+            exit(EXIT_FAILURE);
+        }
     }
     if (argc >= 5)
     {
         priority = atoi(argv[4]);
+        if (priority < WINDIVERT_PRIORITY_LOWEST ||
+            priority > WINDIVERT_PRIORITY_HIGHEST)
+        {
+            fprintf(stderr, "error: invalid priority value\n");
+            exit(EXIT_FAILURE);
+        }
     }
 
     // Divert traffic matching the filter:
-    handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, (INT16)priority,
+    handle = WinDivertOpen(filter, WINDIVERT_LAYER_NETWORK, (INT16)priority,
         0);
     if (handle == INVALID_HANDLE_VALUE)
     {
@@ -102,10 +123,12 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Start the threads
-    for (i = 1; i < num_threads; i++)
+    config.handle = handle;
+    config.batch = batch;
+    for (i = 1; i < threads; i++)
     {
         thread = CreateThread(NULL, 1, (LPTHREAD_START_ROUTINE)passthru,
-            (LPVOID)handle, 0, NULL);
+            (LPVOID)&config, 0, NULL);
         if (thread == NULL)
         {
             fprintf(stderr, "error: failed to start passthru thread (%d)\n",
@@ -115,7 +138,7 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Main thread:
-    passthru((LPVOID)handle);
+    passthru((LPVOID)&config);
 
     return 0;
 }
@@ -126,7 +149,12 @@ static DWORD passthru(LPVOID arg)
     UINT8 *packet;
     UINT packet_len, addr_len;
     WINDIVERT_ADDRESS *addr;
-    HANDLE handle = (HANDLE)arg;
+    PCONFIG config = (PCONFIG)arg;
+    HANDLE handle;
+    int batch;
+
+    handle = config->handle;
+    batch = config->batch;
 
     packet = (UINT8 *)malloc(batch * MTU);
     addr = (WINDIVERT_ADDRESS *)malloc(batch * sizeof(WINDIVERT_ADDRESS));
