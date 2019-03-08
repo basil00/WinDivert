@@ -579,6 +579,10 @@ static const struct test tests[] =
      "(not packet[46] < 0x6C and packet[56] <= 0x01))))? packet[31] <= 0x00: "
      "(not packet[50] >= 0x6F and not packet[9] <= 0x11))",
                                                &pkt_dns_request, TRUE},
+    {"packet32[13] <= 0xFFFFFFE",              &pkt_dns_request, TRUE},
+    {"packet32[53b] <= 0xFFFFFFE",             &pkt_dns_request, TRUE},
+    {"packet32[14] <= 0xFFFFFFE",              &pkt_dns_request, FALSE},
+    {"packet32[54b] <= 0xFFFFFFE",             &pkt_dns_request, FALSE},
     {"ip.HdrLength == 5 and ip.TOS == 0 and ip.Length == 57 and "
      "ip.Id == 0x2090 and ip.FragOff == 0 and ip.MF == 0 and ip.DF == 0 and "
      "ip.TTL == 73 and ip.Protocol == 17 and ip.SrcAddr == 0x0A000001 and "
@@ -677,6 +681,7 @@ static const struct test tests[] =
      "packet[72] != 0x00)? (packet[25] > 0x00 or not packet[13] < 0x01): "
      "(packet[47] <= 0xAA and not packet[15] != 0x00)))))",
                                                 &pkt_ipv6_tcp_syn, FALSE},
+    {"packet32[-4b] < 0xFFFFFFFE",              &pkt_ipv6_tcp_syn, TRUE},
     {"ipv6.TrafficClass == 0x00000000 and ipv6.FlowLabel == 0x0000 and "
      "ipv6.Length == 40 and ipv6.NextHdr == 6 and ipv6.HopLimit == 64 and "
      "ipv6.SrcAddr == 1234:5678:1:0:0:0:aabb:ccdd and "
