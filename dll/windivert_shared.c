@@ -144,12 +144,23 @@ static void WinDivertPutNul(PWINDIVERT_STREAM stream)
 }
 
 /*
+ * Encode a digit.
+ */
+static char WinDivertEncodeDigit(UINT8 dig, BOOL final)
+{
+    static const char windivert_digits[64+1] =
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+=";
+    return windivert_digits[(dig & 0x1F) + (final? 32: 0)];
+}
+
+/*
  * Serialize a number.
  */
 static void WinDivertSerializeNumber(PWINDIVERT_STREAM stream, UINT32 val)
 {
     UINT64 mask = 0x00000007C0000000ull;
     UINT dig = 6;
+    UINT8 digit;
     UINT64 val64 = (UINT64)val;
     BOOL final;
 
@@ -161,8 +172,8 @@ static void WinDivertSerializeNumber(PWINDIVERT_STREAM stream, UINT32 val)
     while (TRUE)
     {
         final = (dig == 0);
-        WinDivertPutChar(stream, '!' + (char)((mask & val64) >> (5 * dig)) +
-            (final? 32: 0));
+        digit = (UINT8)((mask & val64) >> (5 * dig));
+        WinDivertPutChar(stream, WinDivertEncodeDigit(digit, final));
         if (final)
         {
             break;

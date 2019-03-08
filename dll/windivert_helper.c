@@ -3221,13 +3221,60 @@ static char WinDivertGetChar(PWINDIVERT_STREAM stream)
 }
 
 /*
+ * Decode a digit.
+ */
+static BOOL WinDivertDecodeDigit(char c, UINT8 *digit, BOOL *final)
+{
+    if (c >= '0' && c <= '9')
+    {
+        *digit = c - '0';
+        *final = FALSE;
+        return TRUE;
+    }
+    if (c >= 'A' && c <= 'V')
+    {
+        *digit = c - 'A' + 10;
+        *final = FALSE;
+        return TRUE;
+    }
+    if (c >= 'W' && c <= 'Z')
+    {
+        *digit = c - 'W';
+        *final = TRUE;
+        return TRUE;
+    }
+    if (c >= 'a' && c <= 'z')
+    {
+        *digit = c - 'a' + 4;
+        *final = TRUE;
+        return TRUE;
+    }
+    if (c == '+')
+    {
+        *digit = 30;
+        *final = TRUE;
+        return TRUE;
+    }
+    if (c == '=')
+    {
+        *digit = 31;
+        *final = TRUE;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+/*
  * Deserialize a number.
  */
 static BOOL WinDivertDeserializeNumber(PWINDIVERT_STREAM stream, UINT max_len,
     UINT32 *result)
 {
     UINT32 i, val = 0;
+    UINT8 digit;
+    BOOL final;
     char c;
+
     for (i = 0; i < max_len; i++)
     {
         if ((val & 0xF8000000) != 0)
@@ -3236,19 +3283,15 @@ static BOOL WinDivertDeserializeNumber(PWINDIVERT_STREAM stream, UINT max_len,
         }
         val <<= 5;
         c = WinDivertGetChar(stream);
-        if (c >= '!' && c <= '!' + 31)
-        {
-            val += (UINT32)(c - '!');
-        }
-        else if (c >= '!' + 32 && c <= '!' + 64)
-        {
-            val += (UINT32)(c - '!' - 32);
-            *result = val;
-            return TRUE;
-        }
-        else
+        if (!WinDivertDecodeDigit(c, &digit, &final))
         {
             return FALSE;
+        }
+        val += digit;
+        if (final)
+        {
+            *result = val;
+            return TRUE;
         }
     }
     return FALSE;
