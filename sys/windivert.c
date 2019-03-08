@@ -92,9 +92,19 @@ static void DEBUG_ERROR(PCCH format, NTSTATUS status, ...)
     DbgPrint("WINDIVERT: *** ERROR ***: (status = %x): %s\n", status, buf);
     va_end(args);
 }
+static void DEBUG_BOUNDS_CHECK(PVOID start, PVOID end, PVOID access_start,
+    PVOID access_end)
+{
+    if (access_end > end || access_start < start)
+    {
+        DbgPrint("WINDIVERT: *** BOUNDS ERROR ***: access %p..%p outside "
+            "of buffer bounds %p..%p", access_start, access_end, start, end);
+    }
+}
 #else       // DEBUG_ON
 #define DEBUG(format, ...)
 #define DEBUG_ERROR(format, status, ...)
+#define DEBUG_BOUNDS_CHECK(start, end, access_start, access_end)
 #endif
 
 #define WINDIVERT_VERSION_MAJOR_MIN             2
@@ -479,6 +489,9 @@ static void windivert_reinject_packet(packet_t packet);
 static void windivert_free_packet(packet_t packet);
 static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b,
     BOOL big);
+static BOOL windivert_copy_data(PNET_BUFFER buffer, PVOID data, UINT size);
+static BOOL windivert_lookup_data(PNET_BUFFER buffer, UINT offset, INT idx,
+    PVOID data, UINT size);
 static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_IPHDR *ip_header_ptr, PWINDIVERT_IPV6HDR *ipv6_header_ptr,
     PWINDIVERT_ICMPHDR *icmp_header_ptr,
@@ -2169,6 +2182,9 @@ static void windivert_read_service_request(context_t context, packet_t packet,
         // Copy the address data:
         if (addr != NULL)
         {
+            DEBUG_BOUNDS_CHECK((PVOID)addr, (UINT8 *)addr + addr_len_max,
+                (PVOID)&addr[i], (PVOID)&addr[i+1]);
+
             addr[i].Timestamp   = (INT64)packet->timestamp;
             addr[i].Layer       = packet->layer;
             addr[i].Event       = packet->event;
@@ -2211,14 +2227,10 @@ static void windivert_read_service_request(context_t context, packet_t packet,
 
         i++;
         addr_len += sizeof(WINDIVERT_ADDRESS);
-        if (addr_len >= addr_len_max || i >= WINDIVERT_BATCH_MAX)
+        if (addr_len + sizeof(WINDIVERT_ADDRESS) > addr_len_max ||
+                i >= WINDIVERT_BATCH_MAX)
         {
             // addr[] is full:
-            break;
-        }
-        if (dst_len < sizeof(WINDIVERT_IPHDR) + sizeof(WINDIVERT_TCPHDR))
-        {
-            // Remaining space too small:
             break;
         }
 
@@ -2277,7 +2289,7 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
     PNET_BUFFER buffer;
     PMDL dst_mdl;
     UINT dst_len, read_len = 0;
-    UINT8 *dst, *src;
+    UINT8 *dst;
     req_context_t req_context;
     PWINDIVERT_ADDRESS addr;
     UINT *addr_len_ptr;
@@ -2328,16 +2340,11 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
         case WINDIVERT_LAYER_NETWORK_FORWARD:
             buffer = (PNET_BUFFER)packet;
             dst_len = (dst_len < packet_len? dst_len: packet_len);
-            src = NdisGetDataBuffer(buffer, dst_len, NULL, 1, 0);
-            if (src == NULL)
+            if (!windivert_copy_data(buffer, dst, dst_len))
             {
-                NdisGetDataBuffer(buffer, dst_len, dst, 1, 0);
+                status = STATUS_INSUFFICIENT_RESOURCES;
             }
-            else
-            {
-                RtlCopyMemory(dst, src, dst_len);
-            }
-            if (dst_len < packet_len)
+            else if (dst_len < packet_len)
             {
                 status = STATUS_BUFFER_TOO_SMALL;
             }
@@ -2575,8 +2582,9 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     addr_len_max = (ULONG)req_context->addr_len;
     addr_len     = 0;
 
-    for (i = 0; addr_len < addr_len_max && i < WINDIVERT_BATCH_MAX; i++,
-            addr_len += sizeof(WINDIVERT_ADDRESS))
+    for (i = 0; addr_len + sizeof(WINDIVERT_ADDRESS) <= addr_len_max &&
+            i < WINDIVERT_BATCH_MAX;
+            i++, addr_len += sizeof(WINDIVERT_ADDRESS))
     {
         buffers   = NULL;
         mdl_copy  = NULL;
@@ -2627,6 +2635,10 @@ windivert_write_too_small_packet:
             goto windivert_write_hard_error;
         }
         RtlCopyMemory(data_copy, data, packet_len);
+
+        // Check bounds:
+        DEBUG_BOUNDS_CHECK((PVOID)addr, (UINT8 *)addr + addr_len_max,
+            (PVOID)&addr[i], (PVOID)&addr[i+1]);
 
         // Fix checksums:
         if (addr[i].IPChecksum == 0 || addr[i].TCPChecksum == 0 ||
@@ -4641,7 +4653,6 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
     KLOCK_QUEUE_HANDLE lock_handle;
     PNET_BUFFER buffer;
     packet_t work;
-    PVOID packet_data;
     ULONG packet_size;
     UINT8 *data;
     PLIST_ENTRY old_entry;
@@ -4708,14 +4719,10 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
             data = WINDIVERT_LAYER_DATA_PTR(work);
             RtlCopyMemory(data, network_data, sizeof(WINDIVERT_DATA_NETWORK));
             data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, work);
-            packet_data = NdisGetDataBuffer(buffer, packet_len, NULL, 1, 0);
-            if (packet_data == NULL)
+            if (!windivert_copy_data(buffer, data, packet_len))
             {
-                NdisGetDataBuffer(buffer, packet_len, data, 1, 0);
-            }
-            else
-            {
-                RtlCopyMemory(data, packet_data, packet_len);
+                windivert_free(work);
+                return TRUE;
             }
             checksums.Value = NET_BUFFER_LIST_INFO(buffers,
                 TcpIpChecksumNetBufferListInfo);
@@ -5065,13 +5072,39 @@ static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b, BOOL big)
 }
 
 /*
- * Get packet/payload data.
+ * Copy data from a NET_BUFFER.
  */
-static BOOL windivert_get_data(PNET_BUFFER buffer, UINT offset, INT idx,
-    UINT size, PVOID data)
+static BOOL windivert_copy_data(PNET_BUFFER buffer, PVOID data, UINT size)
 {
     PVOID ptr;
+
+    ptr = NdisGetDataBuffer(buffer, size, NULL, 1, 0);
+    if (ptr != NULL)
+    {
+        // Contiguous (common) case:
+        RtlCopyMemory(data, ptr, size);
+    }
+    else
+    {
+        // Non-contigious case:
+        ptr = NdisGetDataBuffer(buffer, size, data, 1, 0);
+        if (ptr == NULL)
+        {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+/*
+ * Lookup packet/payload data at given index.
+ */
+static BOOL windivert_lookup_data(PNET_BUFFER buffer, UINT offset, INT idx,
+    PVOID data, UINT size)
+{
     UINT length = NET_BUFFER_DATA_LENGTH(buffer);
+    BOOL success;
 
     if (idx < 0)
     {
@@ -5083,23 +5116,19 @@ static BOOL windivert_get_data(PNET_BUFFER buffer, UINT offset, INT idx,
     }
     if (idx < (INT)offset || idx > (INT)(length - size))
     {
-        return FALSE;                       // OOB
+        return FALSE;       // OOB
     }
 
     if (idx > 0)
     {
         NdisAdvanceNetBufferDataStart(buffer, idx, FALSE, NULL);
     }
-    ptr = NdisGetDataBuffer(buffer, size, data, 1, 0);
-    if (ptr != NULL && ptr != data)
-    {
-        RtlCopyMemory(data, ptr, size);     // Non-contiguous case
-    }
+    success = windivert_copy_data(buffer, data, size);
     if (idx > 0)
     {
         (VOID)NdisRetreatNetBufferDataStart(buffer, idx, 0, NULL);
     }
-    return TRUE;
+    return success;
 }
 
 /*
@@ -5509,36 +5538,36 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     field[0] = (UINT32)random64;
                     break;
                 case WINDIVERT_FILTER_FIELD_PACKET:
-                    result = windivert_get_data(buffer, /*offset=*/0,
-                        (INT)filter[ip].arg[1], sizeof(data8), &data8);
+                    result = windivert_lookup_data(buffer, /*offset=*/0,
+                        (INT)filter[ip].arg[1], &data8, sizeof(data8));
                     field[0] = (UINT32)data8;
                     break;
                 case WINDIVERT_FILTER_FIELD_PACKET16:
-                    result = windivert_get_data(buffer, /*offset=*/0,
-                        (INT)filter[ip].arg[1], sizeof(data16), &data16);
+                    result = windivert_lookup_data(buffer, /*offset=*/0,
+                        (INT)filter[ip].arg[1], &data16, sizeof(data16));
                     field[0] = (UINT32)RtlUshortByteSwap(data16);
                     break;
                 case WINDIVERT_FILTER_FIELD_PACKET32:
-                    result = windivert_get_data(buffer, /*offset=*/0,
-                        (INT)filter[ip].arg[1], sizeof(data32), &data32);
+                    result = windivert_lookup_data(buffer, /*offset=*/0,
+                        (INT)filter[ip].arg[1], &data32, sizeof(data32));
                     field[0] = (UINT32)RtlUlongByteSwap(data32);
                     break;
                 case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
                 case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
-                    result = windivert_get_data(buffer, header_len,
-                        (INT)filter[ip].arg[1], sizeof(data8), &data8);
+                    result = windivert_lookup_data(buffer, header_len,
+                        (INT)filter[ip].arg[1], &data8, sizeof(data8));
                     field[0] = (UINT32)data8;
                     break;
                 case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
                 case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
-                    result = windivert_get_data(buffer, header_len,
-                        (INT)filter[ip].arg[1], sizeof(data16), &data16);
+                    result = windivert_lookup_data(buffer, header_len,
+                        (INT)filter[ip].arg[1], &data16, sizeof(data16));
                     field[0] = (UINT32)RtlUshortByteSwap(data16);
                     break;
                 case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
                 case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
-                    result = windivert_get_data(buffer, header_len,
-                        (INT)filter[ip].arg[1], sizeof(data32), &data32);
+                    result = windivert_lookup_data(buffer, header_len,
+                        (INT)filter[ip].arg[1], &data32, sizeof(data32));
                     field[0] = (UINT32)RtlUlongByteSwap(data32);
                     break;
                 case WINDIVERT_FILTER_FIELD_INBOUND:
