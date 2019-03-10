@@ -2831,8 +2831,8 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     {
         case IOCTL_WINDIVERT_RECV:
             ioctl        = (PWINDIVERT_IOCTL)inbuf;
-            addr         = ioctl->recv.addr;
-            addr_len_ptr = ioctl->recv.addr_len_ptr;
+            addr         = (PWINDIVERT_ADDRESS)ioctl->recv.addr;
+            addr_len_ptr = (UINT *)ioctl->recv.addr_len_ptr;
             addr_len     = sizeof(WINDIVERT_ADDRESS);
             if (addr_len_ptr != NULL)
             {
@@ -2850,8 +2850,8 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
                     addr_len > WINDIVERT_BATCH_MAX * sizeof(WINDIVERT_ADDRESS))
                 {
                     status = STATUS_INVALID_PARAMETER;
-                    DEBUG_ERROR("out-of-range address length for RECV ioctl",
-                        status);
+                    DEBUG_ERROR("out-of-range address length (%u) for RECV "
+                        "ioctl", status, addr_len);
                     goto windivert_caller_context_error;
                 }
                 if (addr == NULL)
@@ -2882,8 +2882,8 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
                 addr_len > WINDIVERT_BATCH_MAX * sizeof(WINDIVERT_ADDRESS))
             {
                 status = STATUS_INVALID_PARAMETER;
-                DEBUG_ERROR("out-of-range address length for RECV ioctl",
-                    status);
+                DEBUG_ERROR("out-of-range address length (%u) for SEND ioctl",
+                    status, addr_len);
                 goto windivert_caller_context_error;
             }
             if (addr == NULL)
@@ -3035,20 +3035,23 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             version = (WINDIVERT_VERSION *)outbuf;
             if (outbuflen != sizeof(WINDIVERT_VERSION) ||
                 version->magic != WINDIVERT_MAGIC_DLL ||
-                version->major < WINDIVERT_VERSION_MAJOR_MIN)
+                version->major < WINDIVERT_VERSION_MAJOR_MIN ||
+                (version->bits != 8 * sizeof(UINT32) &&
+                 version->bits != 8 * sizeof(UINT64)))
             {
                 status = STATUS_INVALID_PARAMETER;
-                DEBUG_ERROR("failed to initialize; invalid init buffer",
+                DEBUG_ERROR("failed to initialize; invalid version buffer",
                     status);
                 goto windivert_ioctl_exit;
             }
             
-            layer = ioctl->initialize.layer;
+            layer = (WINDIVERT_LAYER)ioctl->initialize.layer;
             priority = ioctl->initialize.priority;
             flags = ioctl->initialize.flags;
             version->magic = WINDIVERT_MAGIC_SYS;
             version->major = WINDIVERT_VERSION_MAJOR;
             version->minor = WINDIVERT_VERSION_MINOR;
+            version->bits  = 8 * sizeof(void *);
             
             switch ((UINT32)layer)
             {
@@ -3200,7 +3203,7 @@ windivert_ioctl_bad_flags:
             WINDIVERT_SHUTDOWN how;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            how = ioctl->shutdown.how;
+            how = (WINDIVERT_SHUTDOWN)ioctl->shutdown.how;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
             {
@@ -3233,10 +3236,11 @@ windivert_ioctl_bad_flags:
  
         case IOCTL_WINDIVERT_SET_PARAM:
         {
-            UINT64 param, value;
+            WINDIVERT_PARAM param;
+            UINT64 value;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            param = ioctl->set_param.param;
+            param = (WINDIVERT_PARAM)ioctl->set_param.param;
             value = ioctl->set_param.val;
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
             if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
@@ -3301,10 +3305,10 @@ windivert_ioctl_bad_flags:
 
         case IOCTL_WINDIVERT_GET_PARAM:
         {
-            UINT64 param;
+            WINDIVERT_PARAM param;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
-            param = ioctl->get_param.param;
+            param = (WINDIVERT_PARAM)ioctl->get_param.param;
             if (outbuflen != sizeof(UINT64))
             {
                 status = STATUS_INVALID_PARAMETER;
@@ -6270,7 +6274,9 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
                         break;
                     case WINDIVERT_LAYER_SOCKET:
                         if (event != WINDIVERT_EVENT_SOCKET_BIND &&
+                            event != WINDIVERT_EVENT_SOCKET_UNBIND &&
                             event != WINDIVERT_EVENT_SOCKET_CONNECT &&
+                            event != WINDIVERT_EVENT_SOCKET_DISCONNECT &&
                             event != WINDIVERT_EVENT_SOCKET_LISTEN &&
                             event != WINDIVERT_EVENT_SOCKET_ACCEPT)
                         {

@@ -464,10 +464,11 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     ioctl.initialize.layer    = layer;
     ioctl.initialize.priority = (INT32)priority + WINDIVERT_PRIORITY_MAX;
     ioctl.initialize.flags    = flags;
+    memset(&version, 0, sizeof(version));
     version.magic             = WINDIVERT_MAGIC_DLL;
     version.major             = WINDIVERT_VERSION_MAJOR;
     version.minor             = WINDIVERT_VERSION_MINOR;
-    memset(version.reserved, 0, sizeof(version.reserved));
+    version.bits              = 8 * sizeof(void *);
     if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_INITIALIZE, &ioctl,
             &version, sizeof(version), NULL))
     {
@@ -504,8 +505,8 @@ extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.recv.addr = addr;
-    ioctl.recv.addr_len_ptr = NULL;
+    ioctl.recv.addr = (UINT64)addr;
+    ioctl.recv.addr_len_ptr = (UINT64)NULL;
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, &ioctl,
         pPacket, packetLen, readLen);
 }
@@ -519,8 +520,8 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.recv.addr = addr;
-    ioctl.recv.addr_len_ptr = pAddrLen;
+    ioctl.recv.addr = (UINT64)addr;
+    ioctl.recv.addr_len_ptr = (UINT64)pAddrLen;
     if (flags != 0)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -546,7 +547,7 @@ extern BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.send.addr = addr;
+    ioctl.send.addr = (UINT64)addr;
     ioctl.send.addr_len = sizeof(WINDIVERT_ADDRESS);
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, &ioctl,
         (PVOID)pPacket, packetLen, writeLen);
@@ -561,7 +562,7 @@ extern BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.send.addr = addr;
+    ioctl.send.addr = (UINT64)addr;
     ioctl.send.addr_len = addrLen;
     if (flags != 0)
     {
@@ -587,7 +588,7 @@ extern BOOL WinDivertShutdown(HANDLE handle, WINDIVERT_SHUTDOWN how)
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.shutdown.how = how;
+    ioctl.shutdown.how = (UINT32)how;
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SHUTDOWN, &ioctl, NULL,
         0, NULL);
 }
@@ -608,7 +609,7 @@ extern BOOL WinDivertSetParam(HANDLE handle, WINDIVERT_PARAM param,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.set_param.param = param;
+    ioctl.set_param.param = (UINT32)param;
     ioctl.set_param.val   = value;
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PARAM, &ioctl, NULL,
         0, NULL);
@@ -622,7 +623,7 @@ extern BOOL WinDivertGetParam(HANDLE handle, WINDIVERT_PARAM param,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.get_param.param = param;
+    ioctl.get_param.param = (UINT32)param;
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_GET_PARAM, &ioctl,
         pValue, sizeof(UINT64), NULL);
 }

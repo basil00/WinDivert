@@ -230,18 +230,17 @@ typedef union
 {
     struct
     {
-        WINDIVERT_ADDRESS *addr;    // WINDIVERT_ADDRESS pointer.
-        UINT *addr_len_ptr;         // sizeof(addr) pointer.
+        UINT64 addr;                // WINDIVERT_ADDRESS pointer.
+        UINT64 addr_len_ptr;        // sizeof(addr) pointer.
     } recv;
     struct
     {
-        const WINDIVERT_ADDRESS *addr;
-                                    // WINDIVERT_ADDRESS pointer.
+        UINT64 addr;                // WINDIVERT_ADDRESS pointer.
         UINT64 addr_len;            // sizeof(addr).
     } send;
     struct
     {
-        WINDIVERT_LAYER layer;      // Handle layer.
+        UINT32 layer;               // Handle layer.
         UINT32 priority;            // Handle priority.
         UINT64 flags;               // Handle flags.
     } initialize;
@@ -251,16 +250,16 @@ typedef union
     } startup;
     struct
     {
-        WINDIVERT_SHUTDOWN how;     // WINDIVERT_SHUTDOWN_*
+        UINT32 how;                 // WINDIVERT_SHUTDOWN_*
     } shutdown;
     struct
     {
-        WINDIVERT_PARAM param;      // WINDIVERT_PARAM_*
+        UINT32 param;               // WINDIVERT_PARAM_*
     } get_param;
     struct
     {
         UINT64 val;                 // Value pointer.
-        WINDIVERT_PARAM param;      // WINDIVERT_PARAM_*
+        UINT32 param;               // WINDIVERT_PARAM_*
     } set_param;
 } WINDIVERT_IOCTL, *PWINDIVERT_IOCTL;
 
@@ -272,7 +271,9 @@ typedef struct
     UINT64 magic;                   // Magic number (in/out).
     UINT32 major;                   // Driver major version (in/out).
     UINT32 minor;                   // Driver minor version (in/out).
-    UINT64 reserved[4];
+    UINT32 bits;                    // 32 or 64 (in/out).
+    UINT32 reserved32[3];
+    UINT64 reserved64[4];
 } WINDIVERT_VERSION, *PWINDIVERT_VERSION;
 
 /*
