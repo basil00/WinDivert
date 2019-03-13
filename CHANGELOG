@@ -136,16 +136,21 @@ WinDivert 2.0.0-rc
       * addr.Layer: The WINDIVERT_LAYER_* value for the handle.
       * addr.Event: A WINDIVERT_EVENT_* value representing the event (see
         below).
+      * addr.Sniffed: Indicates that the event was sniffed.
       * addr.Outbound: Replaces addr.Direction.
       * addr.IPv6: Indicates an IPv6 packet.
       * addr.Network.IfIdx: Replaces addr.IfIdx.
       * addr.Network.SubIfIdx: Replaces addr.SubIfIdx.
+      * addr.Flow.EndpointId: The endpoint ID of the flow.
+      * addr.Flow.ParentEndpointId: The parent endpoint ID of the flow.
       * addr.Flow.ProcessId: The ID of process that created the flow.
       * addr.Flow.LocalAddr: The flow's local address.
       * addr.Flow.RemoteAddr: The flow's remote address.
       * addr.Flow.LocalPort: The flow's local port.
       * addr.Flow.RemotePort: The flow's remote port.
       * addr.Flow.Protocol: The flow's protocol.
+      * addr.Socket.EndpointId: The endpoint ID of the operation.
+      * addr.Socket.ParentEndpointId: The parent endpoint ID of the operation.
       * addr.Socket.ProcessId: The ID of process that created the socket.
       * addr.Socket.LocalAddr: The socket's local address.
       * addr.Socket.RemoteAddr: The socket's remote address.
@@ -167,17 +172,14 @@ WinDivert 2.0.0-rc
         deleted.
       * WINDIVERT_EVENT_SOCKET_BIND: (SOCKET layer) a socket bind()
         operation occurred.
-      * WINDIVERT_EVENT_SOCKET_UNBIND: (SOCKET layer) a previous binding
-        is removed.
-        operation occurred.
       * WINDIVERT_EVENT_SOCKET_CONNECT: (SOCKET layer) a socket connect()
         operation occurred.
-      * WINDIVERT_EVENT_SOCKET_DISCONNECT: (SOCKET layer) a previous
-        connection is terminated.
       * WINDIVERT_EVENT_SOCKET_LISTEN: (SOCKET layer) a socket listen()
         operation occurred.
       * WINDIVERT_EVENT_SOCKET_ACCEPT: (SOCKET layer) a socket accept()
         operation occurred.
+      * WINDIVERT_EVENT_SOCKET_CLOSE: (SOCKET layer) a socket endpoint is
+        closed.
       * WINDIVERT_EVENT_REFLECT_OPEN: (REFLECT layer) a WinDivertOpen()
         operation occurred.
       * WINDIVERT_EVENT_REFLECT_CLOSE: (REFLECT layer) a WinDivertClose()
@@ -227,12 +229,11 @@ WinDivert 2.0.0-rc
       * ESTABLISHED: (FLOW layer) equal to WINDIVERT_EVENT_FLOW_ESTABLISHED.
       * DELETED: (FLOW LAYER) equal to WINDIVERT_EVENT_FLOW_DELETED.
       * BIND: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_BIND.
-      * UNBIND: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_UNBIND.
       * CONNECT: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_CONNECT.
-      * DISCONNECT: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_DISCONNECT.
       * LISTEN: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_LISTEN.
       * ACCEPT: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_ACCEPT.
         WINDIVERT_LAYER_NETWORK_FORWARD.
+      * CLOSE: (SOCKET layer) equal to WINDIVERT_EVENT_SOCKET_CLOSE.
       * OPEN: (REFLECT layer) equal to WINDIVERT_EVENT_REFLECT_OPEN.
       * CLOSE: (REFLECT layer) equal to WINDIVERT_EVENT_REFLECT_CLOSE.
       * NETWORK: (REFLECT layer) equal to WINDIVERT_LAYER_NETWORK.

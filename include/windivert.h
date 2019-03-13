@@ -95,6 +95,8 @@ typedef struct
  */
 typedef struct
 {
+    UINT64 EndpointId;                  /* Endpoint ID. */
+    UINT64 ParentEndpointId;            /* Parent endpoint ID. */
     UINT32 ProcessId;                   /* Process ID. */
     UINT32 LocalAddr[4];                /* Local address. */
     UINT32 RemoteAddr[4];               /* Remote address. */
@@ -108,6 +110,8 @@ typedef struct
  */
 typedef struct
 {
+    UINT64 EndpointId;                  /* Endpoint ID. */
+    UINT64 ParentEndpointId;            /* Parent Endpoint ID. */
     UINT32 ProcessId;                   /* Process ID. */
     UINT32 LocalAddr[4];                /* Local address. */
     UINT32 RemoteAddr[4];               /* Remote address. */
@@ -136,6 +140,7 @@ typedef struct
     INT64  Timestamp;                   /* Packet's timestamp. */
     UINT64 Layer:8;                     /* Packet's layer. */
     UINT64 Event:8;                     /* Packet event. */
+    UINT64 Sniffed:1;                   /* Packet was sniffed? */
     UINT64 Outbound:1;                  /* Packet is outound? */
     UINT64 Loopback:1;                  /* Packet is loopback? */
     UINT64 Impostor:1;                  /* Packet is impostor? */
@@ -143,14 +148,14 @@ typedef struct
     UINT64 IPChecksum:1;                /* Packet has valid IPv4 checksum? */
     UINT64 TCPChecksum:1;               /* Packet has valid TCP checksum? */
     UINT64 UDPChecksum:1;               /* Packet has valid UDP checksum? */
-    UINT64 Reserved1:41;
+    UINT64 Reserved1:40;
     union
     {
         WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
         WINDIVERT_DATA_FLOW Flow;       /* Flow layer data. */
         WINDIVERT_DATA_SOCKET Socket;   /* Socket layer data. */
         WINDIVERT_DATA_REFLECT Reflect; /* Reflect layer data. */
-        UINT8 Reserved2[48];
+        UINT8 Reserved2[64];
     };
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
 
@@ -164,14 +169,12 @@ typedef enum
                                         /* Flow established. */
     WINDIVERT_EVENT_FLOW_DELETED = 2,   /* Flow deleted. */
     WINDIVERT_EVENT_SOCKET_BIND = 3,    /* Socket bind. */
-    WINDIVERT_EVENT_SOCKET_UNBIND = 4,  /* Socket unbind. */
-    WINDIVERT_EVENT_SOCKET_CONNECT = 5, /* Socket connect. */
-    WINDIVERT_EVENT_SOCKET_DISCONNECT = 6,
-                                        /* Socket disconnect. */
-    WINDIVERT_EVENT_SOCKET_LISTEN = 7,  /* Socket listen. */
-    WINDIVERT_EVENT_SOCKET_ACCEPT = 8,  /* Socket accept. */
-    WINDIVERT_EVENT_REFLECT_OPEN = 9,   /* WinDivert handle opened. */
-    WINDIVERT_EVENT_REFLECT_CLOSE = 10, /* WinDivert handle closed. */
+    WINDIVERT_EVENT_SOCKET_CONNECT = 4, /* Socket connect. */
+    WINDIVERT_EVENT_SOCKET_LISTEN = 5,  /* Socket listen. */
+    WINDIVERT_EVENT_SOCKET_ACCEPT = 6,  /* Socket accept. */
+    WINDIVERT_EVENT_SOCKET_CLOSE = 7,   /* Socket close. */
+    WINDIVERT_EVENT_REFLECT_OPEN = 8,   /* WinDivert handle opened. */
+    WINDIVERT_EVENT_REFLECT_CLOSE = 9,  /* WinDivert handle closed. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*
@@ -312,6 +315,7 @@ extern WINDIVERTEXPORT BOOL WinDivertGetParam(
 #define WINDIVERT_PARAM_QUEUE_SIZE_MIN          65535       /* 64KB */
 #define WINDIVERT_PARAM_QUEUE_SIZE_MAX          33554432    /* 32MB */
 #define WINDIVERT_BATCH_MAX                     0xFF        /* 255 */
+#define WINDIVERT_MTU_MAX                       (40 + 0xFFFF)
 
 /****************************************************************************/
 /* WINDIVERT HELPER API                                                     */

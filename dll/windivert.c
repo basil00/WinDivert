@@ -65,8 +65,10 @@ static BOOLEAN WinDivertStrLen(const wchar_t *s, size_t maxlen,
 static BOOLEAN WinDivertStrCpy(wchar_t *dst, size_t dstlen,
     const wchar_t *src);
 static int WinDivertStrCmp(const char *s, const char *t);
-static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr);
-static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr);
+static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr,
+    UINT size);
+static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr,
+    UINT size, BOOL prefix);
 
 /*
  * Misc.
@@ -379,12 +381,11 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     UINT obj_len;
     ERROR comp_err;
     DWORD err;
-    BOOL sniff;
     HANDLE handle;
     UINT64 filter_flags;
     WINDIVERT_IOCTL ioctl;
     WINDIVERT_VERSION version;
- 
+
     // Parameter checking.
     switch (layer)
     {
@@ -418,8 +419,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
-    sniff = ((flags & WINDIVERT_FLAG_SNIFF) != 0);
-    filter_flags = WinDivertAnalyzeFilter(layer, sniff, object, obj_len);
+    filter_flags = WinDivertAnalyzeFilter(layer, object, obj_len);
 
     // Attempt to open the WinDivert device:
     handle = CreateFile(L"\\\\.\\" WINDIVERT_DEVICE_NAME,
@@ -711,66 +711,112 @@ static int WinDivertStrCmp(const char *s, const char *t)
     }
 }
 
-static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr)
+static BOOLEAN WinDivertMul128(UINT32 *n, UINT32 m)
+{
+    UINT64 n64 = (UINT64)n[0] * (UINT64)m;
+    n[0] = (UINT32)n64;
+    n64 = (UINT64)n[1] * (UINT64)m + (n64 >> 32);
+    n[1] = (UINT32)n64;
+    n64 = (UINT64)n[2] * (UINT64)m + (n64 >> 32);
+    n[2] = (UINT32)n64;
+    n64 = (UINT64)n[3] * (UINT64)m + (n64 >> 32);
+    n[3] = (UINT32)n64;
+    return ((n64 >> 32) == 0);
+}
+
+static BOOLEAN WinDivertAdd128(UINT32 *n, UINT32 a)
+{
+    UINT64 n64 = (UINT64)n[0] + (UINT64)a;
+    n[0] = (UINT32)n64;
+    n64 = (UINT64)n[1] + (n64 >> 32);
+    n[1] = (UINT32)n64;
+    n64 = (UINT64)n[2] + (n64 >> 32);
+    n[2] = (UINT32)n64;
+    n64 = (UINT64)n[3] + (n64 >> 32);
+    n[3] = (UINT32)n64;
+    return ((n64 >> 32) == 0);
+}
+
+static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr,
+    UINT size)
 {
     size_t i = 0;
-    UINT32 num = 0, num0;
-    if (str[i] == '\0')
-    {
-        return FALSE;
-    }
+    UINT32 n[4] = {0};
+    BOOLEAN result = TRUE;
     for (; str[i] && isdigit(str[i]); i++)
     {
-        num0 = num;
-        num *= 10;
-        num += (UINT32)(str[i] - '0');
-        if (num0 > num)
+        if (!WinDivertMul128(n, 10) || !WinDivertAdd128(n, str[i] - '0'))
         {
             return FALSE;
         }
+    }
+    if (i == 0)
+    {
+        return FALSE;
     }
     if (endptr != NULL)
     {
         *endptr = (char *)str + i;
     }
-    *intptr = num;
-    return TRUE;
+    for (i = 0; i < size; i++)
+    {
+        intptr[i] = n[i];
+    }
+    for (; result && i < size && i < 4; i++)
+    {
+        result = result && (n[i] == 0);
+    }
+    return result;
 }
 
-static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr)
+static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr,
+    UINT size, BOOL prefix)
 {
     size_t i = 0;
-    UINT32 num = 0, num0;
-    if (str[i] == '\0')
+    UINT32 n[4] = {0}, dig;
+    BOOLEAN result = TRUE;
+    if (prefix)
     {
-        return FALSE;
-    }
-    if (str[i] == '0' && str[i+1] == 'x')
-    {
-        i += 2;
-    }
-    for (; str[i] && WinDivertIsXDigit(str[i]); i++)
-    {
-        num0 = num;
-        num *= 16;
-        if (isdigit(str[i]))
+        if (str[i] == '0' && str[i+1] == 'x')
         {
-            num += (UINT32)(str[i] - '0');
+            i += 2;
         }
         else
         {
-            num += (UINT32)(WinDivertToLower(str[i]) - 'a') + 0x0A;
+            return FALSE;
         }
-        if (num0 > num)
+    }
+    for (; str[i] && WinDivertIsXDigit(str[i]); i++)
+    {
+        if (isdigit(str[i]))
+        {
+            dig = (UINT32)(str[i] - '0');
+        }
+        else
+        {
+            dig = (UINT32)(WinDivertToLower(str[i]) - 'a') + 0x0A;
+        }
+        if (!WinDivertMul128(n, 16) || !WinDivertAdd128(n, dig))
         {
             return FALSE;
         }
+    }
+    if (i == 0)
+    {
+        return FALSE;
     }
     if (endptr != NULL)
     {
         *endptr = (char *)str + i;
     }
-    *intptr = num;
-    return TRUE;
+    for (i = 0; i < size; i++)
+    {
+        intptr[i] = n[i];
+    }
+    for (; result && i < size && i < 4; i++)
+    {
+        result = result && (n[i] == 0);
+    }
+    return result;
 }
 

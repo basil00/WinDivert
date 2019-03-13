@@ -428,11 +428,10 @@ typedef enum
     WINDIVERT_EVENT_FLOW_ESTABLISHED,
     WINDIVERT_EVENT_FLOW_DELETED,
     WINDIVERT_EVENT_SOCKET_BIND,
-    WINDIVERT_EVENT_SOCKET_UNBIND,
     WINDIVERT_EVENT_SOCKET_CONNECT,
-    WINDIVERT_EVENT_SOCKET_DISCONNECT,
     WINDIVERT_EVENT_SOCKET_LISTEN,
     WINDIVERT_EVENT_SOCKET_ACCEPT,
+    WINDIVERT_EVENT_SOCKET_CLOSE,
     WINDIVERT_EVENT_REFLECT_OPEN,
     WINDIVERT_EVENT_REFLECT_CLOSE,
 } <b>WINDIVERT_EVENT</b>, *<b>PWINDIVERT_EVENT</b>;
@@ -517,27 +516,10 @@ A <code>bind()</code> operation.
 </tr>
 <tr>
 <td>
-<code>WINDIVERT_EVENT_SOCKET_UNBIND</code>
-</td>
-<td>
-A previous binding is removed.
-This event cannot be blocked.
-</td>
-<tr>
-<td>
 <code>WINDIVERT_EVENT_SOCKET_CONNECT</code>
 </td>
 <td>
 A <code>connect()</code> operation.
-</td>
-</tr>
-<tr>
-<td>
-<code>WINDIVERT_EVENT_SOCKET_DISCONNECT</code>
-</td>
-<td>
-A previous connection is terminated.
-This event cannot be blocked.
 </td>
 </tr>
 <tr>
@@ -556,6 +538,15 @@ A <code>listen()</code> operation.
 An <code>accept()</code> operation.
 </td>
 </tr>
+<tr>
+<td>
+<code>WINDIVERT_EVENT_SOCKET_CLOSE</code>
+</td>
+<td>
+A socket endpoint is closed.
+This corresponds to a previous binding being released, or an established
+connection being terminated.
+The event cannot be blocked.
 </table>
 </center>
 </li>
@@ -602,6 +593,8 @@ typedef struct
 
 typedef struct
 {
+    UINT64 Endpoint;
+    UINT64 ParentEndpoint;
     UINT32 ProcessId;
     UINT32 LocalAddr[4];
     UINT32 RemoteAddr[4];
@@ -612,6 +605,8 @@ typedef struct
 
 typedef struct
 {
+    UINT64 Endpoint;
+    UINT64 ParentEndpoint;
     UINT32 ProcessId;
     UINT32 LocalAddr[4];
     UINT32 RemoteAddr[4];
@@ -634,6 +629,7 @@ typedef struct
     INT64  Timestamp;
     UINT64 Layer:8;
     UINT64 Event:8;
+    UINT64 Sniffed:1;
     UINT64 Outbound:1;
     UINT64 Loopback:1;
     UINT64 Impostor:1;
@@ -657,6 +653,8 @@ typedef struct
 <li> <code>Timestamp</code>: A timestamp indicating when event occurred.</li>
 <li> <code>Layer</code>: The handle's layer (<code>WINDIVERT_LAYER_*</code>).</li>
 <li> <code>Event</code>: The captured event (<code>WINDIVERT_EVENT_*</code>).</li>
+<li> <code>Sniffed</code>: Set to <code>1</code> if the event was
+    <q>sniffed</q> (i.e., not blocked), <code>0</code> otherwise..</li>
 <li> <code>Outbound</code>: Set to <code>1</code> for <i>outbound</i>
     packets/event, <code>0</code> for <i>inbound</i> or otherwise.</li>
 <li> <code>Loopback</code>: Set to <code>1</code> for loopback packets, <code>0</code>
@@ -674,12 +672,19 @@ valid, <code>0</code> otherwise.</li>
 <li> <code>Network.IfIdx</code>: The interface index on which the packet arrived
     (for inbound packets), or is to be sent (for outbound packets).</li>
 <li> <code>Network.SubIfIdx</code>: The sub-interface index for <code>IfIdx</code>.</li>
+<li> <code>Flow.EndpointId</code>: The endpoint ID of the flow.</li>
+<li> <code>Flow.ParentEndpointId</code>: The parent endpoint ID of the
+     flow.</li>
 <li> <code>Flow.ProcessId</code>: The ID of the process associated with the
-    flow.</li>
+     flow.</li>
 <li> <code>Flow.LocalAddr</code>, <code>Flow.RemoteAddr</code>,
      <code>Flow.LocalPort</code>, <code>Flow.RemotePort</code>, and
      <code>Flow.Protocol</code>: The network 5-tuple associated with the
      flow.</li>
+<li> <code>Socket.EndpointId</code>: The endpoint ID of the socket
+     operation.</li>
+<li> <code>Socket.ParentEndpointId</code>: The parent endpoint ID of the 
+     socket operation.</li>
 <li> <code>Socket.ProcessId</code>: The ID of the process associated with the
      socket operation.</li>
 <li> <code>Socket.LocalAddr</code>, <code>Socket.RemoteAddr</code>,
@@ -2732,6 +2737,8 @@ The possible fields are:
 <tr><td><code>subIfIdx</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Sub-interface index</td></tr>
 <tr><td><code>loopback</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is loopback packet?</td></tr>
 <tr><td><code>impostor</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Is impostor packet?</td></tr>
+<tr><td><code>endpointId</code></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Endpoint ID</td></tr>
+<tr><td><code>parentEndpointId</code></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Parent endpoint ID</td></tr>
 <tr><td><code>processId</code></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>Process ID</td></tr>
 <tr><td><code>random8</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>8-bit random number</td></tr>
 <tr><td><code>random16</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>16-bit random number</td></tr>
@@ -2819,20 +2826,21 @@ and layers symbolically, e.g., <q><code>event == CONNECT</code></q> or
 The possible macros are:
 </p>
 <center>
-<table border="1" cellpadding="5">
+<table border="1" cellpadding="5" width="75%">
 <tr><th>Macro</th><th colspan="5">Layer</th><th>Value</th></tr>
 <tr><th></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
 <tr><td><code>PACKET</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td><code>WINDIVERT_EVENT_NETWORK_PACKET</code></td></tr>
 <tr><td><code>ESTABLISHED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_ESTABLISHED</code></td></tr>
 <tr><td><code>DELETED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_DELETED</code></td></tr>
 <tr><td><code>BIND</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_BIND</code></td></tr>
-<tr><td><code>UNBIND</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_UNBIND</code></td></tr>
 <tr><td><code>CONNECT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_CONNECT</code></td></tr>
-<tr><td><code>DISCONNECT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_DISCONNECT</code></td></tr>
 <tr><td><code>ACCEPT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_ACCEPT</code></td></tr>
 <tr><td><code>LISTEN</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_LISTEN</code></td></tr>
 <tr><td><code>OPEN</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_EVENT_REFLECT_OPEN</code></td></tr>
-<tr><td><code>CLOSE</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_EVENT_REFLECT_CLOSE</code></td></tr>
+<tr><td><code>CLOSE</code></td><td></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td><code>WINDIVERT_EVENT_SOCKET_CLOSE</code>
+for the <code>SOCKET</code> layer, or
+<code>WINDIVERT_EVENT_REFLECT_CLOSE</code> for the <code>REFLECT</code>
+layer.</td></tr>
 <tr><td><code>NETWORK</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_NETWORK</code></td></tr>
 <tr><td><code>NETWORK_FORWARD</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_NETWORK_FORWARD</code></td></tr>
 <tr><td><code>FLOW</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_FLOW</code></td></tr>

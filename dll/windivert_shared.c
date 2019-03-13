@@ -207,6 +207,10 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
                 WinDivertSerializeNumber(stream, filter->arg[i]);
             }
             break;
+        case WINDIVERT_FILTER_FIELD_ENDPOINTID:
+        case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
+            WinDivertSerializeNumber(stream, filter->arg[1]);
+            break;
         case WINDIVERT_FILTER_FIELD_PACKET:
         case WINDIVERT_FILTER_FIELD_PACKET16:
         case WINDIVERT_FILTER_FIELD_PACKET32:

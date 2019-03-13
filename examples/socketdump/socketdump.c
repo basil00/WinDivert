@@ -36,6 +36,7 @@
  * DESCRIPTION:
  *
  * usage: socketdump.exe [filter]
+ *        socketdump.exe --block [filter]
  */
 
 #include <winsock2.h>
@@ -62,22 +63,39 @@ int __cdecl main(int argc, char **argv)
     char *filename;
     DWORD path_len;
     WINDIVERT_ADDRESS addr;
+    BOOL block = FALSE;
 
     switch (argc)
     {
         case 1:
             break;
         case 2:
-            filter = argv[1];
+            if (strcmp(argv[1], "--block") == 0)
+            {
+                block = TRUE;
+            }
+            else
+            {
+                filter = argv[1];
+            }
             break;
+        case 3:
+            if (strcmp(argv[1], "--block") == 0)
+            {
+                block = TRUE;
+                filter = argv[2];
+                break;
+            }
+            // Fallthrough:
         default:
             fprintf(stderr, "usage: %s [filter]\n");
+            fprintf(stderr, "       %s --block [filter]\n");
             exit(EXIT_FAILURE);
     }
 
     // Open WinDivert SOCKET handle:
     handle = WinDivertOpen(filter, WINDIVERT_LAYER_SOCKET, priority, 
-        WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_RECV_ONLY);
+        (block? 0: WINDIVERT_FLAG_SNIFF) | WINDIVERT_FLAG_RECV_ONLY);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER &&
@@ -108,10 +126,6 @@ int __cdecl main(int argc, char **argv)
                 SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("BIND");
                 break;
-            case WINDIVERT_EVENT_SOCKET_UNBIND:
-                SetConsoleTextAttribute(console, FOREGROUND_RED);
-                printf("UNBIND");
-                break;
             case WINDIVERT_EVENT_SOCKET_LISTEN:
                 SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("LISTEN");
@@ -120,13 +134,13 @@ int __cdecl main(int argc, char **argv)
                 SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("CONNECT");
                 break;
-            case WINDIVERT_EVENT_SOCKET_DISCONNECT:
-                SetConsoleTextAttribute(console, FOREGROUND_RED);
-                printf("DISCONNECT");
-                break;
             case WINDIVERT_EVENT_SOCKET_ACCEPT:
                 SetConsoleTextAttribute(console, FOREGROUND_GREEN);
                 printf("ACCEPT");
+                break;
+            case WINDIVERT_EVENT_SOCKET_CLOSE:
+                SetConsoleTextAttribute(console, FOREGROUND_RED);
+                printf("CLOSE");
                 break;
             default:
                 SetConsoleTextAttribute(console, FOREGROUND_BLUE);
@@ -165,6 +179,18 @@ int __cdecl main(int argc, char **argv)
         {
             printf("???");
         }
+        SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
+            FOREGROUND_BLUE);
+
+        printf(" endpoint=");
+        SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
+        printf("%lu", addr.Socket.Endpoint);
+        SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
+            FOREGROUND_BLUE);
+
+        printf(" parent=");
+        SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
+        printf("%lu", addr.Socket.ParentEndpoint);
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
             FOREGROUND_BLUE);
 

@@ -296,13 +296,13 @@ static const struct test tests[] =
      "not packet[69] <= 0x29)))))",            &pkt_echo_request, FALSE},
     {"ip.HdrLength == 5 and ip.TOS == 0 and ip.Length == 84 and "
      "ip.Id == 0x1234 and ip.FragOff == 0 and ip.MF == 0 and ip.DF == 1 and "
-     "ip.TTL == 64 and ip.Protocol == 1 and ip.SrcAddr == 0x0A000001 and "
-     "ip.DstAddr == 0x08080808 and icmp.Type == 8 and icmp.Code == 0 and "
+     "ip.TTL == 64 and ip.Protocol == 1 and ip.SrcAddr == 0xFFFF0A000001 and "
+     "ip.DstAddr == 0xFFFF08080808 and icmp.Type == 8 and icmp.Code == 0 and "
      "icmp.Body == 0x0D560001",                &pkt_echo_request, TRUE},
     {"ip.HdrLength > 5 or ip.TOS > 0 or ip.Length != 84 or ip.Id < 0x1234 or "
      "ip.FragOff != 0 or ip.MF < 0 or ip.DF != 1 or ip.TTL > 64 or "
-     "ip.Protocol != 1 or ip.SrcAddr < 0x0A000001 or "
-     "ip.DstAddr < 0x08080808 or icmp.Type != 8 or icmp.Code != 0 or "
+     "ip.Protocol != 1 or ip.SrcAddr < 0xFFFF0A000001 or "
+     "ip.DstAddr < 0xFFFF08080808 or icmp.Type != 8 or icmp.Code != 0 or "
      "icmp.Body != 0x0D560001",                &pkt_echo_request, FALSE},
     {"localAddr == 10.0.0.1 && remoteAddr == 8.8.8.8 && localPort == 8 && "
      "remotePort == 0 && protocol == 1",       &pkt_echo_request, TRUE},
@@ -481,8 +481,8 @@ static const struct test tests[] =
      "not packet[477] == 0x69)))",              &pkt_http_request, FALSE},
     {"ip.HdrLength == 5 and ip.TOS == 0 and ip.Length == 521 and "
      "ip.Id == 0x482D and ip.FragOff == 0 and ip.MF == 0 and ip.DF == 1 and "
-     "ip.TTL == 64 and ip.Protocol == 6 and ip.SrcAddr == 0x0A0A0A0A and "
-     "ip.DstAddr == 0x5DB8D877 and tcp.SrcPort == 41754 and "
+     "ip.TTL == 64 and ip.Protocol == 6 and ip.SrcAddr == 0xFFFF0A0A0A0A and "
+     "ip.DstAddr == 0xFFFF5DB8D877 and tcp.SrcPort == 41754 and "
      "tcp.DstPort == 80 and tcp.SeqNum == 1396231362 and "
      "tcp.AckNum == 1446490965 and tcp.HdrLength == 8 and tcp.Fin == 0 and "
      "tcp.Syn == 0 and tcp.Rst == 0 and tcp.Psh == 1 and tcp.Ack == 1 and "
@@ -490,12 +490,13 @@ static const struct test tests[] =
                                                &pkt_http_request, TRUE},
     {"ip.HdrLength > 5 or ip.TOS < 0 or ip.Length < 521 or ip.Id != 0x482D or "
      "ip.FragOff != 0 or ip.MF != 0 or ip.DF < 1 or ip.TTL < 64 or "
-     "ip.Protocol > 6 or ip.SrcAddr != 0x0A0A0A0A or "
-     "ip.DstAddr < 0x5DB8D877 or tcp.SrcPort < 41754 or tcp.DstPort < 80 or "
-     "tcp.SeqNum != 1396231362 or tcp.AckNum < 1446490965 or "
-     "tcp.HdrLength < 8 or tcp.Fin != 0 or tcp.Syn != 0 or tcp.Rst != 0 or "
-     "tcp.Psh != 1 or tcp.Ack > 1 or tcp.Urg != 0 or tcp.Window < 115 or "
-     "tcp.UrgPtr < 0",                         &pkt_http_request, FALSE},
+     "ip.Protocol > 6 or ip.SrcAddr != 0xFFFF0A0A0A0A or "
+     "ip.DstAddr < 0xFFFF5DB8D877 or tcp.SrcPort < 41754 or "
+     "tcp.DstPort < 80 or tcp.SeqNum != 1396231362 or "
+     "tcp.AckNum < 1446490965 or tcp.HdrLength < 8 or tcp.Fin != 0 or "
+     "tcp.Syn != 0 or tcp.Rst != 0 or tcp.Psh != 1 or tcp.Ack > 1 or "
+     "tcp.Urg != 0 or tcp.Window < 115 or tcp.UrgPtr < 0",
+                                               &pkt_http_request, FALSE},
     {"localAddr == 10.10.10.10 && remoteAddr == 93.184.216.119 && "
      "localPort == 41754 && remotePort == 80 && protocol == 6",
                                                &pkt_http_request, TRUE},
@@ -585,14 +586,14 @@ static const struct test tests[] =
     {"packet32[54b] <= 0xFFFFFFE",             &pkt_dns_request, FALSE},
     {"ip.HdrLength == 5 and ip.TOS == 0 and ip.Length == 57 and "
      "ip.Id == 0x2090 and ip.FragOff == 0 and ip.MF == 0 and ip.DF == 0 and "
-     "ip.TTL == 73 and ip.Protocol == 17 and ip.SrcAddr == 0x0A000001 and "
-     "ip.DstAddr == 0x08080404 and udp.SrcPort == 57413 and "
+     "ip.TTL == 73 and ip.Protocol == 17 and ip.SrcAddr == 0xFFFF0A000001 and "
+     "ip.DstAddr == 0xFFFF08080404 and udp.SrcPort == 57413 and "
      "udp.DstPort == 53 and udp.Length == 37", &pkt_dns_request, TRUE},
     {"ip.HdrLength > 5 or ip.TOS > 0 or ip.Length < 57 or ip.Id > 0x2090 or "
      "ip.FragOff != 0 or ip.MF < 0 or ip.DF < 0 or ip.TTL > 73 or "
-     "ip.Protocol < 17 or ip.SrcAddr < 0x0A000001 or "
-     "ip.DstAddr > 0x08080404 or udp.SrcPort > 57413 or udp.DstPort != 53 or "
-     "udp.Length < 37",                        &pkt_dns_request, FALSE},
+     "ip.Protocol < 17 or ip.SrcAddr < 0xFFFF0A000001 or "
+     "ip.DstAddr > 0xFFFF08080404 or udp.SrcPort > 57413 or "
+     "udp.DstPort != 53 or udp.Length < 37",   &pkt_dns_request, FALSE},
     {"localAddr == 10.0.0.1 && remoteAddr == 8.8.4.4 && "
      "localPort == 57413 && remotePort == 53 && protocol == 17",
                                                &pkt_dns_request, TRUE},
@@ -1316,8 +1317,8 @@ static DWORD monitor_worker(LPVOID arg)
                 tests[i].packet->packet_len, &addr) != tests[i].match)
         {
             fprintf(stderr, "error: failed to match recompiled filter "
-                "(test = %.3u, filter = \"%s\", err = %d)\n", i, filter_2,
-                GetLastError());
+                "(test = %.3u, filter = \"%s\", err = %d)\n", i,
+                tests[i].filter, GetLastError());
             exit(EXIT_FAILURE);
         }
     }
