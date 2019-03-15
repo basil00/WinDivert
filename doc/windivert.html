@@ -2730,6 +2730,7 @@ The possible fields are:
 <tr><th>Field</th><th colspan="5">Layer</th><th>Description</th></tr>
 <tr><th></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
 <tr><td><code>zero</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The value zero</td></tr>
+<tr><td><code>timestamp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The packet/event timestamp</td></tr>
 <tr><td><code>event</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The event</td></tr>
 <tr><td><code>outbound</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is outbound?</td></tr>
 <tr><td><code>inbound</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is inbound?</td></tr>
@@ -2748,6 +2749,7 @@ The possible fields are:
 <tr><td><code>packet[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 8-bit word of the packet</td></tr>
 <tr><td><code>packet16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the packet</td></tr>
 <tr><td><code>packet32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the packet</td></tr>
+<tr><td><code>length</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The packet length</td></tr>
 <tr><td><code>ip</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv4?</td></tr>
 <tr><td><code>ipv6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv6?</td></tr>
 <tr><td><code>icmp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMP?</td></tr>
@@ -2829,6 +2831,12 @@ The possible macros are:
 <table border="1" cellpadding="5" width="75%">
 <tr><th>Macro</th><th colspan="5">Layer</th><th>Value</th></tr>
 <tr><th></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
+<tr><td><code>TRUE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>1</code></td></tr>
+<tr><td><code>FALSE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>0</code></td></tr>
+<tr><td><code>TCP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_TCP</code> (<code>6</code>)</td></tr>
+<tr><td><code>UDP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_UDP</code> (<code>17</code>)</td></tr>
+<tr><td><code>ICMP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_ICMP</code> (<code>1</code>)</td></tr>
+<tr><td><code>ICMPV6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_ICMPV6</code> (<code>58</code>)</td></tr>
 <tr><td><code>PACKET</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td><code>WINDIVERT_EVENT_NETWORK_PACKET</code></td></tr>
 <tr><td><code>ESTABLISHED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_ESTABLISHED</code></td></tr>
 <tr><td><code>DELETED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_DELETED</code></td></tr>

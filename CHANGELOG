@@ -186,7 +186,10 @@ WinDivert 2.0.0-rc
         operation occurred.
     - The WinDivert filter language has been expanded with new fields:
       * event: The event value.
-      * processId: (FLOW/SOCKET/REFLECT layers) the process Id.
+      * timestamp: The event timestamp.
+      * endpointId: (FLOW/SOCKET layers) the endpoint ID.
+      * parentEndpointId: (FLOW/SOCKET layers) the parent endpoint ID.
+      * processId: (FLOW/SOCKET/REFLECT layers) the process ID.
       * localAddr: (NETWORK/NETWORK_FORWARD/FLOW/SOCKET layers) the local
         address.
       * localPort: (NETWORK/NETWORK_FORWARD/FLOW/SOCKET layers) the local
@@ -204,6 +207,7 @@ WinDivert 2.0.0-rc
         number.
       * random32: (NETWORK/NETWORK_FORWARD layers) a 32-bit pseudo random
         number.
+      * length: (NETWORK/NETWORK_FORWARD layers) the packet length.
       * zero: The value "0".
     - The WinDivert filter language can now address packet/payload data for
       the NETWORK/NETWORK_FORWARD layers:
@@ -241,6 +245,12 @@ WinDivert 2.0.0-rc
       * FLOW: (REFLECT layer) equal to WINDIVERT_LAYER_FLOW.
       * SOCKET: (REFLECT layer) equal to WINDIVERT_LAYER_SOCKET.
       * REFLECT: (REFLECT layer) equal to WINDIVERT_LAYER_REFLECT.
+      * TRUE: equal to 1.
+      * FALSE: equal to 0.
+      * TCP: equal to IPPROTO_TCP (6).
+      * UDP: equal to IPPROTO_UDP (17).
+      * ICMP: equal to IPPROTO_ICMP (1).
+      * ICMPV6: equal to IPPROTO_ICMPV6 (58).
     - WinDivertOpen() now supports several new flags:
       * WINDIVERT_FLAG_RECV_ONLY/WINDIVERT_FLAG_READ_ONLY: The handle cannot
         be used for send operations.

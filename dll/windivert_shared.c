@@ -33,7 +33,7 @@
  */
 
 #define WINDIVERT_OBJECT_MAXLEN                                         \
-    (8 + 4 + 2 + WINDIVERT_FILTER_MAXLEN * (1 + 2 + 2 + 4*7 + 2 + 2) + 1)
+    (8 + 4 + 2 + WINDIVERT_FILTER_MAXLEN * (1 + 1 + 2 + 2 + 4*7 + 3 + 3) + 1)
 
 #define MAX(a, b)                               ((a) > (b)? (a): (b))
 
@@ -184,6 +184,26 @@ static void WinDivertSerializeNumber(PWINDIVERT_STREAM stream, UINT32 val)
 }
 
 /*
+ * Serialize a label.
+ */
+static void WinDivertSerializeLabel(PWINDIVERT_STREAM stream, UINT16 label)
+{
+    switch (label)
+    {
+        case WINDIVERT_FILTER_RESULT_ACCEPT:
+            WinDivertPutChar(stream, 'A');
+            break;
+        case WINDIVERT_FILTER_RESULT_REJECT:
+            WinDivertPutChar(stream, 'X');
+            break;
+        default:
+            WinDivertPutChar(stream, 'L');
+            WinDivertSerializeNumber(stream, label);
+            break;
+    }
+}
+
+/*
  * Serialize a test.
  */
 static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
@@ -195,6 +215,7 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
     WinDivertPutChar(stream, '_');
     WinDivertSerializeNumber(stream, filter->field);
     WinDivertSerializeNumber(stream, filter->test);
+    WinDivertSerializeNumber(stream, filter->neg);
     WinDivertSerializeNumber(stream, filter->arg[0]);
     switch (filter->field)
     {
@@ -209,6 +230,7 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
             break;
         case WINDIVERT_FILTER_FIELD_ENDPOINTID:
         case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
+        case WINDIVERT_FILTER_FIELD_TIMESTAMP:
             WinDivertSerializeNumber(stream, filter->arg[1]);
             break;
         case WINDIVERT_FILTER_FIELD_PACKET:
@@ -227,8 +249,8 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
         default:
             break;
     }
-    WinDivertSerializeNumber(stream, (UINT8)(filter->success + 2));
-    WinDivertSerializeNumber(stream, (UINT8)(filter->failure + 2));
+    WinDivertSerializeLabel(stream, filter->success);
+    WinDivertSerializeLabel(stream, filter->failure);
 }
 
 /*

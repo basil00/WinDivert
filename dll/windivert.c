@@ -386,7 +386,20 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     WINDIVERT_IOCTL ioctl;
     WINDIVERT_VERSION version;
 
-    // Parameter checking.
+    // Static checks (should be compiled away if TRUE):
+    if (sizeof(WINDIVERT_ADDRESS) != 80 ||
+        sizeof(WINDIVERT_DATA_NETWORK) != 8 ||
+        offsetof(WINDIVERT_DATA_FLOW, Protocol) != 56 ||
+        offsetof(WINDIVERT_DATA_SOCKET, Protocol) != 56 ||
+        offsetof(WINDIVERT_DATA_REFLECT, Priority) != 24 ||
+        sizeof(WINDIVERT_FILTER) != 24 ||
+        offsetof(WINDIVERT_ADDRESS, Reserved2) != 16)
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return INVALID_HANDLE_VALUE;
+    }
+
+    // Parameter checking:
     switch (layer)
     {
         case WINDIVERT_LAYER_NETWORK:

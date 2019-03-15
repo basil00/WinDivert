@@ -184,13 +184,13 @@ int __cdecl main(int argc, char **argv)
 
         printf(" endpoint=");
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
-        printf("%lu", addr.Socket.Endpoint);
+        printf("%lu", addr.Socket.EndpointId);
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
             FOREGROUND_BLUE);
 
         printf(" parent=");
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
-        printf("%lu", addr.Socket.ParentEndpoint);
+        printf("%lu", addr.Socket.ParentEndpointId);
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
             FOREGROUND_BLUE);
 

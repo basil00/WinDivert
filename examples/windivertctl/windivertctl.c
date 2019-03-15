@@ -314,6 +314,10 @@ usage:
         {
             printf("\"%s\"", filter_str);
         }
+        else
+        {
+            printf("\"%s\"", (char *)packet);
+        }
         SetConsoleTextAttribute(console,
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
         putchar('\n');

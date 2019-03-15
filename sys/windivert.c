@@ -488,8 +488,8 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
 static void windivert_queue_packet(context_t context, packet_t packet);
 static void windivert_reinject_packet(packet_t packet);
 static void windivert_free_packet(packet_t packet);
-static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b,
-    BOOL big);
+static int windivert_big_num_compare(BOOL neg_a, const UINT32 *a, BOOL neg_b,
+    const UINT32 *b, BOOL big);
 static BOOL windivert_copy_data(PNET_BUFFER buffer, PVOID data, UINT size);
 static BOOL windivert_lookup_data(PNET_BUFFER buffer, UINT offset, INT idx,
     PVOID data, UINT size);
@@ -5062,42 +5062,53 @@ static void windivert_free_packet(packet_t packet)
 /*
  * Big number comparison.
  */
-static int windivert_big_num_compare(const UINT32 *a, const UINT32 *b, BOOL big)
+static int windivert_big_num_compare(BOOL neg_a, const UINT32 *a, BOOL neg_b,
+    const UINT32 *b, BOOL big)
 {
+    int neg;
+    if (neg_a && !neg_b)
+    {
+        return -1;
+    }
+    if (!neg_a && neg_b)
+    {
+        return 1;
+    }
+    neg = (neg_a? -1: 1);
     if (big)
     {
         if (a[3] < b[3])
         {
-            return -1;
+            return -neg;
         }
         if (a[3] > b[3])
         {
-            return 1;
+            return neg;
         }
         if (a[2] < b[2])
         {
-            return -1;
+            return -neg;
         }
         if (a[2] > b[2])
         {
-            return 1;
+            return neg;
         }
         if (a[1] < b[1])
         {
-            return -1;
+            return -neg;
         }
         if (a[1] > b[1])
         {
-            return 1;
+            return neg;
         }
     }
     if (a[0] < b[0])
     {
-        return -1;
+        return -neg;
     }
     if (a[0] > b[0])
     {
-        return 1;
+        return neg;
     }
     return 0;
 }
@@ -5406,6 +5417,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     {
         BOOL result = FALSE;
         BOOL big    = FALSE;
+        BOOL neg    = FALSE;
         int cmp;
         UINT32 field[4];
 
@@ -5413,6 +5425,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
         {
             case WINDIVERT_FILTER_FIELD_ZERO:
             case WINDIVERT_FILTER_FIELD_EVENT:
+            case WINDIVERT_FILTER_FIELD_TIMESTAMP:
                 result = TRUE;
                 break;
             case WINDIVERT_FILTER_FIELD_INBOUND:
@@ -5448,6 +5461,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
             case WINDIVERT_FILTER_FIELD_PACKET:
             case WINDIVERT_FILTER_FIELD_PACKET16:
             case WINDIVERT_FILTER_FIELD_PACKET32:
+            case WINDIVERT_FILTER_FIELD_LENGTH:
                 result = (layer == WINDIVERT_LAYER_NETWORK ||
                           layer == WINDIVERT_LAYER_NETWORK_FORWARD);
                 break;
@@ -5564,6 +5578,29 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                 case WINDIVERT_FILTER_FIELD_EVENT:
                     field[0] = (UINT32)event;
                     break;
+                case WINDIVERT_FILTER_FIELD_LENGTH:
+                    if (ipv4)
+                    {
+                        field[0] = (UINT32)RtlUshortByteSwap(ip_header->Length);
+                    }
+                    else
+                    {
+                        field[0] =
+                            (UINT32)RtlUshortByteSwap(ipv6_header->Length) +
+                            sizeof(WINDIVERT_IPV6HDR);
+                    }
+                    break;
+                case WINDIVERT_FILTER_FIELD_TIMESTAMP:
+                {
+                    UINT64 val64;
+                    neg = (timestamp < 0);
+                    val64 = (UINT64)(neg? -timestamp: timestamp);
+                    big = TRUE;
+                    field[3] = field[2] = 0;
+                    field[0] = (UINT32)val64;
+                    field[1] = (UINT32)(val64 >> 32);
+                    break;
+                }
                 case WINDIVERT_FILTER_FIELD_RANDOM8:
                     field[0] = (UINT32)((random64 >> 48) & 0xFF);
                     break;
@@ -6129,8 +6166,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     field[0] = (UINT32)reflect_data->Layer;
                     break;
                 case WINDIVERT_FILTER_FIELD_PRIORITY:
-                    field[0] = (UINT32)((INT32)reflect_data->Priority +
-                        WINDIVERT_PRIORITY_MAX);
+                    neg = (reflect_data->Priority < 0);
+                    field[0] = (UINT32)(neg? -reflect_data->Priority:
+                        reflect_data->Priority);
                     break;
                 default:
                     return FALSE;
@@ -6138,7 +6176,8 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
         }
         if (result)
         {
-            cmp = windivert_big_num_compare(field, filter[ip].arg, big);
+            cmp = windivert_big_num_compare(neg, field,
+                (filter[ip].neg? TRUE: FALSE), filter[ip].arg, big);
             switch (filter[ip].test)
             {
                 case WINDIVERT_FILTER_TEST_EQ:
@@ -6187,6 +6226,7 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
 {
     PWINDIVERT_FILTER filter = NULL;
     WINDIVERT_EVENT event;
+    BOOL neg_lb, neg_ub, neg;
     UINT32 lb[4], ub[4];
     int result;
     UINT16 i;
@@ -6244,6 +6284,7 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
         }
 
         // Enforce ranges:
+        neg_lb = neg_ub = 0;
         lb[0] = lb[1] = lb[2] = lb[3] = 0;
         ub[0] = ub[1] = ub[2] = ub[3] = 0;
         switch (ioctl_filter[i].field)
@@ -6259,6 +6300,10 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
             {
                 INT idx = (INT)ioctl_filter[i].arg[1];
+                if (ioctl_filter[i].neg)
+                {
+                    goto windivert_filter_compile_error;
+                }
                 if (idx > WINDIVERT_MTU_MAX || idx < -WINDIVERT_MTU_MAX)
                 {
                     goto windivert_filter_compile_error;
@@ -6294,7 +6339,8 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
                 ub[0] = WINDIVERT_LAYER_MAX;
                 break;
             case WINDIVERT_FILTER_FIELD_PRIORITY:
-                ub[0] = 2 * WINDIVERT_PRIORITY_MAX;
+                neg_lb = TRUE;
+                lb[0] = ub[0] = WINDIVERT_PRIORITY_MAX;
                 break;
             case WINDIVERT_FILTER_FIELD_EVENT:
                 event = (WINDIVERT_EVENT)ioctl_filter[i].arg[0];
@@ -6385,6 +6431,10 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_RANDOM16:
                 ub[0] = 0xFFFF;
                 break;
+            case WINDIVERT_FILTER_FIELD_LENGTH:
+                lb[0] = sizeof(WINDIVERT_IPHDR);
+                ub[0] = WINDIVERT_MTU_MAX;
+                break;
             case WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
                 ub[0] = 0x000FFFFF;
                 break;
@@ -6392,6 +6442,12 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_IP_DSTADDR:
                 ub[0] = 0xFFFFFFFF;
                 ub[1] = lb[1] = 0x0000FFFF;
+                break;
+            case WINDIVERT_FILTER_FIELD_TIMESTAMP:
+                lb[1] = 0x80000000;
+                ub[0] = 0xFFFFFFFF;
+                ub[1] = 0x7FFFFFFF;
+                neg_lb = TRUE;
                 break;
             case WINDIVERT_FILTER_FIELD_ENDPOINTID:
             case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
@@ -6407,13 +6463,24 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
                 ub[0] = 0xFFFFFFFF;
                 break;
         }
-        result = windivert_big_num_compare(ioctl_filter[i].arg, lb, TRUE);
+        neg = (ioctl_filter[i].neg? TRUE: FALSE);
+        result = windivert_big_num_compare(neg, ioctl_filter[i].arg, neg_lb,
+            lb, /*big=*/TRUE);
         if (result < 0)
         {
             goto windivert_filter_compile_error;
         }
-        result = windivert_big_num_compare(ioctl_filter[i].arg, ub, TRUE);
+        result = windivert_big_num_compare(neg, ioctl_filter[i].arg, neg_ub,
+            ub, /*big=*/TRUE);
         if (result > 0)
+        {
+            goto windivert_filter_compile_error;
+        }
+
+        // Disallow negative zero:
+        if (neg &&
+                ioctl_filter[i].arg[0] == 0 && ioctl_filter[i].arg[1] == 0 &&
+                ioctl_filter[i].arg[2] == 0 && ioctl_filter[i].arg[3] == 0)
         {
             goto windivert_filter_compile_error;
         }
@@ -6422,6 +6489,7 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
         filter[i].test    = ioctl_filter[i].test;
         filter[i].success = ioctl_filter[i].success;
         filter[i].failure = ioctl_filter[i].failure;
+        filter[i].neg     = ioctl_filter[i].neg;
         filter[i].arg[0]  = ioctl_filter[i].arg[0];
         filter[i].arg[1]  = ioctl_filter[i].arg[1];
         filter[i].arg[2]  = ioctl_filter[i].arg[2];

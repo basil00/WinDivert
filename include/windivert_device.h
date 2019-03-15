@@ -47,8 +47,8 @@
 #define WINDIVERT_VERSION_MAJOR                     2
 #define WINDIVERT_VERSION_MINOR                     0
 
-#define WINDIVERT_MAGIC_DLL                         0xB9B4733C65DCE2C6ull
-#define WINDIVERT_MAGIC_SYS                         0x3A55EB5F1C9584F1ull
+#define WINDIVERT_MAGIC_DLL                         0x4C4C447669645724ull
+#define WINDIVERT_MAGIC_SYS                         0x5359537669645723ull
 
 #define WINDIVERT_STR2(s)                           #s
 #define WINDIVERT_STR(s)                            WINDIVERT_STR2(s)
@@ -144,9 +144,11 @@
 #define WINDIVERT_FILTER_FIELD_UDP_PAYLOAD          77
 #define WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16        78
 #define WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32        79
-#define WINDIVERT_FILTER_FIELD_RANDOM8              80
-#define WINDIVERT_FILTER_FIELD_RANDOM16             81
-#define WINDIVERT_FILTER_FIELD_RANDOM32             82
+#define WINDIVERT_FILTER_FIELD_LENGTH               80
+#define WINDIVERT_FILTER_FIELD_TIMESTAMP            81
+#define WINDIVERT_FILTER_FIELD_RANDOM8              82
+#define WINDIVERT_FILTER_FIELD_RANDOM16             83
+#define WINDIVERT_FILTER_FIELD_RANDOM32             84
 #define WINDIVERT_FILTER_FIELD_MAX                  \
     WINDIVERT_FILTER_FIELD_RANDOM32
 
@@ -158,10 +160,10 @@
 #define WINDIVERT_FILTER_TEST_GEQ                   5
 #define WINDIVERT_FILTER_TEST_MAX                   WINDIVERT_FILTER_TEST_GEQ
 
-#define WINDIVERT_FILTER_MAXLEN                     (0xFF-2)
+#define WINDIVERT_FILTER_MAXLEN                     256
 
-#define WINDIVERT_FILTER_RESULT_ACCEPT              (WINDIVERT_FILTER_MAXLEN+1)
-#define WINDIVERT_FILTER_RESULT_REJECT              (WINDIVERT_FILTER_MAXLEN+2)
+#define WINDIVERT_FILTER_RESULT_ACCEPT              0x7FFE
+#define WINDIVERT_FILTER_RESULT_REJECT              0x7FFF
 
 /*
  * WinDivert layers.
@@ -222,6 +224,11 @@
 #define WINDIVERT_PRIORITY_MIN                      WINDIVERT_PRIORITY_LOWEST
 
 /*
+ * WinDivert timestamps.
+ */
+#define WINDIVERT_TIMESTAMP_MAX                     0x7FFFFFFFFFFFFFFFull
+
+/*
  * WinDivert message definitions.
  */
 #pragma pack(push, 1)
@@ -280,10 +287,12 @@ typedef struct
  */
 typedef struct
 {
-    UINT8  field;                   // WINDIVERT_FILTER_FIELD_*
-    UINT8  test;                    // WINDIVERT_FILTER_TEST_*
-    UINT8  success;                 // Success continuation.
-    UINT8  failure;                 // Fail continuation.
+    UINT16 field:11;                // WINDIVERT_FILTER_FIELD_*
+    UINT16 test:5;                  // WINDIVERT_FILTER_TEST_*
+    UINT16 success;                 // Success continuation.
+    UINT16 failure;                 // Fail continuation.
+    UINT16 neg:1;                   // Argument negative?
+    UINT16 reserved:15;
     UINT32 arg[4];                  // Argument.
 } WINDIVERT_FILTER, *PWINDIVERT_FILTER;
 #pragma pack(pop)

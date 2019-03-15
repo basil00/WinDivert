@@ -39,6 +39,11 @@ set -e
 
 ENVS="i686-w64-mingw32 x86_64-w64-mingw32"
 
+if [ "$1" = "debug" ]
+then
+    MSVCRT=-lmsvcrt
+fi 
+
 for ENV in $ENVS
 do
     if [ $ENV = "i686-w64-mingw32" ]
@@ -61,7 +66,7 @@ do
     CC="$ENV-gcc"
     COPTS="-fno-ident -shared -Wall -Wno-pointer-to-int-cast -Os -Iinclude/ 
         -Wl,--enable-stdcall-fixup -Wl,--entry=${MANGLE}WinDivertDllEntry"
-    CLIBS="-lgcc -lkernel32 -ladvapi32"
+    CLIBS="-lgcc -lkernel32 -ladvapi32 $MSVCRT"
     STRIP="$ENV-strip"
     DLLTOOL="$ENV-dlltool"
     if [ -x "`which $CC`" ]
