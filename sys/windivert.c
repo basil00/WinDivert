@@ -3418,7 +3418,7 @@ static void windivert_get_ipv6_addr(const FWPS_INCOMING_VALUES0 *fixed_vals,
     FWP_VALUE0 value = fixed_vals->incomingValue[idx].value;
     if (value.type != FWP_BYTE_ARRAY16_TYPE)
     {
-        RtlZeroMemory(&addr, 16);
+        addr[0] = addr[1] = addr[2] = addr[3] = 0;
         return;
     }
     for (i = 16-1; i >= 0; i--)
