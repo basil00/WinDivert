@@ -90,7 +90,7 @@ if ! grep "DigiCert High Assurance EV Root" $INSTALL/x86/WinDivert32.sys \
 then
     echo "\t\033[33mWARNING\033[0m: unsigned WinDivert32.sys..."
 fi
-if [ -d "$WINDIVERT64_SYS" ]
+if [ -e "$WINDIVERT64_SYS" ]
 then
     echo "\tcopy $INSTALL/x64/WinDivert64.sys..."
     cp "$WINDIVERT64_SYS" $INSTALL/x86
