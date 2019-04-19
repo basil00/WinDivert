@@ -287,12 +287,12 @@ typedef struct
  */
 typedef struct
 {
-    UINT16 field:11;                // WINDIVERT_FILTER_FIELD_*
-    UINT16 test:5;                  // WINDIVERT_FILTER_TEST_*
-    UINT16 success;                 // Success continuation.
-    UINT16 failure;                 // Fail continuation.
-    UINT16 neg:1;                   // Argument negative?
-    UINT16 reserved:15;
+    UINT32 field:11;                // WINDIVERT_FILTER_FIELD_*
+    UINT32 test:5;                  // WINDIVERT_FILTER_TEST_*
+    UINT32 success:16;              // Success continuation.
+    UINT32 failure:16;              // Fail continuation.
+    UINT32 neg:1;                   // Argument negative?
+    UINT32 reserved:15;
     UINT32 arg[4];                  // Argument.
 } WINDIVERT_FILTER, *PWINDIVERT_FILTER;
 #pragma pack(pop)

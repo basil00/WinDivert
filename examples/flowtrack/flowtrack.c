@@ -227,7 +227,7 @@ int __cdecl main(int argc, char **argv)
             filter = argv[1];
             break;
         default:
-            fprintf(stderr, "usage: %s [filter]\n");
+            fprintf(stderr, "usage: %s [filter]\n", argv[0]);
             exit(EXIT_FAILURE);
     }
 

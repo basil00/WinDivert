@@ -41,10 +41,10 @@
  * Definitions to remove (some) external dependencies:
  */
 #define BYTESWAP16(x)                   \
-    ((((x) >> 8) & 0x00FF) | (((x) << 8) & 0xFF00))
+    ((((x) >> 8) & 0x00FFu) | (((x) << 8) & 0xFF00u))
 #define BYTESWAP32(x)                   \
-    ((((x) >> 24) & 0x000000FF) | (((x) >> 8) & 0x0000FF00) | \
-     (((x) << 8) & 0x00FF0000) | (((x) << 24) & 0xFF000000))
+    ((((x) >> 24) & 0x000000FFu) | (((x) >> 8) & 0x0000FF00u) | \
+     (((x) << 8) & 0x00FF0000u) | (((x) << 24) & 0xFF000000u))
 #define BYTESWAP64(x)                   \
     ((((x) >> 56) & 0x00000000000000FFull) | \
      (((x) >> 40) & 0x000000000000FF00ull) | \
@@ -58,6 +58,20 @@
 #define htons(x)                        BYTESWAP16(x)
 #define ntohl(x)                        BYTESWAP32(x)
 #define htonl(x)                        BYTESWAP32(x)
+
+#if defined(WIN32) && defined(_MSC_VER)
+#pragma intrinsic(__emulu)
+static UINT64 WinDivertMul64(UINT64 a, UINT64 b)
+{
+    UINT64 r = __emulu((UINT32)a, (UINT32)b);
+    r += __emulu((UINT32)(a >> 32), (UINT32)b) << 32;
+    r += __emulu((UINT32)a, (UINT32)(b >> 32)) << 32;
+    return r;
+}
+#define WINDIVERT_MUL64(a, b)   WinDivertMul64(a, b)
+#else       /* WIN32 */
+#define WINDIVERT_MUL64(a, b)   ((a) * (b))
+#endif      /* WIN32 */
 
 #include "windivert_hash.c"
 
@@ -158,27 +172,26 @@ static char WinDivertEncodeDigit(UINT8 dig, BOOL final)
  */
 static void WinDivertSerializeNumber(PWINDIVERT_STREAM stream, UINT32 val)
 {
-    UINT64 mask = 0x00000007C0000000ull;
+    UINT32 mask = 0xC0000000;
     UINT dig = 6;
     UINT8 digit;
-    UINT64 val64 = (UINT64)val;
     BOOL final;
 
-    while ((mask & val64) == 0 && dig != 0)
+    while ((mask & val) == 0 && dig != 0)
     {
-        mask >>= 5;
+        mask = (dig == 6? 0x3E000000: mask >> 5);
         dig--;
     }
     while (TRUE)
     {
         final = (dig == 0);
-        digit = (UINT8)((mask & val64) >> (5 * dig));
+        digit = (UINT8)((mask & val) >> (5 * dig));
         WinDivertPutChar(stream, WinDivertEncodeDigit(digit, final));
         if (final)
         {
             break;
         }
-        mask >>= 5;
+        mask = (dig == 6? 0x3E000000: mask >> 5);
         dig--;
     }
 }
@@ -249,8 +262,8 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
         default:
             break;
     }
-    WinDivertSerializeLabel(stream, filter->success);
-    WinDivertSerializeLabel(stream, filter->failure);
+    WinDivertSerializeLabel(stream, (UINT16)filter->success);
+    WinDivertSerializeLabel(stream, (UINT16)filter->failure);
 }
 
 /*

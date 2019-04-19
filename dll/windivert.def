@@ -1,6 +1,5 @@
 LIBRARY WinDivert
 EXPORTS
-    WinDivertDllEntry
     WinDivertOpen
     WinDivertRecv
     WinDivertRecvEx

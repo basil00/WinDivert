@@ -135,29 +135,37 @@ typedef struct
 /*
  * WinDivert address.
  */
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4201)
+#endif
 typedef struct
 {
     INT64  Timestamp;                   /* Packet's timestamp. */
-    UINT64 Layer:8;                     /* Packet's layer. */
-    UINT64 Event:8;                     /* Packet event. */
-    UINT64 Sniffed:1;                   /* Packet was sniffed? */
-    UINT64 Outbound:1;                  /* Packet is outound? */
-    UINT64 Loopback:1;                  /* Packet is loopback? */
-    UINT64 Impostor:1;                  /* Packet is impostor? */
-    UINT64 IPv6:1;                      /* Packet is IPv6? */
-    UINT64 IPChecksum:1;                /* Packet has valid IPv4 checksum? */
-    UINT64 TCPChecksum:1;               /* Packet has valid TCP checksum? */
-    UINT64 UDPChecksum:1;               /* Packet has valid UDP checksum? */
-    UINT64 Reserved1:40;
+    UINT32 Layer:8;                     /* Packet's layer. */
+    UINT32 Event:8;                     /* Packet event. */
+    UINT32 Sniffed:1;                   /* Packet was sniffed? */
+    UINT32 Outbound:1;                  /* Packet is outound? */
+    UINT32 Loopback:1;                  /* Packet is loopback? */
+    UINT32 Impostor:1;                  /* Packet is impostor? */
+    UINT32 IPv6:1;                      /* Packet is IPv6? */
+    UINT32 IPChecksum:1;                /* Packet has valid IPv4 checksum? */
+    UINT32 TCPChecksum:1;               /* Packet has valid TCP checksum? */
+    UINT32 UDPChecksum:1;               /* Packet has valid UDP checksum? */
+    UINT32 Reserved1:8;
+    UINT32 Reserved2;
     union
     {
         WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
         WINDIVERT_DATA_FLOW Flow;       /* Flow layer data. */
         WINDIVERT_DATA_SOCKET Socket;   /* Socket layer data. */
         WINDIVERT_DATA_REFLECT Reflect; /* Reflect layer data. */
-        UINT8 Reserved2[64];
+        UINT8 Reserved3[64];
     };
 } WINDIVERT_ADDRESS, *PWINDIVERT_ADDRESS;
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 /*
  * WinDivert events.
@@ -321,6 +329,11 @@ extern WINDIVERTEXPORT BOOL WinDivertGetParam(
 /* WINDIVERT HELPER API                                                     */
 /****************************************************************************/
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable: 4214)
+#endif
+
 /*
  * IPv4/IPv6/ICMP/ICMPv6/TCP/UDP header definitions.
  */
@@ -454,6 +467,10 @@ typedef struct
     UINT16 Length;
     UINT16 Checksum;
 } WINDIVERT_UDPHDR, *PWINDIVERT_UDPHDR;
+
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 /*
  * Flags for WinDivertHelperCalcChecksums()

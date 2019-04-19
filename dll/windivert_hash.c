@@ -68,7 +68,7 @@
  *   only ever a single round.  As such, the algorithm has been specialized.
  */
 
-#define WINDIVERT_ROTL(x, r)    (((x) << (r)) | ((x) >> (64 - (r))))
+#define WINDIVERT_ROTL64(x, r)  (((x) << (r)) | ((x) >> (64 - (r))))
 
 static const UINT64 WINDIVERT_PRIME64_1 = 11400714785074694791ull;
 static const UINT64 WINDIVERT_PRIME64_2 = 14029467366897019727ull;
@@ -77,9 +77,9 @@ static const UINT64 WINDIVERT_PRIME64_4 = 9650029242287828579ull;
 
 static UINT64 WinDivertXXH64Round(UINT64 acc, UINT64 input)
 {
-    acc += input * WINDIVERT_PRIME64_2;
-    acc  = WINDIVERT_ROTL(acc, 31);
-    acc *= WINDIVERT_PRIME64_1;
+    acc += WINDIVERT_MUL64(input, WINDIVERT_PRIME64_2);
+    acc  = WINDIVERT_ROTL64(acc, 31);
+    acc  = WINDIVERT_MUL64(acc, WINDIVERT_PRIME64_1);
     return acc;
 }
 
@@ -87,16 +87,16 @@ static UINT64 WinDivertXXH64MergeRound(UINT64 acc, UINT64 val)
 {
     val  = WinDivertXXH64Round(0, val);
     acc ^= val;
-    acc  = acc * WINDIVERT_PRIME64_1 + WINDIVERT_PRIME64_4;
+    acc  = WINDIVERT_MUL64(acc, WINDIVERT_PRIME64_1) + WINDIVERT_PRIME64_4;
     return acc;
 }
 
 static UINT64 WinDivertXXH64Avalanche(UINT64 h64)
 {
     h64 ^= h64 >> 33;
-    h64 *= WINDIVERT_PRIME64_2;
+    h64  = WINDIVERT_MUL64(h64, WINDIVERT_PRIME64_2);
     h64 ^= h64 >> 29;
-    h64 *= WINDIVERT_PRIME64_3;
+    h64  = WINDIVERT_MUL64(h64, WINDIVERT_PRIME64_3);
     h64 ^= h64 >> 32;
     return h64;
 }
@@ -187,8 +187,8 @@ static UINT64 WinDivertHashPacket(UINT64 seed, PWINDIVERT_IPHDR ip_header,
     v2 = WinDivertXXH64Round(v[1], v2);
     v3 = WinDivertXXH64Round(v[2], v3);
     v4 = WinDivertXXH64Round(v[3], v4);
-    h64 = WINDIVERT_ROTL(v1, 1) + WINDIVERT_ROTL(v2, 7) +
-          WINDIVERT_ROTL(v3, 12) + WINDIVERT_ROTL(v4, 18);
+    h64 = WINDIVERT_ROTL64(v1, 1) + WINDIVERT_ROTL64(v2, 7) +
+          WINDIVERT_ROTL64(v3, 12) + WINDIVERT_ROTL64(v4, 18);
     h64 = WinDivertXXH64MergeRound(h64, v1);
     h64 = WinDivertXXH64MergeRound(h64, v2);
     h64 = WinDivertXXH64MergeRound(h64, v3);

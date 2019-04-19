@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+
+    windivert.vcxproj
+    (C) 2019, all rights reserved,
+    
+    This file is part of WinDivert.
+    
+    WinDivert is free software: you can redistribute it and/or modify it under
+    the terms of the GNU Lesser General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your
+    option) any later version.
+    
+    This program is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
+    License for more details.
+    
+    You should have received a copy of the GNU Lesser General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    
+    WinDivert is free software; you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation; either version 2 of the License, or (at your option)
+    any later version.
+    
+    This program is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+    for more details.
+    
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc., 51
+    Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+    
+-->
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+ <ItemGroup Label="ProjectConfigurations">
+  <ProjectConfiguration Include="Release|Win32">
+   <Configuration>Release</Configuration>
+   <Platform>Win32</Platform>
+  </ProjectConfiguration>
+  <ProjectConfiguration Include="Release|x64">
+   <Configuration>Release</Configuration>
+   <Platform>x64</Platform>
+  </ProjectConfiguration>
+ </ItemGroup>
+ <ItemGroup>
+  <ClCompile Include="windivert.c">
+   <TreatWarningAsError>false</TreatWarningAsError>
+   <Optimization>MinSpace</Optimization>
+   <IntrinsicFunctions>true</IntrinsicFunctions>
+   <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+   <BufferSecurityCheck>false</BufferSecurityCheck>
+   <AdditionalIncludeDirectories>..\include</AdditionalIncludeDirectories>
+  </ClCompile>
+ </ItemGroup>
+ <PropertyGroup Label="Globals">
+  <RootNamespace>WinDivert</RootNamespace>
+  <ProjectName>WinDivert</ProjectName>
+ </PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+ <PropertyGroup Label="Configuration">
+  <PlatformToolset>v140</PlatformToolset>
+  <UseDebugLibraries>true</UseDebugLibraries>
+  <ConfigurationType>DynamicLibrary</ConfigurationType>
+ </PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+ <ItemDefinitionGroup>
+  <ClCompile>
+   <WppEnabled>false</WppEnabled>
+   <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">WIN32;NDEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+   <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">WIN32;NDEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+  </ClCompile>
+  <Link>
+   <EntryPointSymbol>WinDivertDllEntry</EntryPointSymbol>
+   <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+   <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+   <ModuleDefinitionFile>windivert.def</ModuleDefinitionFile>
+   <ImportLibrary>WinDivert.lib</ImportLibrary>
+  </Link>
+ </ItemDefinitionGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

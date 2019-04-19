@@ -66,7 +66,7 @@ do
     CC="$ENV-gcc"
     COPTS="-fno-ident -shared -Wall -Wno-pointer-to-int-cast -Os -Iinclude/ 
         -Wl,--enable-stdcall-fixup -Wl,--entry=${MANGLE}WinDivertDllEntry"
-    CLIBS="-lgcc -lkernel32 -ladvapi32 $MSVCRT"
+    CLIBS="-lkernel32 -ladvapi32 $MSVCRT"
     STRIP="$ENV-strip"
     DLLTOOL="$ENV-dlltool"
     if [ -x "`which $CC`" ]

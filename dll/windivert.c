@@ -56,6 +56,7 @@
 #define ERROR_DRIVER_FAILED_PRIOR_UNLOAD    ((DWORD)654)
 #endif
 
+static BOOLEAN WinDivertIsDigit(char c);
 static BOOLEAN WinDivertIsXDigit(char c);
 static BOOLEAN WinDivertIsSpace(char c);
 static BOOLEAN WinDivertIsAlNum(char c);
@@ -69,6 +70,7 @@ static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr,
     UINT size);
 static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr,
     UINT size, BOOL prefix);
+static UINT32 WinDivertDivTen128(UINT32 *a);
 
 /*
  * Misc.
@@ -76,8 +78,35 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr,
 #ifndef UINT8_MAX
 #define UINT8_MAX       0xFF
 #endif
+#ifndef UINT16_MAX
+#define UINT16_MAX      0xFFFF
+#endif
 #ifndef UINT32_MAX
 #define UINT32_MAX      0xFFFFFFFF
+#endif
+
+#ifdef _MSC_VER
+
+#pragma intrinsic(memcpy)
+#pragma function(memcpy)
+void *memcpy(void *dst, const void *src, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++)
+        ((UINT8 *)dst)[i] = ((const UINT8 *)src)[i];
+    return dst;
+}
+
+#pragma intrinsic(memset)
+#pragma function(memset)
+void *memset(void *dst, int c, size_t n)
+{
+    size_t i;
+    for (i = 0; i < n; i++)
+        ((UINT8 *)dst)[i] = (UINT8)c;
+    return dst;
+}
+
 #endif
 
 /*
@@ -377,11 +406,11 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code,
 extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     INT16 priority, UINT64 flags)
 {
-    WINDIVERT_FILTER object[WINDIVERT_FILTER_MAXLEN];
+    WINDIVERT_FILTER *object;
     UINT obj_len;
     ERROR comp_err;
     DWORD err;
-    HANDLE handle;
+    HANDLE handle, pool;
     UINT64 filter_flags;
     WINDIVERT_IOCTL ioctl;
     WINDIVERT_VERSION version;
@@ -393,7 +422,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         offsetof(WINDIVERT_DATA_SOCKET, Protocol) != 56 ||
         offsetof(WINDIVERT_DATA_REFLECT, Priority) != 24 ||
         sizeof(WINDIVERT_FILTER) != 24 ||
-        offsetof(WINDIVERT_ADDRESS, Reserved2) != 16)
+        offsetof(WINDIVERT_ADDRESS, Reserved3) != 16)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
@@ -426,9 +455,25 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     }
 
     // Compile & analyze the filter:
-    comp_err = WinDivertCompileFilter(filter, layer, object, &obj_len);
+    pool = HeapCreate(HEAP_NO_SERIALIZE, WINDIVERT_MIN_POOL_SIZE,
+        WINDIVERT_MAX_POOL_SIZE);
+    if (pool == NULL)
+    {
+        return FALSE;
+    }
+    object = HeapAlloc(pool, 0,
+        WINDIVERT_FILTER_MAXLEN * sizeof(WINDIVERT_FILTER));
+    if (object == NULL)
+    {
+        err = GetLastError();
+        HeapDestroy(pool);
+        SetLastError(err);
+        return FALSE;
+    }
+    comp_err = WinDivertCompileFilter(filter, pool, layer, object, &obj_len);
     if (IS_ERROR(comp_err))
     {
+        HeapDestroy(pool);
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
@@ -443,31 +488,36 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         err = GetLastError();
         if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND)
         {
+            HeapDestroy(pool);
+            SetLastError(err);
             return INVALID_HANDLE_VALUE;
         }
 
         // Open failed because the device isn't installed; install it now.
         if ((flags & WINDIVERT_FLAG_NO_INSTALL) != 0)
         {
+            HeapDestroy(pool);
             SetLastError(ERROR_SERVICE_DOES_NOT_EXIST);
             return INVALID_HANDLE_VALUE;
         }
         SetLastError(0);
         if (!WinDivertDriverInstall())
         {
-            if (GetLastError() == 0)
-            {
-                SetLastError(ERROR_OPEN_FAILED);
-            }
+            err = GetLastError();
+            err = (err == 0? ERROR_OPEN_FAILED: err);
+            HeapDestroy(pool);
+            SetLastError(err);
             return INVALID_HANDLE_VALUE;
         }
         handle = CreateFile(L"\\\\.\\" WINDIVERT_DEVICE_NAME,
             GENERIC_READ | GENERIC_WRITE, 0, NULL, OPEN_EXISTING,
             FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED,
             INVALID_HANDLE_VALUE);
-
         if (handle == INVALID_HANDLE_VALUE)
         {
+            err = GetLastError();
+            HeapDestroy(pool);
+            SetLastError(err);
             return INVALID_HANDLE_VALUE;
         }
     }
@@ -485,13 +535,17 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_INITIALIZE, &ioctl,
             &version, sizeof(version), NULL))
     {
+        err = GetLastError();
         CloseHandle(handle);
+        HeapDestroy(pool);
+        SetLastError(err);
         return INVALID_HANDLE_VALUE;
     }
     if (version.magic != WINDIVERT_MAGIC_SYS ||
         version.major < WINDIVERT_VERSION_MAJOR_MIN)
     {
         CloseHandle(handle);
+        HeapDestroy(pool);
         SetLastError(ERROR_DRIVER_FAILED_PRIOR_UNLOAD);
         return INVALID_HANDLE_VALUE;
     }
@@ -502,9 +556,13 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_STARTUP, &ioctl,
             object, obj_len * sizeof(WINDIVERT_FILTER), NULL))
     {
+        err = GetLastError();
         CloseHandle(handle);
+        HeapDestroy(pool);
+        SetLastError(err);
         return INVALID_HANDLE_VALUE;
     }
+    HeapDestroy(pool);
 
     // Success!
     return handle;
@@ -645,6 +703,11 @@ extern BOOL WinDivertGetParam(HANDLE handle, WINDIVERT_PARAM param,
 /* REPLACEMENTS                                                              */
 /*****************************************************************************/
 
+static BOOLEAN WinDivertIsDigit(char c)
+{
+    return (c >= '0' && c <= '9');
+}
+
 static BOOLEAN WinDivertIsXDigit(char c)
 {
     return (c >= '0' && c <= '9') ||
@@ -756,7 +819,7 @@ static BOOLEAN WinDivertAToI(const char *str, char **endptr, UINT32 *intptr,
     size_t i = 0;
     UINT32 n[4] = {0};
     BOOLEAN result = TRUE;
-    for (; str[i] && isdigit(str[i]); i++)
+    for (; str[i] && WinDivertIsDigit(str[i]); i++)
     {
         if (!WinDivertMul128(n, 10) || !WinDivertAdd128(n, str[i] - '0'))
         {
@@ -801,7 +864,7 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr,
     }
     for (; str[i] && WinDivertIsXDigit(str[i]); i++)
     {
-        if (isdigit(str[i]))
+        if (WinDivertIsDigit(str[i]))
         {
             dig = (UINT32)(str[i] - '0');
         }
@@ -831,5 +894,49 @@ static BOOLEAN WinDivertAToX(const char *str, char **endptr, UINT32 *intptr,
         result = result && (n[i] == 0);
     }
     return result;
+}
+
+/*
+ * Divide by 10 and return the remainder.
+ */
+#define WINDIVERT_BIG_MUL_ROUND(a, c, r, i)                                 \
+    do {                                                                    \
+        UINT64 t = WINDIVERT_MUL64((UINT64)(a), (UINT64)(c));               \
+        UINT k;                                                             \
+        for (k = (i); k < 9 && t != 0; k++)                                 \
+        {                                                                   \
+            UINT64 s = (UINT64)(r)[k] + (t & 0xFFFFFFFF);                   \
+            (r)[k] = (UINT32)s;                                             \
+            t = (t >> 32) + (s >> 32);                                      \
+        }                                                                   \
+    } while (FALSE)
+static UINT32 WinDivertDivTen128(UINT32 *a)
+{
+    const UINT32 c[5] =
+    {
+        0x9999999A, 0x99999999, 0x99999999, 0x99999999, 0x19999999
+    };
+    UINT32 r[9] = {0}, m[6] = {0};
+    UINT i, j;
+
+    for (i = 0; i < 4; i++)
+    {
+        for (j = 0; j < 5; j++)
+        {
+            WINDIVERT_BIG_MUL_ROUND(a[i], c[j], r, i+j);
+        }
+    }
+
+    a[0] = r[5];
+    a[1] = r[6];
+    a[2] = r[7];
+    a[3] = r[8];
+    
+    for (i = 0; i < 5; i++)
+    {
+        WINDIVERT_BIG_MUL_ROUND(r[i], 10, m, i);
+    }
+    
+    return m[5];
 }
 

@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+
+    socketdump.vcxproj
+    (C) 2019, all rights reserved,
+    
+    This file is part of WinDivert.
+    
+    WinDivert is free software: you can redistribute it and/or modify it under
+    the terms of the GNU Lesser General Public License as published by the
+    Free Software Foundation, either version 3 of the License, or (at your
+    option) any later version.
+    
+    This program is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU Lesser General Public
+    License for more details.
+    
+    You should have received a copy of the GNU Lesser General Public License
+    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+    
+    WinDivert is free software; you can redistribute it and/or modify it under
+    the terms of the GNU General Public License as published by the Free
+    Software Foundation; either version 2 of the License, or (at your option)
+    any later version.
+    
+    This program is distributed in the hope that it will be useful, but
+    WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY
+    or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+    for more details.
+    
+    You should have received a copy of the GNU General Public License along
+    with this program; if not, write to the Free Software Foundation, Inc., 51
+    Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+    
+-->
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+ <ItemGroup Label="ProjectConfigurations">
+  <ProjectConfiguration Include="Release|Win32">
+   <Configuration>Release</Configuration>
+   <Platform>Win32</Platform>
+  </ProjectConfiguration>
+  <ProjectConfiguration Include="Release|x64">
+   <Configuration>Release</Configuration>
+   <Platform>x64</Platform>
+  </ProjectConfiguration>
+ </ItemGroup>
+ <ItemGroup>
+  <ClCompile Include="socketdump.c">
+   <TreatWarningAsError>false</TreatWarningAsError>
+   <Optimization>MinSpace</Optimization>
+   <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+   <AdditionalIncludeDirectories>..\..\include</AdditionalIncludeDirectories>
+  </ClCompile>
+ </ItemGroup>
+ <PropertyGroup Label="Globals">
+  <RootNamespace>socketdump</RootNamespace>
+  <ProjectName>socketdump</ProjectName>
+ </PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+ <PropertyGroup Label="Configuration">
+  <PlatformToolset>v140</PlatformToolset>
+  <ConfigurationType>Application</ConfigurationType>
+ </PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+ <ItemDefinitionGroup>
+  <Link>
+   <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\install\MSVC\i386\WinDivert.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+   <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\install\MSVC\amd64\WinDivert.lib;shlwapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+  </Link>
+ </ItemDefinitionGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>

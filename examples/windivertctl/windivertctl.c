@@ -87,7 +87,7 @@ int __cdecl main(int argc, char **argv)
     {
 usage:
         fprintf(stderr, "usage: %s (list|watch|kill) [filter]\n", argv[0]);
-        fprintf(stderr, "       %s uninstall\n");
+        fprintf(stderr, "       %s uninstall\n", argv[0]);
         exit(EXIT_FAILURE);
     }
     if (strcmp(argv[1], "list") == 0)

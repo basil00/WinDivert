@@ -88,8 +88,8 @@ int __cdecl main(int argc, char **argv)
             }
             // Fallthrough:
         default:
-            fprintf(stderr, "usage: %s [filter]\n");
-            fprintf(stderr, "       %s --block [filter]\n");
+            fprintf(stderr, "usage: %s [filter]\n", argv[0]);
+            fprintf(stderr, "       %s --block [filter]\n", argv[0]);
             exit(EXIT_FAILURE);
     }
 

@@ -915,7 +915,7 @@ int main(void)
         passed[i] = run_test(upper_handle, filter, packet, packet_len, match,
             &diff);
         diff = 1000000 * diff / freq.QuadPart;
-        printf("%.3u ", i);
+        printf("%.3u ", (unsigned)i);
         if (passed[i])
         {
             SetConsoleTextAttribute(console, FOREGROUND_GREEN);
@@ -982,7 +982,7 @@ int main(void)
             printf("\n------------\n\n");
             first = FALSE;
         }
-        printf("%.3u ", i);
+        printf("%.3u ", (unsigned)i);
         SetConsoleTextAttribute(console, FOREGROUND_RED);
         printf("FAILED");
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN |
@@ -1153,7 +1153,7 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     if (buf_len[idx] != packet_len)
     {
         fprintf(stderr, "error: packet length mis-match, expected (%u), got "
-            "(%u)\n", packet_len, buf_len[idx]);
+            "(%u)\n", (unsigned)packet_len, buf_len[idx]);
         goto failed;
     }
     iphdr = (PWINDIVERT_IPHDR)buf[idx];
@@ -1329,8 +1329,8 @@ static DWORD monitor_worker(LPVOID arg)
                 tests[i].packet->packet_len, &addr) != tests[i].match)
         {
             fprintf(stderr, "error: failed to match recompiled filter "
-                "(test = %.3u, filter = \"%s\", err = %d)\n", i,
-                tests[i].filter, GetLastError());
+                "(test = %.3u, filter = \"%s\" formatted = \"%s\", "
+                "err = %d)\n", i, tests[i].filter, filter_2, GetLastError());
             exit(EXIT_FAILURE);
         }
     }

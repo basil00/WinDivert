@@ -256,23 +256,23 @@ struct packet_s
 {
     LIST_ENTRY entry;                       // Entry for queue.
     LONGLONG timestamp;                     // Packet timestamp.
-    UINT64 layer:8;                         // Layer.
-    UINT64 event:8;                         // Event.
-    UINT64 sniffed:1;                       // Packet was sniffed?
-    UINT64 outbound:1;                      // Packet is outound?
-    UINT64 loopback:1;                      // Packet is loopback?
-    UINT64 impostor:1;                      // Packet is impostor?
-    UINT64 ipv6:1;                          // Packet is IPv6?
-    UINT64 ip_checksum:1;                   // Packet has IPv4 checksum?
-    UINT64 tcp_checksum:1;                  // Packet has TCP checksum?
-    UINT64 udp_checksum:1;                  // Packet has UDP checksum?
-    UINT64 match:1;                         // Packet matches filter?
-    UINT64 padding:7;                       // Padding for alignment.
-    UINT64 packet_size:32;                  // Packet total size.
+    UINT32 layer:8;                         // Layer.
+    UINT32 event:8;                         // Event.
+    UINT32 sniffed:1;                       // Packet was sniffed?
+    UINT32 outbound:1;                      // Packet is outound?
+    UINT32 loopback:1;                      // Packet is loopback?
+    UINT32 impostor:1;                      // Packet is impostor?
+    UINT32 ipv6:1;                          // Packet is IPv6?
+    UINT32 ip_checksum:1;                   // Packet has IPv4 checksum?
+    UINT32 tcp_checksum:1;                  // Packet has TCP checksum?
+    UINT32 udp_checksum:1;                  // Packet has UDP checksum?
+    UINT32 match:1;                         // Packet matches filter?
+    UINT32 padding:7;                       // Padding for alignment.
+    UINT32 packet_size;                     // Packet total size.
     PVOID object;                           // Object associated with packet.
     UINT32 priority;                        // Packet priority.
     UINT32 packet_len;                      // Length of the packet.
-    WINDIVERT_DATA_ALIGN UINT8 data[];      // Packet/layer data.
+    WINDIVERT_DATA_ALIGN UINT8 data[1];     // Packet/layer data.
 };
 typedef struct packet_s *packet_t;
 
@@ -280,7 +280,7 @@ typedef struct packet_s *packet_t;
     ((((size) + WINDIVERT_ALIGN_SIZE - 1) / WINDIVERT_ALIGN_SIZE) *         \
         WINDIVERT_ALIGN_SIZE)
 #define WINDIVERT_PACKET_SIZE(layer_type, packet_len)                       \
-    (sizeof(struct packet_s) + WINDIVERT_DATA_SIZE(sizeof(layer_type)) +    \
+    (sizeof(struct packet_s)-1 + WINDIVERT_DATA_SIZE(sizeof(layer_type)) +  \
         (packet_len))
 #define WINDIVERT_LAYER_DATA_PTR(packet)                                    \
     ((packet)->data)
@@ -360,11 +360,11 @@ static void windivert_uninstall_callouts(context_t context,
 extern VOID windivert_cleanup(IN WDFFILEOBJECT object);
 extern VOID windivert_close(IN WDFFILEOBJECT object);
 extern VOID windivert_destroy(IN WDFOBJECT object);
-extern NTSTATUS windivert_write(context_t context, WDFREQUEST request,
+static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     req_context_t req_context);
-extern void NTAPI windivert_inject_complete(VOID *context,
+static void NTAPI windivert_inject_complete(VOID *context,
     NET_BUFFER_LIST *packets, BOOLEAN dispatch_level);
-extern void NTAPI windivert_reinject_complete(VOID *context,
+static void NTAPI windivert_reinject_complete(VOID *context,
     NET_BUFFER_LIST *packets, BOOLEAN dispatch_level);
 static NTSTATUS windivert_notify(IN FWPS_CALLOUT_NOTIFY_TYPE type,
     IN const GUID *filter_key, IN const FWPS_FILTER0 *filter);
@@ -514,7 +514,7 @@ static void windivert_reflect_event_notify(context_t context,
     LONGLONG timestamp, WINDIVERT_EVENT event);
 static void windivert_reflect_established_notify(context_t context,
     LONGLONG timestamp);
-static void windivert_reflect_worker(IN WDFWORKITEM item);
+extern void windivert_reflect_worker(IN WDFWORKITEM item);
 
 /*
  * WinDivert sublayer GUIDs
@@ -1261,8 +1261,10 @@ driver_entry_exit:
 /*
  * WinDivert driver unload routine.
  */
-extern VOID windivert_unload(IN WDFDRIVER Driver)
+extern VOID windivert_unload(IN WDFDRIVER driver)
 {
+    UNREFERENCED_PARAMETER(driver);
+
     windivert_driver_unload();
 }
 
@@ -1661,7 +1663,7 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     GUID callout_guid, filter_guid;
     UINT32 callout_id;
     WDFDEVICE device;
-    HANDLE engine_handle;
+    HANDLE engine;
     NTSTATUS status;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -1675,7 +1677,7 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     callout_guid = context->callout_guid[idx];
     filter_guid = context->filter_guid[idx];
     device = context->device;
-    engine_handle = context->engine_handle;
+    engine = context->engine_handle;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
     weight = (UINT64)priority;
@@ -1714,26 +1716,26 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
         *callout_id_ptr = callout_id;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
     }
-    status = FwpmTransactionBegin0(engine_handle, 0);
+    status = FwpmTransactionBegin0(engine, 0);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to begin WFP transaction", status);
         FwpsCalloutUnregisterByKey0(&callout_guid);
         return status;
     }
-    status = FwpmCalloutAdd0(engine_handle, &mcallout, NULL, NULL);
+    status = FwpmCalloutAdd0(engine, &mcallout, NULL, NULL);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to add WFP callout", status);
         goto windivert_install_callout_error;
     }
-    status = FwpmFilterAdd0(engine_handle, &filter, NULL, NULL);
+    status = FwpmFilterAdd0(engine, &filter, NULL, NULL);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to add WFP filter", status);
         goto windivert_install_callout_error;
     }
-    status = FwpmTransactionCommit0(engine_handle);
+    status = FwpmTransactionCommit0(engine);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
@@ -1755,7 +1757,7 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     return STATUS_SUCCESS;
 
 windivert_install_callout_error:
-    FwpmTransactionAbort0(engine_handle);
+    FwpmTransactionAbort0(engine);
     FwpsCalloutUnregisterByKey0(&callout_guid);
     return status;
 }
@@ -1768,7 +1770,7 @@ static void windivert_uninstall_callouts(context_t context,
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     UINT i;
-    HANDLE engine_handle;
+    HANDLE engine;
     BOOL installed;
     GUID callout_guid, filter_guid;
     NTSTATUS status;
@@ -1782,14 +1784,14 @@ windivert_uninstall_callouts_error:
         DEBUG_ERROR("failed to delete filters and callouts", status);
         return;
     }
-    engine_handle = context->engine_handle;
+    engine = context->engine_handle;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 
-    status = FwpmTransactionBegin0(engine_handle, 0);
+    status = FwpmTransactionBegin0(engine, 0);
     if (!NT_SUCCESS(status))
     {
         // If the userspace app closes without closing the handle to
-        // WinDivert, any actions on engine_handle fail because the
+        // WinDivert, any actions on engine fail because the
         // RPC handle was closed first. So, this path is "normal" if
         // the user's app crashed or never closed the WinDivert handle.
         DEBUG_ERROR("failed to begin WFP transaction", status);
@@ -1801,7 +1803,7 @@ windivert_uninstall_callouts_error:
         if (context->state != state)
         {
             KeReleaseInStackQueuedSpinLock(&lock_handle);
-            FwpmTransactionAbort0(engine_handle);
+            FwpmTransactionAbort0(engine);
             status = STATUS_INVALID_DEVICE_STATE;
             DEBUG_ERROR("failed to delete filters and callouts", status);
             return;
@@ -1815,13 +1817,13 @@ windivert_uninstall_callouts_error:
         {
             continue;
         }
-        status = FwpmFilterDeleteByKey0(engine_handle, &filter_guid);
+        status = FwpmFilterDeleteByKey0(engine, &filter_guid);
         if (!NT_SUCCESS(status))
         {
             DEBUG_ERROR("failed to delete filter", status);
             break;
         }
-        status = FwpmCalloutDeleteByKey0(engine_handle, &callout_guid);
+        status = FwpmCalloutDeleteByKey0(engine, &callout_guid);
         if (!NT_SUCCESS(status))
         {
             DEBUG_ERROR("failed to delete callout", status);
@@ -1830,10 +1832,10 @@ windivert_uninstall_callouts_error:
     }
     if (!NT_SUCCESS(status))
     {
-        FwpmTransactionAbort0(engine_handle);
+        FwpmTransactionAbort0(engine);
         goto windivert_uninstall_callouts_unregister;
     }
-    status = FwpmTransactionCommit0(engine_handle);
+    status = FwpmTransactionCommit0(engine);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
@@ -1872,7 +1874,6 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PLIST_ENTRY entry;
-    UINT i;
     context_t context = windivert_context_get(object);
     flow_t flow;
     packet_t work, packet;
@@ -2074,7 +2075,7 @@ static void windivert_read_service_request(context_t context, packet_t packet,
     PLIST_ENTRY entry;
     PMDL dst_mdl;
     UINT8 *layer_data, *src, *dst;
-    ULONG dst_len, src_len, read_len;
+    ULONG dst_len, src_len, read_len = 0;
     BOOL timeout;
     packet_t new_packet;
     req_context_t req_context;
@@ -2136,7 +2137,6 @@ static void windivert_read_service_request(context_t context, packet_t packet,
     addr_len     = 0;
     addr_len_max = (UINT)req_context->addr_len;
     addr_len_ptr = req_context->addr_len_ptr;
-    read_len     = 0;
     i            = 0;
     while (TRUE)
     {
@@ -2443,8 +2443,6 @@ static void windivert_read_service(context_t context)
     BOOL timeout;
     NTSTATUS status;
     packet_t packet;
-    req_context_t req_context;
-    PWINDIVERT_ADDRESS addr;
 
     timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -2513,7 +2511,7 @@ static NTSTATUS windivert_write(context_t context, WDFREQUEST request,
     UINT8 layer;
     UINT32 priority;
     UINT64 flags, checksums;
-    HANDLE handle, compl_handle;
+    HANDLE handle;
     PNET_BUFFER_LIST buffers = NULL;
     PWINDIVERT_ADDRESS addr;
     UINT i, addr_len, addr_len_max;
@@ -2830,8 +2828,8 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
     {
         case IOCTL_WINDIVERT_RECV:
             ioctl        = (PWINDIVERT_IOCTL)inbuf;
-            addr         = (PWINDIVERT_ADDRESS)ioctl->recv.addr;
-            addr_len_ptr = (UINT *)ioctl->recv.addr_len_ptr;
+            addr         = (PWINDIVERT_ADDRESS)(ULONG_PTR)ioctl->recv.addr;
+            addr_len_ptr = (UINT *)(ULONG_PTR)ioctl->recv.addr_len_ptr;
             addr_len     = sizeof(WINDIVERT_ADDRESS);
             if (addr_len_ptr != NULL)
             {
@@ -2875,7 +2873,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
 
         case IOCTL_WINDIVERT_SEND:
             ioctl    = (PWINDIVERT_IOCTL)inbuf;
-            addr     = (PWINDIVERT_ADDRESS)ioctl->send.addr;
+            addr     = (PWINDIVERT_ADDRESS)(ULONG_PTR)ioctl->send.addr;
             addr_len = ioctl->send.addr_len;
             if (addr_len < sizeof(WINDIVERT_ADDRESS) ||
                 addr_len > WINDIVERT_BATCH_MAX * sizeof(WINDIVERT_ADDRESS))
@@ -2943,15 +2941,15 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
     size_t inbuflen, outbuflen, ioctl_filter_len;
     PWINDIVERT_IOCTL ioctl;
     const WINDIVERT_FILTER *ioctl_filter, *filter;
-    UINT8 layer;
-    INT16 priority;
-    UINT64 flags;
     req_context_t req_context;
     NTSTATUS status = STATUS_SUCCESS;
     context_t context =
         windivert_context_get(WdfRequestGetFileObject(request));
-    UINT64 value, *valptr;
+    UINT64 *valptr;
+
     UNREFERENCED_PARAMETER(queue);
+    UNREFERENCED_PARAMETER(out_length);
+    UNREFERENCED_PARAMETER(in_length);
 
     DEBUG("IOCTL: I/O control request (context=%p)", context);
 
@@ -3126,11 +3124,11 @@ windivert_ioctl_bad_flags:
 
         case IOCTL_WINDIVERT_STARTUP:
         {
-            BOOL inbound, outbound, ipv4, ipv6;
             PEPROCESS process;
             LONGLONG timestamp;
             UINT64 filter_flags;
             UINT32 process_id;
+            WINDIVERT_LAYER layer;
             UINT8 filter_len;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
@@ -3165,8 +3163,8 @@ windivert_ioctl_bad_flags:
                 DEBUG_ERROR("failed to compile filter", status);
                 goto windivert_ioctl_exit;
             }
-            filter_len = ioctl_filter_len / sizeof(WINDIVERT_FILTER);
-            process_id = (UINT32)PsGetProcessId(process);
+            filter_len = (UINT8)(ioctl_filter_len / sizeof(WINDIVERT_FILTER));
+            process_id = (UINT32)(ULONG_PTR)PsGetProcessId(process);
             timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
 
             KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -3438,6 +3436,11 @@ static void windivert_outbound_network_v4_classify(
 {
     WINDIVERT_DATA_NETWORK network_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(meta_vals);
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
@@ -3452,9 +3455,8 @@ static void windivert_outbound_network_v4_classify(
         FWPS_FIELD_OUTBOUND_IPPACKET_V4_FLAGS) &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_network_classify((context_t)filter->context, &network_data,
-        /*ipv4=*/TRUE, /*outbound=*/TRUE, loopback, /*advance=*/0, data,
-        result);
+    windivert_network_classify(context, &network_data, /*ipv4=*/TRUE,
+        /*outbound=*/TRUE, loopback, /*advance=*/0, data, result);
 }
 
 /*
@@ -3468,7 +3470,12 @@ static void windivert_outbound_network_v6_classify(
 {
     WINDIVERT_DATA_NETWORK network_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
  
+    UNREFERENCED_PARAMETER(meta_vals);
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
+
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
         return;
@@ -3482,9 +3489,8 @@ static void windivert_outbound_network_v6_classify(
         FWPS_FIELD_OUTBOUND_IPPACKET_V6_FLAGS) &
             FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_network_classify((context_t)filter->context, &network_data,
-        /*ipv4=*/FALSE, /*outbound=*/TRUE, loopback, /*advance=*/0,
-        data, result);
+    windivert_network_classify(context, &network_data, /*ipv4=*/FALSE,
+        /*outbound=*/TRUE, loopback, /*advance=*/0, data, result);
 }
 
 /*
@@ -3499,7 +3505,11 @@ static void windivert_inbound_network_v4_classify(
     WINDIVERT_DATA_NETWORK network_data;
     UINT advance;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
  
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
+
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
         return;
@@ -3520,8 +3530,8 @@ static void windivert_inbound_network_v4_classify(
         FWPS_FIELD_INBOUND_IPPACKET_V4_SUB_INTERFACE_INDEX);
     advance = meta_vals->ipHeaderSize;
     
-    windivert_network_classify((context_t)filter->context, &network_data,
-        /*ipv4=*/TRUE, /*outbound=*/FALSE, loopback, advance, data, result);
+    windivert_network_classify(context, &network_data, /*ipv4=*/TRUE,
+        /*outbound=*/FALSE, loopback, advance, data, result);
 }
 
 /*
@@ -3536,7 +3546,11 @@ static void windivert_inbound_network_v6_classify(
     WINDIVERT_DATA_NETWORK network_data;
     UINT advance;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
  
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
+
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
         return;
@@ -3557,8 +3571,8 @@ static void windivert_inbound_network_v6_classify(
         FWPS_FIELD_INBOUND_IPPACKET_V6_SUB_INTERFACE_INDEX);
     advance = meta_vals->ipHeaderSize;
     
-    windivert_network_classify((context_t)filter->context, &network_data,
-        /*ipv4=*/FALSE, /*outbound=*/FALSE, loopback, advance, data, result);
+    windivert_network_classify(context, &network_data, /*ipv4=*/FALSE,
+        /*outbound=*/FALSE, loopback, advance, data, result);
 }
 
 /*
@@ -3571,7 +3585,12 @@ static void windivert_forward_network_v4_classify(
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
     WINDIVERT_DATA_NETWORK network_data;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
  
+    UNREFERENCED_PARAMETER(meta_vals);
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
+
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
         return;
@@ -3581,9 +3600,8 @@ static void windivert_forward_network_v4_classify(
         FWPS_FIELD_IPFORWARD_V4_DESTINATION_INTERFACE_INDEX);
     network_data.SubIfIdx = 0;
 
-    windivert_network_classify((context_t)filter->context, &network_data,
-        /*ipv4=*/TRUE, /*outbound=*/TRUE, /*loopback=*/FALSE, /*advance=*/0,
-        data, result);
+    windivert_network_classify(context, &network_data, /*ipv4=*/TRUE,
+        /*outbound=*/TRUE, /*loopback=*/FALSE, /*advance=*/0, data, result);
 }
 
 /*
@@ -3596,7 +3614,12 @@ static void windivert_forward_network_v6_classify(
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
     WINDIVERT_DATA_NETWORK network_data;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
  
+    UNREFERENCED_PARAMETER(meta_vals);
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
+
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0 || data == NULL)
     {
         return;
@@ -3606,9 +3629,8 @@ static void windivert_forward_network_v6_classify(
         FWPS_FIELD_IPFORWARD_V6_DESTINATION_INTERFACE_INDEX);
     network_data.SubIfIdx = 0;
 
-    windivert_network_classify((context_t)filter->context, &network_data,
-        /*ipv4=*/FALSE, /*outbound=*/TRUE, /*loopback=*/FALSE, /*advance=*/0,
-        data, result);
+    windivert_network_classify(context, &network_data, /*ipv4=*/FALSE,
+        /*outbound=*/TRUE, /*loopback=*/FALSE, /*advance=*/0, data, result);
 }
 
 /*
@@ -3629,7 +3651,6 @@ static void windivert_network_classify(context_t context,
     PNET_BUFFER buffer, buffer_fst, buffer_itr;
     BOOL impostor, sniff_mode, ok;
     WDFOBJECT object;
-    PLIST_ENTRY old_entry;
     const WINDIVERT_FILTER *filter;
     LONGLONG timestamp;
     NTSTATUS status;
@@ -3673,7 +3694,7 @@ static void windivert_network_classify(context_t context,
     if (packet_state == FWPS_PACKET_INJECTED_BY_SELF ||
         packet_state == FWPS_PACKET_PREVIOUSLY_INJECTED_BY_SELF)
     {
-        packet_priority = (UINT32)packet_context;
+        packet_priority = (UINT32)(ULONG_PTR)packet_context;
         if (packet_priority <= priority)
         {
             WdfObjectDereference(object);
@@ -3821,6 +3842,10 @@ static void windivert_flow_established_v4_classify(
     WINDIVERT_DATA_FLOW flow_data;
     BOOL outbound, loopback;
     UINT64 flow_id;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     flow_data.EndpointId = meta_vals->transportEndpointHandle;
     flow_data.ParentEndpointId = meta_vals->parentEndpointHandle;
@@ -3846,8 +3871,8 @@ static void windivert_flow_established_v4_classify(
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
     flow_id = meta_vals->flowHandle;
 
-    windivert_flow_established_classify((context_t)filter->context,
-        flow_id, &flow_data, /*ipv4=*/TRUE, outbound, loopback, result);
+    windivert_flow_established_classify(context, flow_id, &flow_data,
+        /*ipv4=*/TRUE, outbound, loopback, result);
 }
 
 /*
@@ -3862,6 +3887,10 @@ static void windivert_flow_established_v6_classify(
     WINDIVERT_DATA_FLOW flow_data;
     BOOL outbound, loopback;
     UINT64 flow_id;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     flow_data.ProcessId = (UINT32)meta_vals->processId;
     windivert_get_ipv6_addr(fixed_vals,
@@ -3885,8 +3914,8 @@ static void windivert_flow_established_v6_classify(
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
     flow_id = meta_vals->flowHandle;
     
-    windivert_flow_established_classify((context_t)filter->context,
-        flow_id, &flow_data, /*ipv4=*/FALSE, outbound, loopback, result);
+    windivert_flow_established_classify(context, flow_id, &flow_data,
+        /*ipv4=*/FALSE, outbound, loopback, result);
 }
 
 /*
@@ -4031,8 +4060,11 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     const WINDIVERT_FILTER *filter;
     LONGLONG timestamp;
     flow_t flow;
+
+    UNREFERENCED_PARAMETER(layer_id);
+    UNREFERENCED_PARAMETER(callout_id);
  
-    flow = (flow_t)flow_context;
+    flow = (flow_t)(ULONG_PTR)flow_context;
     if (flow == NULL)
     {
         return;
@@ -4092,6 +4124,10 @@ static void windivert_resource_assignment_v4_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
@@ -4115,8 +4151,8 @@ static void windivert_resource_assignment_v4_classify(
         FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_BIND, /*ipv4=*/TRUE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_BIND, /*ipv4=*/TRUE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4131,6 +4167,10 @@ static void windivert_resource_assignment_v6_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
@@ -4154,8 +4194,8 @@ static void windivert_resource_assignment_v6_classify(
         FWPS_FIELD_ALE_RESOURCE_ASSIGNMENT_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_BIND, /*ipv4=*/FALSE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_BIND, /*ipv4=*/FALSE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4170,6 +4210,10 @@ static void windivert_resource_release_v4_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = 0;
@@ -4188,8 +4232,8 @@ static void windivert_resource_release_v4_classify(
         FWPS_FIELD_ALE_RESOURCE_RELEASE_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/TRUE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/TRUE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4204,6 +4248,10 @@ static void windivert_resource_release_v6_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = 0;
@@ -4222,8 +4270,8 @@ static void windivert_resource_release_v6_classify(
         FWPS_FIELD_ALE_RESOURCE_RELEASE_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/FALSE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/FALSE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4239,6 +4287,10 @@ static void windivert_auth_connect_v4_classify(
     WINDIVERT_DATA_SOCKET socket_data;
     UINT32 flags;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
@@ -4270,8 +4322,8 @@ static void windivert_auth_connect_v4_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_CONNECT, /*ipv4=*/TRUE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_CONNECT, /*ipv4=*/TRUE,
         /*outbound=*/TRUE, loopback, result);
 }
 
@@ -4287,6 +4339,10 @@ static void windivert_auth_connect_v6_classify(
     WINDIVERT_DATA_SOCKET socket_data;
     UINT32 flags;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
@@ -4318,8 +4374,8 @@ static void windivert_auth_connect_v6_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_CONNECT, /*ipv4=*/FALSE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_CONNECT, /*ipv4=*/FALSE,
         /*outbound=*/TRUE, loopback, result);
 }
 
@@ -4334,6 +4390,10 @@ static void windivert_endpoint_closure_v4_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = meta_vals->parentEndpointHandle;
@@ -4355,9 +4415,9 @@ static void windivert_endpoint_closure_v4_classify(
         FWPS_FIELD_ALE_ENDPOINT_CLOSURE_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE,
-        /*ipv4=*/TRUE, /*outbound=*/TRUE, loopback, result);
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/TRUE,
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -4371,6 +4431,10 @@ static void windivert_endpoint_closure_v6_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     socket_data.EndpointId = meta_vals->transportEndpointHandle;
     socket_data.ParentEndpointId = meta_vals->parentEndpointHandle;
@@ -4392,9 +4456,9 @@ static void windivert_endpoint_closure_v6_classify(
         FWPS_FIELD_ALE_ENDPOINT_CLOSURE_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE,
-        /*ipv4=*/FALSE, /*outbound=*/TRUE, loopback, result);
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/FALSE,
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -4408,6 +4472,10 @@ static void windivert_auth_listen_v4_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
@@ -4430,8 +4498,8 @@ static void windivert_auth_listen_v4_classify(
         FWPS_FIELD_ALE_AUTH_LISTEN_V4_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_LISTEN, /*ipv4=*/TRUE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_LISTEN, /*ipv4=*/TRUE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4446,6 +4514,10 @@ static void windivert_auth_listen_v6_classify(
 {
     WINDIVERT_DATA_SOCKET socket_data;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
@@ -4468,8 +4540,8 @@ static void windivert_auth_listen_v6_classify(
         FWPS_FIELD_ALE_AUTH_LISTEN_V6_FLAGS) &
         FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_LISTEN, /*ipv4=*/FALSE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_LISTEN, /*ipv4=*/FALSE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4485,6 +4557,10 @@ static void windivert_auth_recv_accept_v4_classify(
     WINDIVERT_DATA_SOCKET socket_data;
     UINT32 flags;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
+
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
 
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
@@ -4516,8 +4592,8 @@ static void windivert_auth_recv_accept_v4_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_ACCEPT, /*ipv4=*/TRUE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_ACCEPT, /*ipv4=*/TRUE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4533,7 +4609,11 @@ static void windivert_auth_recv_accept_v6_classify(
     WINDIVERT_DATA_SOCKET socket_data;
     UINT32 flags;
     BOOL loopback;
+    context_t context = (context_t)(ULONG_PTR)filter->context;
     
+    UNREFERENCED_PARAMETER(data);
+    UNREFERENCED_PARAMETER(flow_context);
+
     if ((result->rights & FWPS_RIGHT_ACTION_WRITE) == 0)
     {
         return;
@@ -4564,8 +4644,8 @@ static void windivert_auth_recv_accept_v6_classify(
 
     loopback = ((flags & FWP_CONDITION_FLAG_IS_LOOPBACK) != 0);
 
-    windivert_socket_classify((context_t)filter->context,
-        &socket_data, /*event=*/WINDIVERT_EVENT_SOCKET_ACCEPT, /*ipv4=*/FALSE,
+    windivert_socket_classify(context, &socket_data,
+        /*event=*/WINDIVERT_EVENT_SOCKET_ACCEPT, /*ipv4=*/FALSE,
         /*outbound=*/FALSE, loopback, result);
 }
 
@@ -4582,7 +4662,6 @@ static void windivert_socket_classify(context_t context,
     WDFOBJECT object;
     const WINDIVERT_FILTER *filter;
     LONGLONG timestamp;
-    NTSTATUS status;
 
     // Get the timestamp.
     timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
@@ -4883,7 +4962,7 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
 static void windivert_queue_packet(context_t context, packet_t packet)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
-    PLIST_ENTRY entry, old_entry;
+    PLIST_ENTRY old_entry;
     packet_t old_packet;
     LONGLONG timestamp;
     BOOL timeout;
@@ -5190,9 +5269,8 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
-    UINT16 ip, ttl;
     UINT8 proto = 0;
-    UINT header_len = 0, payload_len = 0;
+    UINT header_len = 0;
     NTSTATUS status;
 
     // Parse the headers:
@@ -5382,7 +5460,6 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     UINT8 data8;
     UINT16 data16;
     UINT32 data32;
-    NTSTATUS status;
 
     switch (layer)
     {
@@ -6202,7 +6279,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     return FALSE;
             }
         }
-        ip = (result? filter[ip].success: filter[ip].failure);
+        ip = (UINT16)(result? filter[ip].success: filter[ip].failure);
         if (ip == WINDIVERT_FILTER_RESULT_ACCEPT)
         {
             return TRUE;
@@ -6521,7 +6598,7 @@ static LIST_ENTRY reflect_contexts;         // All open (non-REFLECT) contexts.
 static LIST_ENTRY reflect_waiters;          // All open REFLECT contexts.
 static WDFWORKITEM reflect_worker;          // Reflect work item.
 #pragma data_seg(push, stack, "PAGE")
-static UINT8 reflect_packet[WINDIVERT_REFLECT_PACKET_MAX];
+static char reflect_packet[WINDIVERT_REFLECT_PACKET_MAX];
 #pragma data_seg(pop, stack)
 
 /*
@@ -6632,7 +6709,6 @@ static void windivert_reflect_close_event(context_t context)
 static PVOID windivert_reflect_packet(context_t context, ULONG *len_ptr)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
-    UINT16 total_len;
     const WINDIVERT_FILTER *filter;
     UINT16 filter_len;
     WINDIVERT_STREAM stream;
@@ -6663,7 +6739,7 @@ static void windivert_reflect_event_notify(context_t context,
     context_t waiter;
     const WINDIVERT_FILTER *filter;
     PVOID packet = NULL, process;
-    ULONG packet_len;
+    ULONG packet_len = 0;
     UINT64 flags;
     BOOL match;
 
@@ -6770,7 +6846,7 @@ static void windivert_reflect_established_notify(context_t context,
 /*
  * WinDivert REFLECT worker.
  */
-static void windivert_reflect_worker(IN WDFWORKITEM item)
+void windivert_reflect_worker(IN WDFWORKITEM item)
 {
     KLOCK_QUEUE_HANDLE lock_handle;
     PLIST_ENTRY entry;
@@ -6780,6 +6856,8 @@ static void windivert_reflect_worker(IN WDFWORKITEM item)
     reflect_event_t reflect_event;
     WDFOBJECT object;
     WINDIVERT_LAYER layer;
+
+    UNREFERENCED_PARAMETER(item);
 
     // All reflection events are serialized and handled by this worker.
     // This ensures that we are always operating on a consistent "snapshot"

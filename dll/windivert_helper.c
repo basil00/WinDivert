@@ -276,6 +276,9 @@ typedef UINT64 ERROR, *PERROR;
 #define WINDIVERT_ERROR_BAD_OBJECT              9
 #define WINDIVERT_ERROR_ASSERTION_FAILED        10
 
+#define WINDIVERT_MIN_POOL_SIZE                 12288
+#define WINDIVERT_MAX_POOL_SIZE                 131072
+
 #define MAKE_ERROR(code, pos)                   \
     (((ERROR)(code) << 32) | (ERROR)(pos));
 #define GET_CODE(err)                           \
@@ -2282,16 +2285,14 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
 /*
  * Compile a filter string into an executable filter object.
  */
-static ERROR WinDivertCompileFilter(const char *filter,
+static ERROR WinDivertCompileFilter(const char *filter, HANDLE pool,
     WINDIVERT_LAYER layer, PWINDIVERT_FILTER object, UINT *obj_len)
 {
     TOKEN *tokens;
     PEXPR *stack;
-    HANDLE pool;
     PEXPR expr;
     UINT i, max_depth, pos;
     INT16 label;
-    const SIZE_T min_pool_size = 8192;
     const SIZE_T tokens_size = 5 * WINDIVERT_FILTER_MAXLEN;
     ERROR error;
 
@@ -2312,18 +2313,11 @@ static ERROR WinDivertCompileFilter(const char *filter,
         return MAKE_ERROR(WINDIVERT_ERROR_NONE, 0);
     }
 
-    // Allocate memory for the compiler:
-    pool = HeapCreate(HEAP_NO_SERIALIZE, min_pool_size, 16 * min_pool_size);
-    if (pool == NULL)
-    {
-        return MAKE_ERROR(WINDIVERT_ERROR_NO_MEMORY, 0);
-    }
     tokens = (TOKEN *)HeapAlloc(pool, 0, tokens_size * sizeof(TOKEN));
     stack  = (PEXPR *)HeapAlloc(pool, 0,
         WINDIVERT_FILTER_MAXLEN * sizeof(PEXPR));
     if (tokens == NULL || stack == NULL)
     {
-        HeapDestroy(pool);
         return MAKE_ERROR(WINDIVERT_ERROR_NO_MEMORY, 0);
     }
 
@@ -2331,7 +2325,6 @@ static ERROR WinDivertCompileFilter(const char *filter,
     error = WinDivertTokenizeFilter(filter, layer, tokens, tokens_size-1);
     if (IS_ERROR(error))
     {
-        HeapDestroy(pool);
         return error;
     }
 
@@ -2341,13 +2334,11 @@ static ERROR WinDivertCompileFilter(const char *filter,
     expr = WinDivertParseFilter(pool, tokens, &i, max_depth, FALSE, &error);
     if (expr == NULL)
     {
-        HeapDestroy(pool);
         return error;
     }
     if (tokens[i].kind != TOKEN_END)
     {
         pos = tokens[i].pos;
-        HeapDestroy(pool);
         return MAKE_ERROR(WINDIVERT_ERROR_UNEXPECTED_TOKEN, pos);
     }
 
@@ -2357,7 +2348,6 @@ static ERROR WinDivertCompileFilter(const char *filter,
         WINDIVERT_FILTER_RESULT_REJECT, stack);
     if (label < 0)
     {
-        HeapDestroy(pool);
         return MAKE_ERROR(WINDIVERT_ERROR_TOO_LONG, 0);
     }
 
@@ -2366,7 +2356,6 @@ static ERROR WinDivertCompileFilter(const char *filter,
     {
         WinDivertEmitFilter(stack, label, label, object, obj_len);
     }
-    HeapDestroy(pool);
 
     return MAKE_ERROR(WINDIVERT_ERROR_NONE, 0);
 }
@@ -2412,39 +2401,56 @@ extern BOOL WinDivertHelperCompileFilter(const char *filter_str,
     WINDIVERT_LAYER layer, char *object, UINT obj_len, const char **error,
     UINT *error_pos)
 {
+    HANDLE pool;
     ERROR err;
+
     if (filter_str == NULL)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
 
+    pool = HeapCreate(HEAP_NO_SERIALIZE, WINDIVERT_MIN_POOL_SIZE,
+        WINDIVERT_MAX_POOL_SIZE);
+    if (pool == NULL)
+    {
+        return FALSE;
+    }
+
     SetLastError(ERROR_SUCCESS);
     if (object == NULL)
     {
-        err = WinDivertCompileFilter(filter_str, layer, NULL, NULL);
+        err = WinDivertCompileFilter(filter_str, pool, layer, NULL, NULL);
     }
     else
     {
-        WINDIVERT_FILTER object0[WINDIVERT_FILTER_MAXLEN];
-        UINT obj0_len;
-        err = WinDivertCompileFilter(filter_str, layer, object0, &obj0_len);
-        if (!IS_ERROR(err))
+        WINDIVERT_FILTER *filter_obj = HeapAlloc(pool, 0,
+            WINDIVERT_FILTER_MAXLEN * sizeof(WINDIVERT_FILTER));
+        UINT filter_obj_len;
+        err = WINDIVERT_ERROR_NO_MEMORY;
+        if (filter_obj != NULL)
         {
-            WINDIVERT_STREAM stream;
-            stream.data     = object;
-            stream.pos      = 0;
-            stream.max      = obj_len;
-            stream.overflow = FALSE;
-            
-            WinDivertSerializeFilter(&stream, object0, obj0_len);
-            if (stream.overflow)
+            err = WinDivertCompileFilter(filter_str, pool, layer, filter_obj,
+                &filter_obj_len);
+            if (!IS_ERROR(err))
             {
-                SetLastError(ERROR_INSUFFICIENT_BUFFER);
-                err = MAKE_ERROR(WINDIVERT_ERROR_OUTPUT_TOO_SHORT, 0);
+                WINDIVERT_STREAM stream;
+                stream.data     = object;
+                stream.pos      = 0;
+                stream.max      = obj_len;
+                stream.overflow = FALSE;
+            
+                WinDivertSerializeFilter(&stream, filter_obj, filter_obj_len);
+                if (stream.overflow)
+                {
+                    SetLastError(ERROR_INSUFFICIENT_BUFFER);
+                    err = MAKE_ERROR(WINDIVERT_ERROR_OUTPUT_TOO_SHORT, 0);
+                }
             }
         }
     }
+    HeapDestroy(pool);
+
     if (error != NULL)
     {
         *error = WinDivertErrorString(GET_CODE(err));
@@ -2540,6 +2546,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
 {
     UINT16 pc;
     ERROR err;
+    DWORD error;
     PWINDIVERT_IPHDR iphdr = NULL;
     PWINDIVERT_IPV6HDR ipv6hdr = NULL;
     PWINDIVERT_ICMPHDR icmphdr = NULL;
@@ -2551,12 +2558,14 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     UINT64 random64 = 0;
     BOOL neg;
     UINT32 val[4];
+    ULARGE_INTEGER val64;
     UINT8 data8;
     UINT16 data16;
     UINT32 data32;
     BOOL pass, big;
     int cmp;
-    WINDIVERT_FILTER object[WINDIVERT_FILTER_MAXLEN];
+    HANDLE pool;
+    WINDIVERT_FILTER *object;
     UINT obj_len;
 
     if (filter == NULL || addr == NULL)
@@ -2603,11 +2612,23 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
             return FALSE;
     }
 
-    err = WinDivertCompileFilter(filter, addr->Layer, object, &obj_len);
+    pool = HeapCreate(HEAP_NO_SERIALIZE, WINDIVERT_MIN_POOL_SIZE,
+        WINDIVERT_MAX_POOL_SIZE);
+    if (pool == NULL)
+    {
+        return FALSE;
+    }
+    object = HeapAlloc(pool, 0,
+        WINDIVERT_FILTER_MAXLEN * sizeof(WINDIVERT_FILTER));
+    if (object == NULL)
+    {
+        goto WinDivertHelperEvalFilterError;
+    }
+    err = WinDivertCompileFilter(filter, pool, addr->Layer, object, &obj_len);
     if (IS_ERROR(err))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
+        goto WinDivertHelperEvalFilterError;
     }
 
     pc = 0;
@@ -2616,14 +2637,17 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
         switch (pc)
         {
             case WINDIVERT_FILTER_RESULT_ACCEPT:
+                HeapDestroy(pool);
                 return TRUE;
             case WINDIVERT_FILTER_RESULT_REJECT:
+                HeapDestroy(pool);
+                SetLastError(0);
                 return FALSE;
             default:
                 if (pc >= obj_len)
                 {
                     SetLastError(ERROR_INVALID_PARAMETER);
-                    return FALSE;
+                    goto WinDivertHelperEvalFilterError;
                 }
                 break;
         }
@@ -2774,7 +2798,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 break;
             default:
                 SetLastError(ERROR_INVALID_PARAMETER);
-                return FALSE;
+                goto WinDivertHelperEvalFilterError;
         }
         if (!pass)
         {
@@ -2801,10 +2825,12 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 break;
             }
             case WINDIVERT_FILTER_FIELD_RANDOM8:
-                val[0] = (UINT32)((random64 >> 48) & 0xFF);
+                val64.QuadPart = random64;
+                val[0] = ((UINT32)val64.HighPart >> 16) & 0xFF;
                 break;
             case WINDIVERT_FILTER_FIELD_RANDOM16:
-                val[0] = (UINT32)((random64 >> 32) & 0xFFFF);
+                val64.QuadPart = random64;
+                val[0] = (UINT32)val64.HighPart & 0xFFFF;
                 break;
             case WINDIVERT_FILTER_FIELD_RANDOM32:
                 val[0] = (UINT32)random64;
@@ -2829,12 +2855,12 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 break;
             case WINDIVERT_FILTER_FIELD_TIMESTAMP:
             {
-                UINT64 val64;
                 neg = (addr->Timestamp < 0);
-                val64 = (UINT64)(neg? -addr->Timestamp: addr->Timestamp);
+                val64.QuadPart =
+                    (UINT64)(neg? -addr->Timestamp: addr->Timestamp);
                 big = TRUE;
-                val[0] = (UINT32)val64;
-                val[1] = (UINT32)(val64 >> 32);
+                val[0] = (UINT32)val64.LowPart;
+                val[1] = (UINT32)val64.HighPart;
                 val[2] = val[3] = 0;
                 break;
             }
@@ -2897,7 +2923,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_ICMPV6:
@@ -2917,7 +2943,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_TCP:
@@ -2935,7 +2961,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_UDP:
@@ -2953,7 +2979,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
@@ -3148,7 +3174,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_REMOTEADDR:
@@ -3192,7 +3218,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_LOCALPORT:
@@ -3230,7 +3256,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_REMOTEPORT:
@@ -3268,7 +3294,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_PROTOCOL:
@@ -3285,7 +3311,7 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_ENDPOINTID:
@@ -3294,16 +3320,18 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 switch (addr->Layer)
                 {
                     case WINDIVERT_LAYER_FLOW:
-                        val[0] = (UINT32)addr->Flow.EndpointId;
-                        val[1] = (UINT32)(addr->Flow.EndpointId >> 32);
+                        val64.QuadPart = addr->Flow.EndpointId;
+                        val[0] = (UINT32)val64.LowPart;
+                        val[1] = (UINT32)val64.HighPart;
                         break;
                     case WINDIVERT_LAYER_SOCKET:
-                        val[0] = (UINT32)addr->Socket.EndpointId;
-                        val[1] = (UINT32)(addr->Socket.EndpointId >> 32);
+                        val64.QuadPart = addr->Socket.EndpointId;
+                        val[0] = (UINT32)val64.LowPart;
+                        val[1] = (UINT32)val64.HighPart;
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
@@ -3312,16 +3340,18 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 switch (addr->Layer)
                 {
                     case WINDIVERT_LAYER_FLOW:
-                        val[0] = (UINT32)addr->Flow.ParentEndpointId;
-                        val[1] = (UINT32)(addr->Flow.ParentEndpointId >> 32);
+                        val64.QuadPart = addr->Flow.ParentEndpointId;
+                        val[0] = (UINT32)val64.LowPart;
+                        val[1] = (UINT32)val64.HighPart;
                         break;
                     case WINDIVERT_LAYER_SOCKET:
-                        val[0] = (UINT32)addr->Socket.ParentEndpointId;
-                        val[1] = (UINT32)(addr->Socket.ParentEndpointId >> 32);
+                        val64.QuadPart = addr->Socket.ParentEndpointId;
+                        val[0] = (UINT32)val64.LowPart;
+                        val[1] = (UINT32)val64.HighPart;
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             case WINDIVERT_FILTER_FIELD_PROCESSID:
@@ -3338,12 +3368,12 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                         break;
                     default:
                         SetLastError(ERROR_INVALID_PARAMETER);
-                        return FALSE;
+                        goto WinDivertHelperEvalFilterError;
                 }
                 break;
             default:
                 SetLastError(ERROR_INVALID_PARAMETER);
-                return FALSE;
+                goto WinDivertHelperEvalFilterError;
         }
         if (!pass)
         {
@@ -3374,10 +3404,16 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 break;
             default:
                 SetLastError(ERROR_INVALID_PARAMETER);
-                return FALSE;
+                goto WinDivertHelperEvalFilterError;
         }
         pc = (pass? object[pc].success: object[pc].failure);
     }
+
+WinDivertHelperEvalFilterError:
+    error = GetLastError();
+    HeapDestroy(pool);
+    SetLastError(error);
+    return FALSE;
 }
 
 /*
@@ -3508,6 +3544,7 @@ static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
     PWINDIVERT_FILTER filter)
 {
     UINT32 val;
+    UINT16 success, failure;
     UINT i;
 
     if (WinDivertGetChar(stream) != '_')
@@ -3589,11 +3626,13 @@ static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
             break;
     }
 
-    if (!WinDivertDeserializeLabel(stream, &filter->success) ||
-        !WinDivertDeserializeLabel(stream, &filter->failure))
+    if (!WinDivertDeserializeLabel(stream, &success) ||
+        !WinDivertDeserializeLabel(stream, &failure))
     {
         return FALSE;
     }
+    filter->success = success;
+    filter->failure = failure;
     return TRUE;
 }
 
@@ -4178,11 +4217,11 @@ static PEXPR WinDivertCoalesceExpr(HANDLE pool, PEXPR *exprs, UINT16 i)
 }
 
 /*
- * Format a decimal number.
+ * Format a 32bit decimal number.
  */
-static void WinDivertFormatDecNumber(PWINDIVERT_STREAM stream, UINT64 val)
+static void WinDivertFormatDecNumber32(PWINDIVERT_STREAM stream, UINT32 val)
 {
-    UINT64 r = 10000000000000000000ull, dig;
+    UINT32 r = 1000000000ul, dig;
     BOOL zeroes = FALSE;
 
     while (r != 0)
@@ -4200,9 +4239,40 @@ static void WinDivertFormatDecNumber(PWINDIVERT_STREAM stream, UINT64 val)
 }
 
 /*
- * Format a hexidecimal number.
+ * Format a 128bit decimal number.
  */
-static void WinDivertFormatHexNumber(PWINDIVERT_STREAM stream, UINT32 *val)
+static void WinDivertFormatDecNumber(PWINDIVERT_STREAM stream,
+    const UINT32 *val0)
+{
+    UINT32 val[4];
+    char buf[40];
+    UINT i, j;
+
+    if (val0[0] == 0 && val0[1] == 0 && val0[2] == 0 && val0[3] == 0)
+    {
+        WinDivertPutChar(stream, '0');
+        return;
+    }
+    val[0] = val0[0];
+    val[1] = val0[1];
+    val[2] = val0[2];
+    val[3] = val0[3];
+    for (i = 0; i < sizeof(buf) &&
+            (val[0] != 0 || val[1] != 0 || val[2] != 0 || val[3] != 0); i++)
+    {
+        buf[i] = '0' + WinDivertDivTen128(val);
+    }
+    for (j = 0; j < i; j++)
+    {
+        WinDivertPutChar(stream, buf[i - j - 1]);
+    }
+}
+
+/*
+ * Format a 128bit hexidecimal number.
+ */
+static void WinDivertFormatHexNumber(PWINDIVERT_STREAM stream,
+    const UINT32 *val)
 {
     INT i, s;
     UINT32 dig;
@@ -4232,33 +4302,17 @@ static void WinDivertFormatHexNumber(PWINDIVERT_STREAM stream, UINT32 *val)
 }
 
 /*
- * Format a big number.
- */
-static void WinDivertFormatNumber(PWINDIVERT_STREAM stream, UINT32 *val)
-{
-    if (val[2] == 0 && val[3] == 0)
-    {
-        UINT64 val64 = ((UINT64)val[1] << 32) | (UINT64)val[0];
-        WinDivertFormatDecNumber(stream, val64);
-    }
-    else
-    {
-        WinDivertFormatHexNumber(stream, val);
-    }
-}
-
-/*
  * Format an IPv4 address.
  */
 static void WinDivertFormatIPv4Addr(PWINDIVERT_STREAM stream, UINT32 addr)
 {
-    WinDivertFormatDecNumber(stream, (addr & 0xFF000000) >> 24);
+    WinDivertFormatDecNumber32(stream, (addr & 0xFF000000) >> 24);
     WinDivertPutChar(stream, '.');
-    WinDivertFormatDecNumber(stream, (addr & 0x00FF0000) >> 16);
+    WinDivertFormatDecNumber32(stream, (addr & 0x00FF0000) >> 16);
     WinDivertPutChar(stream, '.');
-    WinDivertFormatDecNumber(stream, (addr & 0x0000FF00) >> 8);
+    WinDivertFormatDecNumber32(stream, (addr & 0x0000FF00) >> 8);
     WinDivertPutChar(stream, '.');
-    WinDivertFormatDecNumber(stream, (addr & 0x000000FF) >> 0);
+    WinDivertFormatDecNumber32(stream, (addr & 0x000000FF) >> 0);
 }
 
 /*
@@ -4488,7 +4542,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             case WINDIVERT_LAYER_REFLECT:
                 WinDivertPutString(stream, "REFLECT"); break;
             default:
-                WinDivertFormatDecNumber(stream, val->val[0]); break;
+                WinDivertFormatDecNumber32(stream, val->val[0]); break;
         }
     }
     else if (is_event)
@@ -4503,7 +4557,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
                 }
                 else
                 {
-                    WinDivertFormatDecNumber(stream, val->val[0]);
+                    WinDivertFormatDecNumber32(stream, val->val[0]);
                 }
                 break;
             case WINDIVERT_LAYER_FLOW:
@@ -4514,7 +4568,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
                     case WINDIVERT_EVENT_FLOW_DELETED:
                         WinDivertPutString(stream, "DELETED"); break;
                     default:
-                        WinDivertFormatDecNumber(stream, val->val[0]); break;
+                        WinDivertFormatDecNumber32(stream, val->val[0]); break;
                 }
                 break;
             case WINDIVERT_LAYER_SOCKET:
@@ -4531,7 +4585,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
                     case WINDIVERT_EVENT_SOCKET_CLOSE:
                         WinDivertPutString(stream, "CLOSE"); break;
                     default:
-                        WinDivertFormatDecNumber(stream, val->val[0]); break;
+                        WinDivertFormatDecNumber32(stream, val->val[0]); break;
                 }
                 break;
             case WINDIVERT_LAYER_REFLECT:
@@ -4542,11 +4596,11 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
                     case WINDIVERT_EVENT_REFLECT_CLOSE:
                         WinDivertPutString(stream, "CLOSE"); break;
                     default:
-                        WinDivertFormatDecNumber(stream, val->val[0]); break;
+                        WinDivertFormatDecNumber32(stream, val->val[0]); break;
                 }
                 break;
             default:
-                WinDivertFormatDecNumber(stream, val->val[0]); break;
+                WinDivertFormatDecNumber32(stream, val->val[0]); break;
         }
     }
     else if (is_hex)
@@ -4556,7 +4610,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     }
     else
     {
-        WinDivertFormatNumber(stream, val->val);
+        WinDivertFormatDecNumber(stream, val->val);
     }
 }
 
@@ -4802,7 +4856,7 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         case TOKEN_PRIORITY:
             WinDivertPutString(stream, "priority"); return;
         case TOKEN_NUMBER:
-            WinDivertFormatNumber(stream, expr->val); return;
+            WinDivertFormatDecNumber(stream, expr->val); return;
     }
 
     WinDivertPutChar(stream, '[');
@@ -4812,7 +4866,7 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         WinDivertPutChar(stream, '-');
         idx = -idx;
     }
-    WinDivertFormatDecNumber(stream, (UINT64)idx);
+    WinDivertFormatDecNumber32(stream, (UINT32)idx);
     WinDivertPutString(stream, "b]");
 }
 
@@ -4824,13 +4878,12 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
 {
     PEXPR exprs[WINDIVERT_FILTER_MAXLEN], expr;
     ERROR err;
-    WINDIVERT_FILTER object[WINDIVERT_FILTER_MAXLEN];
+    DWORD error;
+    WINDIVERT_FILTER *object;
     UINT obj_len;
     INT i;
     HANDLE pool;
     WINDIVERT_STREAM stream;
-    ERROR error;
-    const SIZE_T min_pool_size = 8192;
 
     if (filter == NULL || buffer == NULL)
     {
@@ -4838,17 +4891,23 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
         return FALSE;
     }
 
-    err = WinDivertCompileFilter(filter, layer, object, &obj_len);
-    if (IS_ERROR(err))
-    {
-        SetLastError(ERROR_INVALID_PARAMETER);
-        return FALSE;
-    }
-
-    pool = HeapCreate(HEAP_NO_SERIALIZE, min_pool_size, 16 * min_pool_size);
+    pool = HeapCreate(HEAP_NO_SERIALIZE, WINDIVERT_MIN_POOL_SIZE,
+        WINDIVERT_MAX_POOL_SIZE);
     if (pool == NULL)
     {
         return FALSE;
+    }
+    object = HeapAlloc(pool, 0,
+        WINDIVERT_FILTER_MAXLEN * sizeof(WINDIVERT_FILTER));
+    if (object == NULL)
+    {
+        goto WinDivertHelperFormatFilterError;
+    }
+    err = WinDivertCompileFilter(filter, pool, layer, object, &obj_len);
+    if (IS_ERROR(err))
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        goto WinDivertHelperFormatFilterError;
     }
 
     // Decompile all tests:
@@ -4858,7 +4917,7 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
         if (expr == NULL)
         {
             SetLastError(ERROR_INVALID_PARAMETER);
-            return FALSE;
+            goto WinDivertHelperFormatFilterError;
         }
         exprs[i] = expr;
         switch (expr->succ)
@@ -4885,12 +4944,11 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
     // Coalesce (unflatten) tests into and/or expressions:
     for (i = (INT)obj_len-1; i >= 0; i--)
     {
-        error = MAKE_ERROR(WINDIVERT_ERROR_NONE, 0);
-        (PVOID)WinDivertCoalesceAndOr(pool, exprs, i, &error);
-        if (IS_ERROR(error))
+        err = MAKE_ERROR(WINDIVERT_ERROR_NONE, 0);
+        (PVOID)WinDivertCoalesceAndOr(pool, exprs, i, &err);
+        if (IS_ERROR(err))
         {
-            HeapDestroy(pool);
-            return FALSE;
+            goto WinDivertHelperFormatFilterError;
         }
     }
 
@@ -4898,8 +4956,7 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
     expr = WinDivertCoalesceExpr(pool, exprs, 0);
     if (expr == NULL)
     {
-        HeapDestroy(pool);
-        return FALSE;
+        goto WinDivertHelperFormatFilterError;
     }
 
     // Format the final expression:
@@ -4918,6 +4975,12 @@ BOOL WinDivertHelperFormatFilter(const char *filter, WINDIVERT_LAYER layer,
         return TRUE;
     }
     SetLastError(ERROR_INSUFFICIENT_BUFFER);
+    return FALSE;
+
+WinDivertHelperFormatFilterError:
+    error = GetLastError();
+    HeapDestroy(pool);
+    SetLastError(error);
     return FALSE;
 }
 
