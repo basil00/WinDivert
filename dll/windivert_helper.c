@@ -2189,7 +2189,7 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
     UINT8 field, UINT32 arg)
 {
     INT16 ip;
-    UINT8 succ, fail;
+    UINT16 succ, fail;
     BOOL result[WINDIVERT_FILTER_MAXLEN];
     BOOL result_succ, result_fail, result_test;
 
@@ -2201,33 +2201,31 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
     for (ip = (INT16)(length-1); ip >= 0; ip--)
     {
         succ = filter[ip].success;
-        if (succ == WINDIVERT_FILTER_RESULT_ACCEPT || succ <= ip ||
-                succ >= length)
+        switch (succ)
         {
-            result_succ = TRUE;
-        }
-        else if (succ == WINDIVERT_FILTER_RESULT_REJECT)
-        {
-            result_succ = FALSE;
-        }
-        else
-        {
-            result_succ = result[succ];
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
+                result_succ = TRUE;
+                break;
+            case WINDIVERT_FILTER_RESULT_REJECT:
+                result_succ = FALSE;
+                break;
+            default:
+                result_succ = (succ > ip && succ < length? result[succ]: TRUE);
+                break;
         }
 
         fail = filter[ip].failure;
-        if (fail == WINDIVERT_FILTER_RESULT_ACCEPT || fail <= ip ||
-                fail >= length)
+        switch (fail)
         {
-            result_fail = TRUE;
-        }
-        else if (fail == WINDIVERT_FILTER_RESULT_REJECT)
-        {
-            result_fail = FALSE;
-        }
-        else
-        {
-            result_fail = result[fail];
+            case WINDIVERT_FILTER_RESULT_ACCEPT:
+                result_fail = TRUE;
+                break;
+            case WINDIVERT_FILTER_RESULT_REJECT:
+                result_fail = FALSE;
+                break;
+            default:
+                result_fail = (fail > ip && fail < length? result[fail]: TRUE);
+                break;
         }
 
         if (result_succ && result_fail)
@@ -2243,7 +2241,7 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
             if (filter[ip].neg || filter[ip].arg[1] != 0 ||
                 filter[ip].arg[2] != 0 || filter[ip].arg[3] != 0)
             {
-                result_test = FALSE;
+                result[ip] = TRUE;
             }
             else
             {
@@ -2268,10 +2266,11 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
                         result_test = (arg >= filter[ip].arg[0]);
                         break;
                     default:
-                        return TRUE;    // abort.
+                        result[ip] = TRUE;
+                        continue;
                 }
+                result[ip] = (result_test? result_succ: result_fail);
             }
-            result[ip] = (result_test? result_succ: result_fail);
         }
         else
         {
@@ -5039,18 +5038,18 @@ static void WinDivertByteSwap128(const UINT *inAddr, UINT *outAddr)
     UINT32 tmp[4], i;   // tmp[] allows overlapping inAddr/outAddr
     for (i = 0; i < 4; i++)
     {
-        tmp[3-i] = BYTESWAP32(inAddr[0]);
+        tmp[3-i] = BYTESWAP32(inAddr[i]);
     }
     for (i = 0; i < 4; i++)
     {
         outAddr[i] = tmp[i];
     }
 }
-extern void WinDivertHelperNtohIpv6Address(const UINT *inAddr, UINT *outAddr)
+extern void WinDivertHelperNtohIPv6Address(const UINT *inAddr, UINT *outAddr)
 {
     WinDivertByteSwap128(inAddr, outAddr);
 }
-extern void WinDivertHelperHtonIpv6Address(const UINT *inAddr, UINT *outAddr)
+extern void WinDivertHelperHtonIPv6Address(const UINT *inAddr, UINT *outAddr)
 {
     WinDivertByteSwap128(inAddr, outAddr);
 }

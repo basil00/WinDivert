@@ -603,10 +603,10 @@ extern WINDIVERTEXPORT UINT64 WinDivertHelperNtohll(
     __in        UINT64 x);
 extern WINDIVERTEXPORT UINT64 WinDivertHelperHtonll(
     __in        UINT64 x);
-extern WINDIVERTEXPORT void WinDivertHelperNtohIpv6Address(
+extern WINDIVERTEXPORT void WinDivertHelperNtohIPv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);
-extern WINDIVERTEXPORT void WinDivertHelperHtonIpv6Address(
+extern WINDIVERTEXPORT void WinDivertHelperHtonIPv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);
 

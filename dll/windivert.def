@@ -26,5 +26,5 @@ EXPORTS
     WinDivertHelperHtonl
     WinDivertHelperNtohll
     WinDivertHelperHtonll
-    WinDivertHelperNtohIpv6Address
-    WinDivertHelperHtonIpv6Address
+    WinDivertHelperNtohIPv6Address
+    WinDivertHelperHtonIPv6Address

@@ -51,7 +51,7 @@
 
 #include "windivert.h"
 
-#define MAXBUF          0xFFFF
+#define MAXBUF          WINDIVERT_MTU_MAX
 #define PROXY_PORT      34010
 #define ALT_PORT        43010
 #define MAX_LINE        65

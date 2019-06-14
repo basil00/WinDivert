@@ -51,7 +51,7 @@
 #define ntohs(x)            WinDivertHelperNtohs(x)
 #define ntohl(x)            WinDivertHelperNtohl(x)
 
-#define MAXBUF              0xFFFF
+#define MAXBUF              WINDIVERT_MTU_MAX
 #define INET6_ADDRSTRLEN    45
 
 /*
@@ -197,8 +197,8 @@ int __cdecl main(int argc, char **argv)
         }
         if (ipv6_header != NULL)
         {
-            WinDivertHelperNtohIpv6Address(ipv6_header->SrcAddr, src_addr);
-            WinDivertHelperNtohIpv6Address(ipv6_header->DstAddr, dst_addr);
+            WinDivertHelperNtohIPv6Address(ipv6_header->SrcAddr, src_addr);
+            WinDivertHelperNtohIPv6Address(ipv6_header->DstAddr, dst_addr);
             WinDivertHelperFormatIPv6Address(src_addr, src_str,
                 sizeof(src_str));
             WinDivertHelperFormatIPv6Address(dst_addr, dst_str,

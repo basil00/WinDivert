@@ -53,8 +53,8 @@
 #define htons(x)            WinDivertHelperHtons(x)
 #define htonl(x)            WinDivertHelperHtonl(x)
 
-#define MAXBUF 0xFFFF
-#define MAXURL 4096
+#define MAXBUF              WINDIVERT_MTU_MAX
+#define MAXURL              4096
 
 /*
  * URL and blacklist representation.
