@@ -523,7 +523,8 @@ static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer,
             return TRUE;
         case TOKEN_EVENT_PACKET:
             *val = WINDIVERT_EVENT_NETWORK_PACKET;
-            return (layer == WINDIVERT_LAYER_NETWORK);
+            return (layer == WINDIVERT_LAYER_NETWORK ||
+                    layer == WINDIVERT_LAYER_NETWORK_FORWARD);
         case TOKEN_EVENT_ESTABLISHED:
             *val = WINDIVERT_EVENT_FLOW_ESTABLISHED;
             return (layer == WINDIVERT_LAYER_FLOW);
