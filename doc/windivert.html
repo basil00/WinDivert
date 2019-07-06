@@ -2299,7 +2299,7 @@ Parses an IPv6 address stored in <code>addrStr</code>.
 If <code>pAddr</code> is non-<code>NULL</code>, the buffer assumed 
 to be large enough to hold a 16-byte IPv6 address.
 The result is stored in host-byte-order.
-Use <a href="#divert_helper_hton"><code>WinDivertHelperHtonIpv6Address()</code></a>
+Use <a href="#divert_helper_hton"><code>WinDivertHelperHtonIPv6Address()</code></a>
 to convert the result into network-byte-order.
 </p>
 </dd></dl>
@@ -2591,7 +2591,7 @@ UINT32 <b>WinDivertHelperNtohl</b>(
 UINT64 <b>WinDivertHelperNtohll</b>(
     __in UINT64 x
 );
-void <b>WinDivertHelperNtohIpv6Address</b>(
+void <b>WinDivertHelperNtohIPv6Address</b>(
     __in const UINT *inAddr,
     __out UINT *outAddr
 );
@@ -2626,7 +2626,7 @@ UINT32 <b>WinDivertHelperHtonl</b>(
 UINT64 <b>WinDivertHelperHtonll</b>(
     __in UINT64 x
 );
-void <b>WinDivertHelperHtonIpv6Address</b>(
+void <b>WinDivertHelperHtonIPv6Address</b>(
     __in const UINT *inAddr,
     __out UINT *outAddr
 );
@@ -2849,11 +2849,11 @@ The possible macros are:
 for the <code>SOCKET</code> layer, or
 <code>WINDIVERT_EVENT_REFLECT_CLOSE</code> for the <code>REFLECT</code>
 layer.</td></tr>
-<tr><td><code>NETWORK</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_NETWORK</code></td></tr>
-<tr><td><code>NETWORK_FORWARD</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_NETWORK_FORWARD</code></td></tr>
-<tr><td><code>FLOW</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_FLOW</code></td></tr>
-<tr><td><code>SOCKET</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_SOCKET</code></td></tr>
-<tr><td><code>REFLECT</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW_REFLECT</code></td></tr>
+<tr><td><code>NETWORK</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_NETWORK</code></td></tr>
+<tr><td><code>NETWORK_FORWARD</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_NETWORK_FORWARD</code></td></tr>
+<tr><td><code>FLOW</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW</code></td></tr>
+<tr><td><code>SOCKET</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_SOCKET</code></td></tr>
+<tr><td><code>REFLECT</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_REFLECT</code></td></tr>
 </table>
 </center>
 

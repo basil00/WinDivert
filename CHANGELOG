@@ -291,3 +291,9 @@ WinDivert 2.0.0-rc
       values correspond to higher priorities.
     - The last two arguments for WinDivertRecv() and WinDivertSend() have been
       swapped.
+WinDivert 2.0.1-rc
+    - Fix WFP callout install optimization bug.
+    - Fix WinDivertHelperNtohIpv6Address/WinDivertHelperHtonIpv6Address bug.
+    - Rename the following functions for consistency:
+      * WinDivertHelperNtohIpv6Address -> WinDivertHelperNtohIPv6Address
+      * WinDivertHelperHtonIpv6Address -> WinDivertHelperHtonIPv6Address

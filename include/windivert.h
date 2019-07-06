@@ -610,6 +610,16 @@ extern WINDIVERTEXPORT void WinDivertHelperHtonIPv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);
 
+/*
+ * Old names to be removed in the next version.
+ */
+extern WINDIVERTEXPORT void WinDivertHelperNtohIpv6Address(
+    __in        const UINT *inAddr,
+    __out       UINT *outAddr);
+extern WINDIVERTEXPORT void WinDivertHelperHtonIpv6Address(
+    __in        const UINT *inAddr,
+    __out       UINT *outAddr);
+
 #endif      /* WINDIVERT_KERNEL */
 
 #ifdef __cplusplus

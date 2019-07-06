@@ -5055,3 +5055,12 @@ extern void WinDivertHelperHtonIPv6Address(const UINT *inAddr, UINT *outAddr)
     WinDivertByteSwap128(inAddr, outAddr);
 }
 
+// Old names to be removed in next version
+extern void WinDivertHelperNtohIpv6Address(const UINT *inAddr, UINT *outAddr)
+{
+    WinDivertByteSwap128(inAddr, outAddr);
+}
+extern void WinDivertHelperHtonIpv6Address(const UINT *inAddr, UINT *outAddr)
+{
+    WinDivertByteSwap128(inAddr, outAddr);
+}
