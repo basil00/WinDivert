@@ -297,3 +297,8 @@ WinDivert 2.0.1-rc
     - Rename the following functions for consistency:
       * WinDivertHelperNtohIpv6Address -> WinDivertHelperNtohIPv6Address
       * WinDivertHelperHtonIpv6Address -> WinDivertHelperHtonIPv6Address
+WinDivert 2.0.2-rc
+    - Fix BSOD caused by packets with missing or incomplete transport
+      headers.  This bug does not affect WinDivert 1.4.*.
+    - Fix driver max MTU enforcement.
+    - Fix missing Flow.EndpointId and Flow.ParentEndpointId for IPv6 flows.

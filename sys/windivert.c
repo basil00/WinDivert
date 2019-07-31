@@ -3893,6 +3893,8 @@ static void windivert_flow_established_v6_classify(
     UNREFERENCED_PARAMETER(flow_context);
 
     flow_data.ProcessId = (UINT32)meta_vals->processId;
+    flow_data.ParentEndpointId = meta_vals->parentEndpointHandle;
+    flow_data.ProcessId = (UINT32)meta_vals->processId;
     windivert_get_ipv6_addr(fixed_vals,
         FWPS_FIELD_ALE_FLOW_ESTABLISHED_V6_IP_LOCAL_ADDRESS,
         flow_data.LocalAddr);
@@ -4812,7 +4814,7 @@ static BOOL windivert_queue_work(context_t context, PVOID packet,
         case WINDIVERT_LAYER_NETWORK_FORWARD:
             buffer = (PNET_BUFFER)packet;
             network_data = (PWINDIVERT_DATA_NETWORK)layer_data;
-            if (packet_len > UINT16_MAX)
+            if (packet_len > WINDIVERT_MTU_MAX)
             {
                 // Cannot handle oversized packet
                 return TRUE;
@@ -5387,30 +5389,32 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
         }
     }
 
+    header_len = ip_header_len;
     switch (proto)
     {
         case IPPROTO_ICMP:
             icmp_header = (PWINDIVERT_ICMPHDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_ICMPHDR), NULL, 1, 0);
-            header_len = ip_header_len + sizeof(WINDIVERT_ICMPHDR);
+            header_len += (icmp_header == NULL? 0: sizeof(WINDIVERT_ICMPHDR));
             break;
         case IPPROTO_ICMPV6:
             icmpv6_header = (PWINDIVERT_ICMPV6HDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_ICMPV6HDR), NULL, 1, 0);
-            header_len = ip_header_len + sizeof(WINDIVERT_ICMPV6HDR);
+            header_len +=
+                (icmpv6_header == NULL? 0: sizeof(WINDIVERT_ICMPV6HDR));
             break;
         case IPPROTO_TCP:
             tcp_header = (PWINDIVERT_TCPHDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_TCPHDR), NULL, 1, 0);
-            header_len = ip_header_len + tcp_header->HdrLength*sizeof(UINT32);
+            header_len +=
+                (tcp_header == NULL? 0: tcp_header->HdrLength*sizeof(UINT32));
             break;
         case IPPROTO_UDP:
             udp_header = (PWINDIVERT_UDPHDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_UDPHDR), NULL, 1, 0);
-            header_len = ip_header_len + sizeof(WINDIVERT_UDPHDR);
+            header_len += (udp_header == NULL? 0: sizeof(WINDIVERT_UDPHDR));
             break;
         default:
-            header_len = ip_header_len;
             break;
     }
 
