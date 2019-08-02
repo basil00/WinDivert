@@ -45,7 +45,7 @@
 #include "windivert.h"
 
 #define WINDIVERT_VERSION_MAJOR                     2
-#define WINDIVERT_VERSION_MINOR                     0
+#define WINDIVERT_VERSION_MINOR                     1
 
 #define WINDIVERT_MAGIC_DLL                         0x4C4C447669645724ull
 #define WINDIVERT_MAGIC_SYS                         0x5359537669645723ull
@@ -181,7 +181,8 @@
  */
 #define WINDIVERT_FLAGS_ALL                                                 \
     (WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_DROP | WINDIVERT_FLAG_RECV_ONLY |\
-        WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_NO_INSTALL)
+        WINDIVERT_FLAG_SEND_ONLY | WINDIVERT_FLAG_NO_INSTALL |              \
+        WINDIVERT_FLAG_FRAGMENTS)
 #define WINDIVERT_FLAGS_EXCLUDE(flags, flag1, flag2)                        \
     (((flags) & ((flag1) | (flag2))) != ((flag1) | (flag2)))
 #define WINDIVERT_FLAGS_VALID(flags)                                        \

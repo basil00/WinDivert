@@ -297,8 +297,13 @@ WinDivert 2.0.1-rc
     - Rename the following functions for consistency:
       * WinDivertHelperNtohIpv6Address -> WinDivertHelperNtohIPv6Address
       * WinDivertHelperHtonIpv6Address -> WinDivertHelperHtonIPv6Address
-WinDivert 2.0.2-rc
+WinDivert 2.1.0-rc
+    - WinDivertOpen() now supports a new flag:
+      * WINDIVERT_FLAG_FRAGMENTS: If set, the handle will capture inbound IP
+        fragments, but not inbound reassembled IP packets.  Otherwise, if not
+        set (the default), the handle will capture inbound reassembled IP
+        packets, but not inbound IP fragments.  This flag only affects
+        inbound packets at the WINDIVERT_LAYER_NETWORK layer.
     - Fix BSOD caused by packets with missing or incomplete transport
       headers.  This bug does not affect WinDivert 1.4.*.
-    - Fix driver max MTU enforcement.
     - Fix missing Flow.EndpointId and Flow.ParentEndpointId for IPv6 flows.

@@ -1135,6 +1135,19 @@ This flag is useful for querying the WinDivert state using a
 <code>WINDIVERT_LAYER_REFLECT</code> handle.
 </td>
 </tr>
+<tr>
+<td>
+<code>WINDIVERT_FLAG_FRAGMENTS</code>
+</td>
+<td>
+If set, the handle will capture inbound IP fragments, but not inbound
+reassembled IP packets.
+Otherwise, if not set (the default), the handle will capture inbound
+reassembled IP packets, but not inbound IP fragments.
+This flag only affects inbound packets at the
+<code>WINDIVERT_LAYER_NETWORK</code> layer, else the flag is ignored.
+</td>
+</tr>
 </table>
 </center>
 <p>

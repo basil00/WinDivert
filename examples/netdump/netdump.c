@@ -102,7 +102,7 @@ int __cdecl main(int argc, char **argv)
 
     // Divert traffic matching the filter:
     handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, priority,
-        WINDIVERT_FLAG_SNIFF);
+        WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_FRAGMENTS);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER &&
