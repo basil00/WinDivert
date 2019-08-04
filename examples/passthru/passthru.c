@@ -147,7 +147,7 @@ int __cdecl main(int argc, char **argv)
 static DWORD passthru(LPVOID arg)
 {
     UINT8 *packet;
-    UINT packet_len, addr_len;
+    UINT packet_len, recv_len, addr_len;
     WINDIVERT_ADDRESS *addr;
     PCONFIG config = (PCONFIG)arg;
     HANDLE handle;
@@ -156,7 +156,10 @@ static DWORD passthru(LPVOID arg)
     handle = config->handle;
     batch = config->batch;
 
-    packet = (UINT8 *)malloc(batch * MTU);
+    packet_len = batch * MTU;
+    packet_len =
+        (packet_len < WINDIVERT_MTU_MAX? WINDIVERT_MTU_MAX: packet_len);
+    packet = (UINT8 *)malloc(packet_len);
     addr = (WINDIVERT_ADDRESS *)malloc(batch * sizeof(WINDIVERT_ADDRESS));
     if (packet == NULL || addr == NULL)
     {
@@ -169,9 +172,8 @@ static DWORD passthru(LPVOID arg)
     while (TRUE)
     {
         // Read a matching packet.
-        packet_len = batch * MTU;
-        addr_len   = batch * sizeof(WINDIVERT_ADDRESS);
-        if (!WinDivertRecvEx(handle, packet, packet_len, &packet_len, 0,
+        addr_len = batch * sizeof(WINDIVERT_ADDRESS);
+        if (!WinDivertRecvEx(handle, packet, packet_len, &recv_len, 0,
                 addr, &addr_len, NULL))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
@@ -180,7 +182,7 @@ static DWORD passthru(LPVOID arg)
         }
 
         // Re-inject the matching packet.
-        if (!WinDivertSendEx(handle, packet, packet_len, NULL, 0, addr,
+        if (!WinDivertSendEx(handle, packet, recv_len, NULL, 0, addr,
                 addr_len, NULL))
         {
             fprintf(stderr, "warning: failed to reinject packet (%d)\n",

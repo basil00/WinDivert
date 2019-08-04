@@ -217,8 +217,6 @@ typedef struct
                          WINDIVERT_LAYER_FLAG_NETWORK_FORWARD |             \
                          WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_SOCKET)
-#define LN_F__          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
-                         WINDIVERT_LAYER_FLAG_FLOW)
 #define L__F_R          (WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_REFLECT)
 #define LN_FS_          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
@@ -625,7 +623,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"icmpv6.Type",         TOKEN_ICMPV6_TYPE,         LNM___},
         {"ifIdx",               TOKEN_IF_IDX,              LNM___},
         {"impostor",            TOKEN_IMPOSTOR,            LNM___},
-        {"inbound",             TOKEN_INBOUND,             LN_F__},
+        {"inbound",             TOKEN_INBOUND,             LN_FS_},
         {"ip",                  TOKEN_IP,                  LNMFS_},
         {"ip.Checksum",         TOKEN_IP_CHECKSUM,         LNM___},
         {"ip.DF",               TOKEN_IP_DF,               LNM___},
@@ -654,7 +652,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"loopback",            TOKEN_LOOPBACK,            LN_FS_},
         {"not",                 TOKEN_NOT,                 LNMFSR},
         {"or",                  TOKEN_OR,                  LNMFSR},
-        {"outbound",            TOKEN_OUTBOUND,            LN_F__},
+        {"outbound",            TOKEN_OUTBOUND,            LN_FS_},
         {"packet",              TOKEN_PACKET,              LNM___},
         {"packet16",            TOKEN_PACKET16,            LNM___},
         {"packet32",            TOKEN_PACKET32,            LNM___},

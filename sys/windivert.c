@@ -2168,6 +2168,7 @@ static void windivert_read_service_request(context_t context, packet_t packet,
             addr[i].TCPChecksum = packet->tcp_checksum;
             addr[i].UDPChecksum = packet->udp_checksum;
             addr[i].Reserved1   = 0;
+            addr[i].Reserved2   = 0;
             layer_data = (PVOID)packet->data;
             switch (packet->layer)
             {
@@ -2371,6 +2372,7 @@ static void windivert_fast_read_service_request(PVOID packet, ULONG packet_len,
         addr->TCPChecksum = (tcp_checksum? 1: 0);
         addr->UDPChecksum = (udp_checksum? 1: 0);
         addr->Reserved1   = 0;
+        addr->Reserved2   = 0;
         switch (layer)
         {
             case WINDIVERT_LAYER_NETWORK:
@@ -4180,7 +4182,7 @@ static void windivert_resource_assignment_v4_classify(
 
     windivert_socket_classify(context, &socket_data,
         /*event=*/WINDIVERT_EVENT_SOCKET_BIND, /*ipv4=*/TRUE,
-        /*outbound=*/FALSE, loopback, result);
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -4223,7 +4225,7 @@ static void windivert_resource_assignment_v6_classify(
 
     windivert_socket_classify(context, &socket_data,
         /*event=*/WINDIVERT_EVENT_SOCKET_BIND, /*ipv4=*/FALSE,
-        /*outbound=*/FALSE, loopback, result);
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -4261,7 +4263,7 @@ static void windivert_resource_release_v4_classify(
 
     windivert_socket_classify(context, &socket_data,
         /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/TRUE,
-        /*outbound=*/FALSE, loopback, result);
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -4299,7 +4301,7 @@ static void windivert_resource_release_v6_classify(
 
     windivert_socket_classify(context, &socket_data,
         /*event=*/WINDIVERT_EVENT_SOCKET_CLOSE, /*ipv4=*/FALSE,
-        /*outbound=*/FALSE, loopback, result);
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -4527,7 +4529,7 @@ static void windivert_auth_listen_v4_classify(
 
     windivert_socket_classify(context, &socket_data,
         /*event=*/WINDIVERT_EVENT_SOCKET_LISTEN, /*ipv4=*/TRUE,
-        /*outbound=*/FALSE, loopback, result);
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -4569,7 +4571,7 @@ static void windivert_auth_listen_v6_classify(
 
     windivert_socket_classify(context, &socket_data,
         /*event=*/WINDIVERT_EVENT_SOCKET_LISTEN, /*ipv4=*/FALSE,
-        /*outbound=*/FALSE, loopback, result);
+        /*outbound=*/TRUE, loopback, result);
 }
 
 /*
@@ -5289,7 +5291,7 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     PWINDIVERT_UDPHDR *udp_header_ptr, UINT8 *proto_ptr, UINT *header_len_ptr,
     UINT *payload_len_ptr)
 {
-    UINT tot_len, ip_header_len;
+    UINT total_len, ip_header_len = 0;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -5306,8 +5308,8 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
         DEBUG("FILTER: REJECT (packet is NULL)");
         return FALSE;
     }
-    tot_len = NET_BUFFER_DATA_LENGTH(buffer);
-    if (tot_len < sizeof(WINDIVERT_IPHDR))
+    total_len = NET_BUFFER_DATA_LENGTH(buffer);
+    if (total_len < sizeof(WINDIVERT_IPHDR))
     {
         DEBUG("FILTER: REJECT (packet length too small)");
         return FALSE;
@@ -5317,7 +5319,7 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     if (ipv4)
     {
         // IPv4:
-        if (tot_len < sizeof(WINDIVERT_IPHDR))
+        if (total_len < sizeof(WINDIVERT_IPHDR))
         {
             DEBUG("FILTER: REJECT (packet length too small)");
             return FALSE;
@@ -5331,14 +5333,14 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
         }
         ip_header_len = ip_header->HdrLength*sizeof(UINT32);
         if (ip_header->Version != 4 ||
-            RtlUshortByteSwap(ip_header->Length) != tot_len ||
+            RtlUshortByteSwap(ip_header->Length) != total_len ||
             ip_header->HdrLength < 5 ||
-            ip_header_len > tot_len)
+            ip_header_len > total_len)
         {
             DEBUG("FILTER: REJECT (bad IPv4 packet)");
             return FALSE;
         }
-        if (!frag_mode && 
+        if (!frag_mode &&
             (WINDIVERT_IPHDR_GET_MF(ip_header) != 0 ||
              WINDIVERT_IPHDR_GET_FRAGOFF(ip_header) != 0))
         {
@@ -5351,7 +5353,7 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     else
     {
         // IPv6:
-        if (tot_len < sizeof(WINDIVERT_IPV6HDR))
+        if (total_len < sizeof(WINDIVERT_IPV6HDR))
         {
             DEBUG("FILTER: REJECT (packet length too small)");
             return FALSE;
@@ -5365,9 +5367,9 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
         }
         ip_header_len = sizeof(WINDIVERT_IPV6HDR);
         if (ipv6_header->Version != 6 ||
-            ip_header_len > tot_len ||
+            ip_header_len > total_len ||
             RtlUshortByteSwap(ipv6_header->Length) +
-                sizeof(WINDIVERT_IPV6HDR) != tot_len)
+                sizeof(WINDIVERT_IPV6HDR) != total_len)
         {
             DEBUG("FILTER: REJECT (bad IPv6 packet)");
             return FALSE;
@@ -5395,6 +5397,8 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
                     if (!frag_mode)
                     {
                         DEBUG("FILTER: REJECT (fragment)");
+                        NdisRetreatNetBufferDataStart(buffer, ip_header_len,
+                            0, NULL);
                         return FALSE;
                     }
                     ext_header_len = 8;
@@ -5420,6 +5424,13 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
             }
 
             proto = ext_header[0];
+            if (ip_header_len + ext_header_len > total_len)
+            {
+                DEBUG("FILTER: REJECT (bad IPv6 extension header)");
+                NdisRetreatNetBufferDataStart(buffer, ip_header_len,
+                    0, NULL);
+                return FALSE;
+            }
             ip_header_len += ext_header_len;
             NdisAdvanceNetBufferDataStart(buffer, ext_header_len, FALSE,
                 NULL);
@@ -5443,8 +5454,17 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
         case IPPROTO_TCP:
             tcp_header = (PWINDIVERT_TCPHDR)NdisGetDataBuffer(buffer,
                 sizeof(WINDIVERT_TCPHDR), NULL, 1, 0);
-            header_len +=
-                (tcp_header == NULL? 0: tcp_header->HdrLength*sizeof(UINT32));
+            if (tcp_header != NULL)
+            {
+                UINT tcp_header_len = tcp_header->HdrLength * sizeof(UINT32);
+                if (header_len + tcp_header_len > total_len)
+                {
+                    // Bad TCP options:
+                    tcp_header = NULL;
+                    break;
+                }
+                header_len += tcp_header_len;
+            }
             break;
         case IPPROTO_UDP:
             udp_header = (PWINDIVERT_UDPHDR)NdisGetDataBuffer(buffer,
@@ -5454,7 +5474,6 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
         default:
             break;
     }
-
     status = NdisRetreatNetBufferDataStart(buffer, ip_header_len, 0, NULL);
     if (!NT_SUCCESS(status))
     {
@@ -5471,7 +5490,7 @@ static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
     *udp_header_ptr    = udp_header;
     *proto_ptr         = proto;
     *header_len_ptr    = header_len;
-    *payload_len_ptr   = (header_len > tot_len? 0: tot_len - header_len);
+    *payload_len_ptr   = total_len - header_len;
 
     return TRUE;
 }
