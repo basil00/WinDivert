@@ -308,3 +308,5 @@ WinDivert 2.1.0
     - Fix BSOD caused by packets with missing or incomplete transport
       headers (introduced in 2.0.0).
     - Fix missing Flow.EndpointId and Flow.ParentEndpointId for IPv6 flows.
+WinDivert 2.2.0
+    - Implement new packet parser that correctly handles IP fragments.

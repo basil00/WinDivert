@@ -73,6 +73,21 @@ static UINT64 WinDivertMul64(UINT64 a, UINT64 b)
 #define WINDIVERT_MUL64(a, b)   ((a) * (b))
 #endif      /* WIN32 */
 
+/*
+ * IPv6 fragment header.
+ */
+typedef struct
+{
+    UINT8 NextHdr;
+    UINT8 Reserved;
+    UINT16 FragOff0;
+    UINT32 Id;
+} WINDIVERT_IPV6FRAGHDR, *PWINDIVERT_IPV6FRAGHDR;
+#define WINDIVERT_IPV6FRAGHDR_GET_FRAGOFF(hdr)                          \
+    (((hdr)->FragOff0) & 0xF8FF)
+#define WINDIVERT_IPV6FRAGHDR_GET_MF(hdr)                               \
+    ((((hdr)->FragOff0) & 0x0100) != 0)
+
 #include "windivert_hash.c"
 
 /*
@@ -95,6 +110,29 @@ typedef struct
     UINT32 Zero:24;
     UINT32 NextHdr:8;
 } WINDIVERT_PSEUDOV6HDR, *PWINDIVERT_PSEUDOV6HDR;
+
+/*
+ * Packet info.
+ */
+typedef struct
+{
+    UINT32 HeaderLength:17;
+    UINT32 FragOff:13;
+    UINT32 Fragment:1;
+    UINT32 MF:1;
+    UINT32 PayloadLength:16;
+    UINT32 Protocol:8;
+    UINT32 Truncated:1;
+    UINT32 Extended:1;
+    UINT32 Reserved1:6;
+    PWINDIVERT_IPHDR IPHeader;
+    PWINDIVERT_IPV6HDR IPv6Header;
+    PWINDIVERT_ICMPHDR ICMPHeader;
+    PWINDIVERT_ICMPV6HDR ICMPv6Header;
+    PWINDIVERT_TCPHDR TCPHeader;
+    PWINDIVERT_UDPHDR UDPHeader;
+    UINT8 *Payload;
+} WINDIVERT_PACKET, *PWINDIVERT_PACKET;
 
 /*
  * Streams.
@@ -284,60 +322,10 @@ static void WinDivertSerializeFilter(PWINDIVERT_STREAM stream,
 }
 
 /*
- * Skip well-known IPv6 extension headers.
- */
-static UINT8 WinDivertSkipExtHeaders(UINT8 proto, UINT8 **header, UINT *len)
-{
-    UINT hdrlen;
-
-    while (TRUE)
-    {
-        if (*len <= 2)
-        {
-            return IPPROTO_NONE;
-        }
-
-        hdrlen = (UINT)*(*header + 1);
-        switch (proto)
-        {
-            case IPPROTO_FRAGMENT:
-                hdrlen = 8;
-                break;
-            case IPPROTO_AH:
-                hdrlen += 2;
-                hdrlen *= 4;
-                break;
-            case IPPROTO_HOPOPTS:
-            case IPPROTO_DSTOPTS:
-            case IPPROTO_ROUTING:
-                hdrlen++;
-                hdrlen *= 8;
-                break;
-            case IPPROTO_NONE:
-                return proto;
-            default:
-                return proto;
-        }
-
-        if (hdrlen >= *len)
-        {
-            return IPPROTO_NONE;
-        }
-
-        proto = **header;
-        *header += hdrlen;
-        *len -= hdrlen;
-    }
-}
-
-/*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
-    PWINDIVERT_IPHDR *ppIpHdr, PWINDIVERT_IPV6HDR *ppIpv6Hdr, UINT8 *pProtocol,
-    PWINDIVERT_ICMPHDR *ppIcmpHdr, PWINDIVERT_ICMPV6HDR *ppIcmpv6Hdr,
-    PWINDIVERT_TCPHDR *ppTcpHdr, PWINDIVERT_UDPHDR *ppUdpHdr, PVOID *ppData,
-    UINT *pDataLen, PVOID *ppNext, UINT *pNextLen)
+static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket, UINT packetLen,
+    PWINDIVERT_PACKET pInfo)
 {
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
@@ -345,183 +333,181 @@ extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
-    UINT16 header_len;
+    PWINDIVERT_IPV6FRAGHDR frag_header;
     UINT8 protocol = 0;
-    PVOID data = NULL, next = NULL;
-    UINT data_len = 0, next_len = 0, packet_len;
-    BOOL success = FALSE;
+    UINT8 *data = NULL;
+    UINT packet_len, total_len, header_len, data_len = 0, frag_off = 0;
+    BOOL MF = FALSE, fragment = FALSE, is_ext_header;
 
     if (pPacket == NULL || packetLen < sizeof(WINDIVERT_IPHDR))
     {
-        goto WinDivertHelperParsePacketExit;
+        return FALSE;
     }
-    data = (PVOID)pPacket;
+    data = (UINT8 *)pPacket;
     data_len = packetLen;
 
     ip_header = (PWINDIVERT_IPHDR)data;
     switch (ip_header->Version)
     {
         case 4:
-            if (data_len < sizeof(WINDIVERT_IPHDR) ||
-                ip_header->HdrLength < 5) 
+            if (packetLen < sizeof(WINDIVERT_IPHDR) ||
+                ip_header->HdrLength < 5)
             {
-                ip_header = NULL;
-                goto WinDivertHelperParsePacketExit;
+                return FALSE;
             }
-            packet_len = (UINT)ntohs(ip_header->Length);
-            header_len = ip_header->HdrLength*sizeof(UINT32);
-            protocol = ip_header->Protocol;
-            if (data_len < header_len || data_len < packet_len ||
-                packet_len < header_len)
+            total_len  = (UINT)ntohs(ip_header->Length);
+            protocol   = ip_header->Protocol;
+            header_len = ip_header->HdrLength * sizeof(UINT32);
+            if (total_len < header_len || packetLen < header_len)
             {
-                ip_header = NULL;
-                goto WinDivertHelperParsePacketExit;
+                return FALSE;
             }
-            else if (packet_len < data_len)
-            {
-                next = (PVOID)((UINT8 *)data + packet_len);
-                next_len = data_len - packet_len;
-            }
-            data = (PVOID)((UINT8 *)data + header_len);
-            data_len = packet_len - header_len;
+            frag_off   = ntohs(WINDIVERT_IPHDR_GET_FRAGOFF(ip_header));
+            MF         = (WINDIVERT_IPHDR_GET_MF(ip_header) != 0);
+            fragment   = (MF || frag_off != 0);
+            packet_len = (total_len < packetLen? total_len: packetLen);
+            data      += header_len;
+            data_len   = packet_len - header_len;
             break;
+
         case 6:
-            ip_header = NULL;
+            ip_header   = NULL;
             ipv6_header = (PWINDIVERT_IPV6HDR)data;
-            if (data_len < sizeof(WINDIVERT_IPV6HDR) ||
-                data_len < ntohs(ipv6_header->Length) +
-                    sizeof(WINDIVERT_IPV6HDR))
+            if (packetLen < sizeof(WINDIVERT_IPV6HDR))
             {
-                ipv6_header = NULL;
-                goto WinDivertHelperParsePacketExit;
+                return FALSE;
             }
-            protocol = ipv6_header->NextHdr;
-            packet_len = ntohs(ipv6_header->Length) + sizeof(WINDIVERT_IPV6HDR);
-            if (packet_len < data_len)
+            protocol   = ipv6_header->NextHdr;
+            total_len  = (UINT)ntohs(ipv6_header->Length) +
+                sizeof(WINDIVERT_IPV6HDR);
+            packet_len = (total_len < packetLen? total_len: packetLen);
+            data      += sizeof(WINDIVERT_IPV6HDR);
+            data_len   = packet_len - sizeof(WINDIVERT_IPV6HDR);
+
+            while (frag_off == 0 && data_len >= 2)
             {
-                next = (PVOID)((UINT8 *)data + packet_len);
-                next_len = data_len - packet_len;
+                header_len = (UINT)data[1];
+                is_ext_header = TRUE;
+                switch (protocol)
+                {
+                    case IPPROTO_FRAGMENT:
+                        header_len = 8;
+                        if (fragment || data_len < header_len)
+                        {
+                            is_ext_header = FALSE;
+                            break;
+                        }
+                        frag_header = (PWINDIVERT_IPV6FRAGHDR)data;
+                        frag_off    = ntohs(
+                            WINDIVERT_IPV6FRAGHDR_GET_FRAGOFF(frag_header));
+                        MF          = WINDIVERT_IPV6FRAGHDR_GET_MF(frag_header);
+                        fragment    = TRUE;
+                        break;
+                    case IPPROTO_AH:
+                        header_len += 2;
+                        header_len *= 4;
+                        break;
+                    case IPPROTO_HOPOPTS:
+                    case IPPROTO_DSTOPTS:
+                    case IPPROTO_ROUTING:
+                    case IPPROTO_MH:
+                        header_len++;
+                        header_len *= 8;
+                        break;
+                    default:
+                        is_ext_header = FALSE;
+                        break;
+                }
+                if (!is_ext_header || data_len < header_len)
+                {
+                    break;
+                }
+                protocol  = data[0];
+                data     += header_len;
+                data_len -= header_len;
             }
-            data = (PVOID)((UINT8 *)data + sizeof(WINDIVERT_IPV6HDR));
-            data_len = packet_len - sizeof(WINDIVERT_IPV6HDR);
-            protocol = WinDivertSkipExtHeaders(protocol, (UINT8 **)&data,
-                &data_len);
             break;
+
         default:
-            ip_header = NULL;
-            goto WinDivertHelperParsePacketExit;
+            return FALSE;
     }
-    data = (data_len == 0? NULL: data);
-    success = TRUE;
+
+    if (frag_off != 0)
+    {
+        goto WinDivertHelperParsePacketExit;
+    }
     switch (protocol)
     {
         case IPPROTO_TCP:
             tcp_header = (PWINDIVERT_TCPHDR)data;
             if (data_len < sizeof(WINDIVERT_TCPHDR) ||
-                tcp_header->HdrLength < 5 ||
-                data_len < tcp_header->HdrLength*sizeof(UINT32))
+                tcp_header->HdrLength < 5)
             {
                 tcp_header = NULL;
                 goto WinDivertHelperParsePacketExit;
             }
-            header_len = tcp_header->HdrLength*sizeof(UINT32);
-            data = ((UINT8 *)data + header_len);
-            data_len -= header_len;
+            header_len = tcp_header->HdrLength * sizeof(UINT32);
+            header_len = (header_len > data_len? data_len: header_len);
             break;
+
         case IPPROTO_UDP:
-            udp_header = (PWINDIVERT_UDPHDR)data;
-            if (data_len < sizeof(WINDIVERT_UDPHDR) ||
-                ntohs(udp_header->Length) != data_len)
+            if (data_len < sizeof(WINDIVERT_UDPHDR))
             {
-                udp_header = NULL;
                 goto WinDivertHelperParsePacketExit;
             }
-            data = ((UINT8 *)data + sizeof(WINDIVERT_UDPHDR));
-            data_len -= sizeof(WINDIVERT_UDPHDR);
+            udp_header = (PWINDIVERT_UDPHDR)data;
+            header_len = sizeof(WINDIVERT_UDPHDR);
             break;
+
         case IPPROTO_ICMP:
-            icmp_header = (PWINDIVERT_ICMPHDR)data;
             if (ip_header == NULL ||
                 data_len < sizeof(WINDIVERT_ICMPHDR))
             {
-                icmp_header = NULL;
                 goto WinDivertHelperParsePacketExit;
             }
-            data = ((UINT8 *)data + sizeof(WINDIVERT_ICMPHDR));
-            data_len -= sizeof(WINDIVERT_ICMPHDR);
+            icmp_header = (PWINDIVERT_ICMPHDR)data;
+            header_len  = sizeof(WINDIVERT_ICMPHDR);
             break;
+
         case IPPROTO_ICMPV6:
-            icmpv6_header = (PWINDIVERT_ICMPV6HDR)data;
             if (ipv6_header == NULL ||
                 data_len < sizeof(WINDIVERT_ICMPV6HDR))
             {
-                icmpv6_header = NULL;
                 goto WinDivertHelperParsePacketExit;
             }
-            data = ((UINT8 *)data + sizeof(WINDIVERT_ICMPV6HDR));
-            data_len -= sizeof(WINDIVERT_ICMPV6HDR);
+            icmpv6_header = (PWINDIVERT_ICMPV6HDR)data;
+            header_len    = sizeof(WINDIVERT_ICMPV6HDR);
             break;
-        default:
-            break;
-    }
 
-    if (data_len == 0)
-    {
-        data = NULL;
+        default:
+            goto WinDivertHelperParsePacketExit;
     }
+    data     += header_len;
+    data_len -= header_len;
 
 WinDivertHelperParsePacketExit:
-    if (pProtocol != NULL)
+    if (pInfo == NULL)
     {
-        *pProtocol = protocol;
+        return TRUE;
     }
-    if (ppIpHdr != NULL)
-    {
-        *ppIpHdr = ip_header;
-    }
-    if (ppIpv6Hdr != NULL)
-    {
-        *ppIpv6Hdr = ipv6_header;
-    }
-    if (ppIcmpHdr != NULL)
-    {
-        *ppIcmpHdr = icmp_header;
-    }
-    if (ppIcmpv6Hdr != NULL)
-    {
-        *ppIcmpv6Hdr = icmpv6_header;
-    }
-    if (ppTcpHdr != NULL)
-    {
-        *ppTcpHdr = tcp_header;
-    }
-    if (ppUdpHdr != NULL)
-    {
-        *ppUdpHdr = udp_header;
-    }
-    if (ppData != NULL)
-    {
-        *ppData = data;
-    }
-    if (pDataLen != NULL)
-    {
-        *pDataLen = data_len;
-    }
-    if (ppNext != NULL)
-    {
-        *ppNext = next;
-    }
-    if (pNextLen != NULL)
-    {
-        *pNextLen = next_len;
-    }
-
-    if (ppNext == NULL && pNextLen == NULL && next != NULL)
-    {
-        success = FALSE;
-    }
-
-    return success;
+    data                 = (data_len == 0? NULL: data);
+    pInfo->Protocol      = (UINT32)protocol;
+    pInfo->Fragment      = (fragment? 1: 0);
+    pInfo->MF            = (MF? 1: 0);
+    pInfo->FragOff       = (UINT32)frag_off;
+    pInfo->Truncated     = (total_len < packetLen? 1: 0);
+    pInfo->Extended      = (total_len > packetLen? 1: 0);
+    pInfo->Reserved1     = 0;
+    pInfo->IPHeader      = ip_header;
+    pInfo->IPv6Header    = ipv6_header;
+    pInfo->ICMPHeader    = icmp_header;
+    pInfo->ICMPv6Header  = icmpv6_header;
+    pInfo->TCPHeader     = tcp_header;
+    pInfo->UDPHeader     = udp_header;
+    pInfo->Payload       = data;
+    pInfo->HeaderLength  = (UINT32)(packet_len - data_len);
+    pInfo->PayloadLength = (UINT32)data_len;
+    return TRUE;
 }
 
 /*
@@ -539,44 +525,59 @@ extern BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
+    WINDIVERT_PACKET info;
     UINT payload_len, checksum_len;
+    BOOL truncated;
 
-    if (!WinDivertHelperParsePacket(pPacket, packetLen, &ip_header,
-            &ipv6_header, NULL, &icmp_header, &icmpv6_header, &tcp_header,
-            &udp_header, NULL, &payload_len, NULL, NULL))
+    if (!WinDivertHelperParsePacketEx(pPacket, packetLen, &info))
     {
         return FALSE;
     }
 
+    ip_header = info.IPHeader;
     if (ip_header != NULL && !(flags & WINDIVERT_HELPER_NO_IP_CHECKSUM))
     {
         ip_header->Checksum = 0;
         ip_header->Checksum = WinDivertCalcChecksum(NULL, 0, ip_header,
-            ip_header->HdrLength*sizeof(UINT32));
+            ip_header->HdrLength * sizeof(UINT32));
         if (pAddr != NULL)
         {
             pAddr->IPChecksum = 1;
         }
     }
-    
+
+    payload_len = info.PayloadLength;
+    truncated   = (info.Truncated || info.MF || info.FragOff != 0);
+ 
+    icmp_header = info.ICMPHeader;
     if (icmp_header != NULL)
     {
         if ((flags & WINDIVERT_HELPER_NO_ICMP_CHECKSUM) != 0)
         {
             return TRUE;
         }
+        if (truncated)
+        {
+            return FALSE;
+        }
         icmp_header->Checksum = 0;
         icmp_header->Checksum = WinDivertCalcChecksum(NULL, 0,
             icmp_header, payload_len + sizeof(WINDIVERT_ICMPHDR));
         return TRUE;
     }
-    
+
+    icmpv6_header = info.ICMPv6Header;
     if (icmpv6_header != NULL)
     {
         if ((flags & WINDIVERT_HELPER_NO_ICMPV6_CHECKSUM) != 0)
         {
             return TRUE;
         }
+        if (truncated)
+        {
+            return FALSE;
+        }
+        ipv6_header = info.IPv6Header;
         checksum_len = payload_len + sizeof(WINDIVERT_ICMPV6HDR);
         pseudo_header_len = WinDivertInitPseudoHeader(NULL, ipv6_header, 
             IPPROTO_ICMPV6, checksum_len, pseudo_header);
@@ -585,14 +586,20 @@ extern BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
             pseudo_header_len, icmpv6_header, checksum_len);
         return TRUE;
     }
-    
+
+    tcp_header = info.TCPHeader;
     if (tcp_header != NULL)
     {
         if ((flags & WINDIVERT_HELPER_NO_TCP_CHECKSUM) != 0)
         {
             return TRUE;
         }
-        checksum_len = payload_len + tcp_header->HdrLength*sizeof(UINT32);
+        if (truncated)
+        {
+            return FALSE;
+        }
+        checksum_len = payload_len + tcp_header->HdrLength * sizeof(UINT32);
+        ipv6_header = info.IPv6Header;
         pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
             ipv6_header, IPPROTO_TCP, checksum_len, pseudo_header);
         tcp_header->Checksum = 0;
@@ -604,15 +611,21 @@ extern BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         }
         return TRUE;
     }
-    
+
+    udp_header = info.UDPHeader;
     if (udp_header != NULL)
     {
         if ((flags & WINDIVERT_HELPER_NO_UDP_CHECKSUM) != 0)
         {
             return TRUE;
         }
+        if (truncated)
+        {
+            return FALSE;
+        }
         // Full UDP checksum
         checksum_len = payload_len + sizeof(WINDIVERT_UDPHDR);
+        ipv6_header = info.IPv6Header;
         pseudo_header_len = WinDivertInitPseudoHeader(ip_header,
             ipv6_header, IPPROTO_UDP, checksum_len, pseudo_header);
         udp_header->Checksum = 0;
@@ -626,6 +639,7 @@ extern BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
         {
             pAddr->UDPChecksum = 1;
         }
+        return TRUE;
     }
 
     return TRUE;

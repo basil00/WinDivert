@@ -43,6 +43,7 @@
 #include "windivert.h"
 
 #define MAX_PACKET  2048
+#define MIN(a, b)   ((a) < (b)? (a): (b))
 
 /*
  * Packet data.
@@ -111,6 +112,30 @@ static const struct packet pkt_ipv6_exthdrs_udp =
     ipv6_exthdrs_udp,
     sizeof(ipv6_exthdrs_udp),
     "ipv6_exthdrs_udp"
+};
+static const struct packet pkt_ipv4_fragment_0 =
+{
+    ipv4_fragment_0,
+    sizeof(ipv4_fragment_0),
+    "ipv4_fragemnt_0"
+};
+static const struct packet pkt_ipv4_fragment_1 =
+{
+    ipv4_fragment_1,
+    sizeof(ipv4_fragment_1),
+    "ipv4_fragment_1"
+};
+static const struct packet pkt_ipv6_fragment_0 =
+{
+    ipv6_fragment_0,
+    sizeof(ipv6_fragment_0),
+    "ipv6_fragment_0"
+};
+static const struct packet pkt_ipv6_fragment_1 =
+{
+    ipv6_fragment_1,
+    sizeof(ipv6_fragment_1),
+    "ipv6_fragment_1"
 };
 static const struct test tests[] =
 {
@@ -309,6 +334,9 @@ static const struct test tests[] =
     {"localAddr == 10.0.0.1 && remoteAddr == 8.8.8.8 && localPort == 8 && "
      "remotePort == 0 && protocol == 1",       &pkt_echo_request, TRUE},
     {"packet[0] == 0x45",                      &pkt_echo_request, TRUE},
+    {"ip.MF or ip.FragOff != 0",               &pkt_echo_request, FALSE},
+    {"icmp.Body != 123 || icmp.Body == 123",   &pkt_echo_request, TRUE},
+    {"length == 84 && ip.Length == 84",        &pkt_echo_request, TRUE},
     {"tcp",                                    &pkt_http_request, TRUE},
     {"protocol == TCP",                        &pkt_http_request, TRUE},
     {"outbound and tcp and tcp.DstPort == 80", &pkt_http_request, TRUE},
@@ -720,6 +748,7 @@ static const struct test tests[] =
     {"icmpv6.Body == 0x10720003",              &pkt_ipv6_echo_reply, TRUE},
     {"ipv6.DstAddr >= 1000",                   &pkt_ipv6_echo_reply, FALSE},
     {"ipv6.DstAddr <= 1",                      &pkt_ipv6_echo_reply, TRUE},
+    {"length == 104 && ipv6.Length == 64",     &pkt_ipv6_echo_reply, TRUE},
     {"ip and !loopback and (outbound? tcp.DstPort == 80 or"
      " tcp.DstPort == 443 or udp.DstPort == 53 :"
      " icmp.Type == 11 and icmp.Code == 0)",   &pkt_ipv6_echo_reply, FALSE},
@@ -855,12 +884,47 @@ static const struct test tests[] =
                                                &pkt_ipv6_exthdrs_udp, FALSE},
     {"localAddr == ::1 and remoteAddr == 1 and localPort == 4660 and "
      "remotePort == 43690 and protocol == 17", &pkt_ipv6_exthdrs_udp, TRUE},
+    {"ip.MF or ip.FragOff != 0",               &pkt_ipv4_fragment_0, TRUE},
+    {"icmp",                                   &pkt_ipv4_fragment_0, TRUE},
+    {"icmp.Body != 123 || icmp.Body == 123",   &pkt_ipv4_fragment_0, TRUE},
+    {"length == 84 || ip.Length == 84",        &pkt_ipv4_fragment_0, FALSE},
+    {"ip.HdrLength == 5 and ip.TOS == 0 and ip.Length == 28 and "
+     "ip.Id == 0x1234 and ip.FragOff == 0 and ip.MF == 1 and ip.DF == 0 and "
+     "ip.TTL == 64 and ip.Protocol == 1 and ip.SrcAddr == 0xFFFF0A000001 and "
+     "ip.DstAddr == 0xFFFF08080808 and icmp.Type == 8 and icmp.Code == 0 and "
+     "icmp.Body == 0x0D560001",                &pkt_ipv4_fragment_0, TRUE},
+    {"ip.MF or ip.FragOff != 0",               &pkt_ipv4_fragment_1, TRUE},
+    {"icmp",                                   &pkt_ipv4_fragment_1, FALSE},
+    {"icmp.Body != 123 || icmp.Body == 123",   &pkt_ipv4_fragment_1, FALSE},
+    {"length == 84 || ip.Length == 84",        &pkt_ipv4_fragment_1, FALSE},
+    {"ip.HdrLength == 5 and ip.TOS == 0 and ip.Length == 76 and "
+     "ip.Id == 0x1234 and ip.FragOff == 1 and ip.MF == 0 and ip.DF == 0 and "
+     "ip.TTL == 64 and ip.Protocol == 1 and ip.SrcAddr == 0xFFFF0A000001 and "
+     "ip.DstAddr == 0xFFFF08080808",           &pkt_ipv4_fragment_1, TRUE},
+    {"icmpv6",                                 &pkt_ipv6_fragment_0, TRUE},
+    {"length == 104 || ipv6.Length == 64",     &pkt_ipv6_fragment_0, FALSE},
+    {"ipv6.TrafficClass == 0x00000000 and ipv6.FlowLabel == 0x0000 and "
+     "ipv6.Length == 32 and ipv6.NextHdr == 44 and ipv6.HopLimit == 31 and "
+     "ipv6.SrcAddr == 0:0:0:0:0:0:0:1 and ipv6.DstAddr == 0:0:0:0:0:0:0:1 and "
+     "icmpv6.Type == 129 and icmpv6.Code == 0 and icmpv6.Body == 0x10720003",
+                                               &pkt_ipv6_fragment_0, TRUE},
+    {"icmpv6",                                 &pkt_ipv6_fragment_1, FALSE},
+    {"length == 104 || ipv6.Length == 64",     &pkt_ipv6_fragment_1, FALSE},
+    {"ipv6.TrafficClass == 0x00000000 and ipv6.FlowLabel == 0x0000 and "
+     "ipv6.Length == 48 and ipv6.NextHdr == 44 and ipv6.HopLimit == 31 and "
+     "ipv6.SrcAddr == 0:0:0:0:0:0:0:1 and ipv6.DstAddr == 0:0:0:0:0:0:0:1",
+                                               &pkt_ipv6_fragment_1, TRUE},
 };
+
+/*
+ * Test range.
+ */
+static size_t lo = 0, hi = UINT_MAX;
 
 /*
  * Main.
  */
-int main(void)
+int main(int argc, char **argv)
 {
     HANDLE upper_handle, lower_handle;
     HANDLE console, monitor;
@@ -869,6 +933,25 @@ int main(void)
     LARGE_INTEGER freq;
     UINT64 diff;
     size_t i;
+    size_t num_tests = sizeof(tests) / sizeof(struct test), passed_tests;
+
+    switch (argc)
+    {
+        case 1:
+            break;
+        case 3:
+            lo = atoi(argv[1]);
+            hi = atoi(argv[2]);
+            if (hi >= lo)
+            {
+                break;
+            }
+            // Fallthrough
+        default:
+            fprintf(stderr, "usage: %s [low high]\n", argv[0]);
+            exit(EXIT_FAILURE);
+    }
+    hi = MIN(num_tests, hi);
 
     // Open handles to:
     // (1) stop normal traffic from interacting with the tests; and
@@ -902,8 +985,8 @@ int main(void)
     Sleep(150);
 
     // Run tests:
-    size_t num_tests = sizeof(tests) / sizeof(struct test), passed_tests = 0;
-    for (i = 0; i < num_tests; i++)
+    passed_tests = 0;
+    for (i = lo; i < num_tests && i <= hi; i++)
     {
         const char *filter = tests[i].filter;
         const char *packet = tests[i].packet->packet;
@@ -961,10 +1044,10 @@ int main(void)
     }
 
     printf("\npassed = %.2f%%\n",
-        ((double)passed_tests / (double)num_tests) * 100.0);
+        ((double)passed_tests / (double)(hi - lo)) * 100.0);
 
     first = TRUE;
-    for (i = 0; i < num_tests; i++)
+    for (i = lo; i < num_tests && i <= hi; i++)
     {
         const char *filter = tests[i].filter;
         char *name = tests[i].packet->name;
@@ -1274,7 +1357,7 @@ static DWORD monitor_worker(LPVOID arg)
     }
 
     size_t num_tests = sizeof(tests) / sizeof(struct test);
-    for (i = 0; i < num_tests; i++)
+    for (i = lo; i < num_tests && i <= hi; i++)
     {
         // (1) Read the reflected filter:
         WinDivertHelperCompileFilter(tests[i].filter, WINDIVERT_LAYER_NETWORK,

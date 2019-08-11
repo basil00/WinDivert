@@ -38,20 +38,20 @@
 #define VER_FILETYPE                VFT_DRV
 #define VER_FILESUBTYPE             VFT2_DRV_NETWORK
 #define VER_FILEDESCRIPTION_STR     \
-    "The WinDivert 2.0 driver " \
+    "The WinDivert 2.2 driver " \
     "[URL: https://reqrypt.org/windivert.html] " \
     "[Bitcoin: 1C5vZVSbizPeZ8ydTYhUfm4LA2cNwBfcYh]"
 #define VER_INTERNALNAME_STR        "WinDivert.sys"
 #define VER_ORIGINALFILENAME_STR    "WinDivert.sys"
-#define VER_PRODUCTVERSION          2.1
-#define VER_PRODUCTVERSION_STR      "2.1"
+#define VER_PRODUCTVERSION          2.2
+#define VER_PRODUCTVERSION_STR      "2.2"
 #define VER_COMPANYNAME_STR         "Basil"
 #define VER_LEGALCOPYRIGHT_YEARS    "2011-2019"
 #define VER_LEGALCOPYRIGHT_STR      \
     "Copyright \251 " VER_COMPANYNAME_STR " " VER_LEGALCOPYRIGHT_YEARS 
 #define VER_FILEVERSION             VER_PRODUCTVERSION
 #define VER_FILEVERSION_STR         VER_PRODUCTVERSION_STR
-#define VER_PRODUCTNAME_STR         "WinDivert 2.0 driver"
+#define VER_PRODUCTNAME_STR         "WinDivert 2.2 driver"
 
 #include "common.ver"
 

@@ -497,10 +497,78 @@ static PTOKEN_INFO WinDivertTokenLookup(PTOKEN_INFO token_info,
 }
 
 /*
+ * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
+ */
+extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
+    PWINDIVERT_IPHDR *ppIPHeader, PWINDIVERT_IPV6HDR *ppIPv6Header,
+	UINT8 *pProtocol, PWINDIVERT_ICMPHDR *ppICMPHeader,
+	PWINDIVERT_ICMPV6HDR *ppICMPv6Header, PWINDIVERT_TCPHDR *ppTCPHeader,
+	PWINDIVERT_UDPHDR *ppUDPHeader, PVOID *ppData, UINT *pDataLen,
+	PVOID *ppNext, UINT *pNextLen)
+{
+    WINDIVERT_PACKET info;
+    if (!WinDivertHelperParsePacketEx(pPacket, packetLen, &info))
+    {
+        return FALSE;
+    }
+    if (info.Truncated)
+    {
+        return FALSE;
+    }
+
+    if (pProtocol != NULL)
+    {
+        *pProtocol = info.Protocol;
+    }
+    if (ppIPHeader != NULL)
+    {
+        *ppIPHeader = info.IPHeader;
+    }
+    if (ppIPv6Header != NULL)
+    {
+        *ppIPv6Header = info.IPv6Header;
+    }
+    if (ppICMPHeader != NULL)
+    {
+        *ppICMPHeader = info.ICMPHeader;
+    }
+    if (ppICMPv6Header != NULL)
+    {
+        *ppICMPv6Header = info.ICMPv6Header;
+    }
+    if (ppTCPHeader != NULL)
+    {
+        *ppTCPHeader = info.TCPHeader;
+    }
+    if (ppUDPHeader != NULL)
+    {
+        *ppUDPHeader = info.UDPHeader;
+    }
+    if (ppData != NULL)
+    {
+        *ppData = info.Payload;
+    }
+    if (pDataLen != NULL)
+    {
+        *pDataLen = info.PayloadLength;
+    }
+    if (ppNext != NULL)
+    {
+        *ppNext = (info.Extended? (PVOID)((UINT8 *)pPacket + packetLen): NULL);
+    }
+    if (pNextLen != NULL)
+    {
+        *pNextLen = (info.Extended?
+            packetLen - (info.HeaderLength + info.PayloadLength): 0);
+    }
+
+    return TRUE;
+}
+
+/*
  * Expand a "macro" value.
  */
-static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer,
-    UINT32 *val)
+static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer, UINT32 *val)
 {
     switch (kind)
     {

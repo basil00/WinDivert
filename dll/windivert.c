@@ -85,6 +85,8 @@ static UINT32 WinDivertDivTen128(UINT32 *a);
 #define UINT32_MAX      0xFFFFFFFF
 #endif
 
+#define IPPROTO_MH      135
+
 #ifdef _MSC_VER
 
 #pragma intrinsic(memcpy)
