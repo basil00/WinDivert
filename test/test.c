@@ -192,6 +192,7 @@ static const struct test tests[] =
                                                &pkt_echo_request, TRUE},
     {"(tcp? tcp.DstPort == 80: true) and (udp? udp.DstPort == 80: true)",
                                                &pkt_echo_request, TRUE},
+    {"fragment",                               &pkt_echo_request, FALSE},
     {"ip and ip and ip and ip and ip and "     // Max filter length:
      "ip and ip and ip and ip and ip and "
      "ip and ip and ip and ip and ip and "
@@ -752,6 +753,7 @@ static const struct test tests[] =
     {"ip and !loopback and (outbound? tcp.DstPort == 80 or"
      " tcp.DstPort == 443 or udp.DstPort == 53 :"
      " icmp.Type == 11 and icmp.Code == 0)",   &pkt_ipv6_echo_reply, FALSE},
+    {"fragment",                               &pkt_ipv6_echo_reply, FALSE},
     {"random8 < 128",                          &pkt_ipv6_echo_reply, TRUE},
     {"(random8 < 128? random16 < 0x8000: random32 < 0x80000000)",
                                                &pkt_ipv6_echo_reply, TRUE},
@@ -884,6 +886,7 @@ static const struct test tests[] =
                                                &pkt_ipv6_exthdrs_udp, FALSE},
     {"localAddr == ::1 and remoteAddr == 1 and localPort == 4660 and "
      "remotePort == 43690 and protocol == 17", &pkt_ipv6_exthdrs_udp, TRUE},
+    {"fragment",                               &pkt_ipv4_fragment_0, TRUE},
     {"ip.MF or ip.FragOff != 0",               &pkt_ipv4_fragment_0, TRUE},
     {"icmp",                                   &pkt_ipv4_fragment_0, TRUE},
     {"icmp.Body != 123 || icmp.Body == 123",   &pkt_ipv4_fragment_0, TRUE},
@@ -893,6 +896,7 @@ static const struct test tests[] =
      "ip.TTL == 64 and ip.Protocol == 1 and ip.SrcAddr == 0xFFFF0A000001 and "
      "ip.DstAddr == 0xFFFF08080808 and icmp.Type == 8 and icmp.Code == 0 and "
      "icmp.Body == 0x0D560001",                &pkt_ipv4_fragment_0, TRUE},
+    {"fragment",                               &pkt_ipv4_fragment_1, TRUE},
     {"ip.MF or ip.FragOff != 0",               &pkt_ipv4_fragment_1, TRUE},
     {"icmp",                                   &pkt_ipv4_fragment_1, FALSE},
     {"icmp.Body != 123 || icmp.Body == 123",   &pkt_ipv4_fragment_1, FALSE},
@@ -901,6 +905,7 @@ static const struct test tests[] =
      "ip.Id == 0x1234 and ip.FragOff == 1 and ip.MF == 0 and ip.DF == 0 and "
      "ip.TTL == 64 and ip.Protocol == 1 and ip.SrcAddr == 0xFFFF0A000001 and "
      "ip.DstAddr == 0xFFFF08080808",           &pkt_ipv4_fragment_1, TRUE},
+    {"fragment",                               &pkt_ipv6_fragment_0, TRUE},
     {"icmpv6",                                 &pkt_ipv6_fragment_0, TRUE},
     {"length == 104 || ipv6.Length == 64",     &pkt_ipv6_fragment_0, FALSE},
     {"ipv6.TrafficClass == 0x00000000 and ipv6.FlowLabel == 0x0000 and "
@@ -908,6 +913,7 @@ static const struct test tests[] =
      "ipv6.SrcAddr == 0:0:0:0:0:0:0:1 and ipv6.DstAddr == 0:0:0:0:0:0:0:1 and "
      "icmpv6.Type == 129 and icmpv6.Code == 0 and icmpv6.Body == 0x10720003",
                                                &pkt_ipv6_fragment_0, TRUE},
+    {"fragment",                               &pkt_ipv6_fragment_1, TRUE},
     {"icmpv6",                                 &pkt_ipv6_fragment_1, FALSE},
     {"length == 104 || ipv6.Length == 64",     &pkt_ipv6_fragment_1, FALSE},
     {"ipv6.TrafficClass == 0x00000000 and ipv6.FlowLabel == 0x0000 and "

@@ -472,7 +472,7 @@ static BOOL windivert_copy_data(PNET_BUFFER buffer, PVOID data, UINT size);
 static BOOL windivert_lookup_data(PNET_BUFFER buffer, UINT offset, INT idx,
     PVOID data, UINT size);
 static BOOL windivert_parse_headers(PNET_BUFFER buffer, BOOL ipv4,
-    BOOL frag_mode, PWINDIVERT_IPHDR *ip_header_ptr,
+    BOOL *fragment_ptr, PWINDIVERT_IPHDR *ip_header_ptr,
     PWINDIVERT_IPV6HDR *ipv6_header_ptr, PWINDIVERT_ICMPHDR *icmp_header_ptr,
     PWINDIVERT_ICMPV6HDR *icmpv6_header_ptr, PWINDIVERT_TCPHDR *tcp_header_ptr,
     PWINDIVERT_UDPHDR *udp_header_ptr, UINT8 *proto_ptr, UINT *header_len_ptr,
@@ -5286,7 +5286,7 @@ static BOOL windivert_lookup_data(PNET_BUFFER buffer, UINT offset, INT idx,
  * Parse packet headers.
  */
 static __forceinline BOOL windivert_parse_headers(PNET_BUFFER buffer,
-    BOOL ipv4, BOOL frag_mode, PWINDIVERT_IPHDR *ip_header_ptr,
+    BOOL ipv4, BOOL *fragment_ptr, PWINDIVERT_IPHDR *ip_header_ptr,
     PWINDIVERT_IPV6HDR *ipv6_header_ptr, PWINDIVERT_ICMPHDR *icmp_header_ptr,
     PWINDIVERT_ICMPV6HDR *icmpv6_header_ptr, PWINDIVERT_TCPHDR *tcp_header_ptr,
     PWINDIVERT_UDPHDR *udp_header_ptr, UINT8 *proto_ptr, UINT *header_len_ptr,
@@ -5300,6 +5300,7 @@ static __forceinline BOOL windivert_parse_headers(PNET_BUFFER buffer,
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
     PWINDIVERT_IPV6FRAGHDR frag_header;
+    BOOL fragment = FALSE;
     UINT8 protocol = 0;
     UINT16 frag_off = 0;
     UINT header_len = 0;
@@ -5344,12 +5345,7 @@ static __forceinline BOOL windivert_parse_headers(PNET_BUFFER buffer,
             return FALSE;
         }
         frag_off = RtlUshortByteSwap(WINDIVERT_IPHDR_GET_FRAGOFF(ip_header));
-        if (!frag_mode &&
-                (WINDIVERT_IPHDR_GET_MF(ip_header) != 0 || frag_off != 0))
-        {
-            DEBUG("FILTER: REJECT (fragment)");
-            return FALSE;
-        }
+        fragment = (frag_off != 0 || WINDIVERT_IPHDR_GET_MF(ip_header) != 0);
         protocol = ip_header->Protocol;
         NdisAdvanceNetBufferDataStart(buffer, ip_header_len, FALSE, NULL);
     }
@@ -5381,7 +5377,6 @@ static __forceinline BOOL windivert_parse_headers(PNET_BUFFER buffer,
         NdisAdvanceNetBufferDataStart(buffer, ip_header_len, FALSE, NULL);
 
         // Skip extension headers:
-        frag_header = NULL;
         while (frag_off == 0)
         {
             UINT8 *ext_header = NULL;
@@ -5390,26 +5385,15 @@ static __forceinline BOOL windivert_parse_headers(PNET_BUFFER buffer,
             switch (protocol)
             {
                 case IPPROTO_FRAGMENT:
-                    if (frag_header != NULL)
-                    {
-                        is_ext_header = FALSE;
-                        break;
-                    }
                     frag_header = (PWINDIVERT_IPV6FRAGHDR)
                         NdisGetDataBuffer(buffer, 8, NULL, 1, 0);
                     ext_header = (UINT8 *)frag_header;
-                    if (frag_header == NULL)
+                    if (fragment || frag_header == NULL)
                     {
                         is_ext_header = FALSE;
                         break;
                     }
-                    if (!frag_mode)
-                    {
-                        DEBUG("FILTER: REJECT (fragment)");
-                        NdisRetreatNetBufferDataStart(buffer, ip_header_len,
-                            0, NULL);
-                        return FALSE;
-                    }
+                    fragment = TRUE;
                     frag_off = RtlUshortByteSwap(
                         WINDIVERT_IPV6FRAGHDR_GET_FRAGOFF(frag_header));
                     ext_header_len = 8;
@@ -5525,6 +5509,7 @@ static __forceinline BOOL windivert_parse_headers(PNET_BUFFER buffer,
         return FALSE;
     }
 
+    *fragment_ptr      = fragment;
     *ip_header_ptr     = ip_header;
     *ipv6_header_ptr   = ipv6_header;
     *icmp_header_ptr   = icmp_header;
@@ -5556,6 +5541,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     UINT header_len = 0, payload_len = 0;
     UINT64 random64 = 0;
     UINT16 ip, ttl;
+    BOOL fragment = FALSE;
     PWINDIVERT_DATA_NETWORK network_data = NULL;
     PWINDIVERT_DATA_FLOW flow_data = NULL;
     PWINDIVERT_DATA_SOCKET socket_data = NULL;
@@ -5568,9 +5554,13 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     {
         case WINDIVERT_LAYER_NETWORK:
         case WINDIVERT_LAYER_NETWORK_FORWARD:
-            if (!windivert_parse_headers(buffer, ipv4, frag_mode, &ip_header,
+            if (!windivert_parse_headers(buffer, ipv4, &fragment, &ip_header,
                     &ipv6_header, &icmp_header, &icmpv6_header, &tcp_header,
                     &udp_header, &protocol, &header_len, &payload_len))
+            {
+                return FALSE;
+            }
+            if (fragment && !frag_mode)
             {
                 return FALSE;
             }
@@ -5642,6 +5632,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
             case WINDIVERT_FILTER_FIELD_PACKET16:
             case WINDIVERT_FILTER_FIELD_PACKET32:
             case WINDIVERT_FILTER_FIELD_LENGTH:
+            case WINDIVERT_FILTER_FIELD_FRAGMENT:
                 result = (layer == WINDIVERT_LAYER_NETWORK ||
                           layer == WINDIVERT_LAYER_NETWORK_FORWARD);
                 break;
@@ -5828,6 +5819,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
                     break;
                 case WINDIVERT_FILTER_FIELD_OUTBOUND:
                     field[0] = (UINT32)outbound;
+                    break;
+                case WINDIVERT_FILTER_FIELD_FRAGMENT:
+                    field[0] = (UINT32)fragment;
                     break;
                 case WINDIVERT_FILTER_FIELD_IFIDX:
                     field[0] = network_data->IfIdx;
@@ -6499,6 +6493,7 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_ZERO:
             case WINDIVERT_FILTER_FIELD_INBOUND:
             case WINDIVERT_FILTER_FIELD_OUTBOUND:
+            case WINDIVERT_FILTER_FIELD_FRAGMENT:
             case WINDIVERT_FILTER_FIELD_IP:
             case WINDIVERT_FILTER_FIELD_IPV6:
             case WINDIVERT_FILTER_FIELD_ICMP:
