@@ -104,35 +104,37 @@ static UINT64 WinDivertXXH64Avalanche(UINT64 h64)
 /*
  * WinDivert packet hash function.
  */
-static UINT64 WinDivertHashPacket(UINT64 seed, PWINDIVERT_IPHDR ip_header,
-    PWINDIVERT_IPV6HDR ipv6_header, PWINDIVERT_ICMPHDR icmp_header,
-    PWINDIVERT_ICMPV6HDR icmpv6_header, PWINDIVERT_TCPHDR tcp_header,
-    PWINDIVERT_UDPHDR udp_header)
+static UINT64 WinDivertHashPacket(UINT64 seed,
+    const WINDIVERT_IPHDR *ip_header, const WINDIVERT_IPV6HDR *ipv6_header,
+    const WINDIVERT_ICMPHDR *icmp_header,
+    const WINDIVERT_ICMPV6HDR *icmpv6_header,
+    const WINDIVERT_TCPHDR *tcp_header, const WINDIVERT_UDPHDR *udp_header)
 {
-	UINT64 h64, v1, v2, v3, v4, v[4], *data64;
-    UINT32 *data32;
+    UINT64 h64, v1, v2, v3, v4, v[4];
+    const UINT64 *data64;
+    const UINT32 *data32;
     UINT i;
     static const UINT64 padding64[] =               // SHA2 IV
     {
-		0x428A2F9871374491ull, 0xB5C0FBCFE9B5DBA5ull, 0x3956C25B59F111F1ull,
-		0x923F82A4AB1C5ED5ull, 0xD807AA9812835B01ull, 0x243185BE550C7DC3ull,
-		0x72BE5D7480DEB1FEull, 0x9BDC06A7C19BF174ull, 0xE49B69C1EFBE4786ull,
+        0x428A2F9871374491ull, 0xB5C0FBCFE9B5DBA5ull, 0x3956C25B59F111F1ull,
+        0x923F82A4AB1C5ED5ull, 0xD807AA9812835B01ull, 0x243185BE550C7DC3ull,
+        0x72BE5D7480DEB1FEull, 0x9BDC06A7C19BF174ull, 0xE49B69C1EFBE4786ull,
     };
 
     // Set-up seed & data
     v1 = seed ^ padding64[0];
     if (ip_header != NULL)
     {
-        data64 = (UINT64 *)ip_header;
+        data64 = (const UINT64 *)ip_header;
         v2 = data64[0] ^ padding64[1];
         v3 = data64[1] ^ padding64[2];
-        data32 = (UINT32 *)ip_header;
+        data32 = (const UINT32 *)ip_header;
         v4 = (UINT64)data32[4] ^ padding64[3];
         i = 0;
     }
     else if (ipv6_header != NULL)
     {
-        data64 = (UINT64 *)ipv6_header;
+        data64 = (const UINT64 *)ipv6_header;
         v2 = data64[0] ^ padding64[1];
         v3 = data64[1] ^ padding64[2];
         v4 = data64[2] ^ padding64[3];
@@ -145,10 +147,10 @@ static UINT64 WinDivertHashPacket(UINT64 seed, PWINDIVERT_IPHDR ip_header,
 
     if (tcp_header != NULL)
     {
-        data64 = (UINT64 *)tcp_header;
+        data64 = (const UINT64 *)tcp_header;
         v[i] = data64[0] ^ padding64[i+4]; i++;
         v[i] = data64[1] ^ padding64[i+4]; i++;
-        data32 = (UINT32 *)tcp_header;
+        data32 = (const UINT32 *)tcp_header;
         if (i <= 3)
         {
             v[i] = (UINT64)data32[4] ^ padding64[i+4]; i++;
@@ -162,17 +164,17 @@ static UINT64 WinDivertHashPacket(UINT64 seed, PWINDIVERT_IPHDR ip_header,
     {
         if (udp_header != NULL)
         {
-            data64 = (UINT64 *)udp_header;
+            data64 = (const UINT64 *)udp_header;
             v[i] = data64[0] ^ padding64[i+4]; i++;
         }
         else if (icmp_header != NULL)
         {
-            data64 = (UINT64 *)icmp_header;
+            data64 = (const UINT64 *)icmp_header;
             v[i] = data64[0] ^ padding64[i+4]; i++;
         }
         else if (icmpv6_header != NULL)
         {
-            data64 = (UINT64 *)icmpv6_header;
+            data64 = (const UINT64 *)icmpv6_header;
             v[i] = data64[0] ^ padding64[i+4]; i++;
         }
     }
@@ -194,7 +196,7 @@ static UINT64 WinDivertHashPacket(UINT64 seed, PWINDIVERT_IPHDR ip_header,
     h64 = WinDivertXXH64MergeRound(h64, v3);
     h64 = WinDivertXXH64MergeRound(h64, v4); 
     h64 += 32;          // "length"
-	h64 = WinDivertXXH64Avalanche(h64);
+    h64 = WinDivertXXH64Avalanche(h64);
 
     return h64;
 }

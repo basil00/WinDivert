@@ -109,7 +109,22 @@ void *memset(void *dst, int c, size_t n)
     return dst;
 }
 
-#endif
+#define WINDIVERT_INLINE    __forceinline
+
+#else       /* _MSC_VER */
+
+#define WINDIVERT_INLINE    __attribute__((__always_inline__)) inline
+
+#endif      /* _MSC_VER */
+
+/*
+ * Filter interpreter config.
+ */
+static BOOL WinDivertGetData(const VOID *packet, UINT packet_len, INT min,
+    INT max, INT idx, PVOID data, UINT size);
+#define WINDIVERT_GET_DATA(packet, packet_len, min, max, index, data, size) \
+    WinDivertGetData((packet), (packet_len), (min), (max), (index), (data), \
+        (size))
 
 /*
  * Prototypes.

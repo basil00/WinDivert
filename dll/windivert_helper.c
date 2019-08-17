@@ -32,6 +32,11 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
+#include <stdio.h>
+#include <stdlib.h>
+
+
+
 /****************************************************************************/
 /* WINDIVERT HELPER IMPLEMENTATION                                          */
 /****************************************************************************/
@@ -199,45 +204,6 @@ typedef struct
     UINT8 flags;
 } TOKEN_INFO, *PTOKEN_INFO;
 
-#define WINDIVERT_LAYER_FLAG_NETWORK            (1 << WINDIVERT_LAYER_NETWORK)
-#define WINDIVERT_LAYER_FLAG_NETWORK_FORWARD    \
-    (1 << WINDIVERT_LAYER_NETWORK_FORWARD)
-#define WINDIVERT_LAYER_FLAG_FLOW               (1 << WINDIVERT_LAYER_FLOW)
-#define WINDIVERT_LAYER_FLAG_SOCKET             (1 << WINDIVERT_LAYER_SOCKET)
-#define WINDIVERT_LAYER_FLAG_REFLECT            (1 << WINDIVERT_LAYER_REFLECT)
-
-/*
- * Layer flags shorthand.
- */
-#define LNMFSR          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
-                         WINDIVERT_LAYER_FLAG_NETWORK_FORWARD |             \
-                         WINDIVERT_LAYER_FLAG_FLOW |                        \
-                         WINDIVERT_LAYER_FLAG_SOCKET |                      \
-                         WINDIVERT_LAYER_FLAG_REFLECT)
-#define LNMFS_          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
-                         WINDIVERT_LAYER_FLAG_NETWORK_FORWARD |             \
-                         WINDIVERT_LAYER_FLAG_FLOW |                        \
-                         WINDIVERT_LAYER_FLAG_SOCKET)
-#define L__F_R          (WINDIVERT_LAYER_FLAG_FLOW |                        \
-                         WINDIVERT_LAYER_FLAG_REFLECT)
-#define LN_FS_          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
-                         WINDIVERT_LAYER_FLAG_FLOW |                        \
-                         WINDIVERT_LAYER_FLAG_SOCKET)
-#define L__FS_          (WINDIVERT_LAYER_FLAG_FLOW |                        \
-                         WINDIVERT_LAYER_FLAG_SOCKET)
-#define L___SR          (WINDIVERT_LAYER_FLAG_SOCKET |                      \
-                         WINDIVERT_LAYER_FLAG_REFLECT)
-#define L__FSR          (WINDIVERT_LAYER_FLAG_FLOW |                        \
-                         WINDIVERT_LAYER_FLAG_SOCKET |                      \
-                         WINDIVERT_LAYER_FLAG_REFLECT)
-#define LNM___          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
-                         WINDIVERT_LAYER_FLAG_NETWORK_FORWARD)
-#define L__F__          WINDIVERT_LAYER_FLAG_FLOW
-#define L___S_          WINDIVERT_LAYER_FLAG_SOCKET
-#define L____R          WINDIVERT_LAYER_FLAG_REFLECT
-
-
-
 /*
  * Filter expressions.
  */
@@ -291,6 +257,7 @@ typedef UINT64 ERROR, *PERROR;
 /*
  * Prototypes.
  */
+static UINT32 WinDivertKindToField(KIND kind);
 static PEXPR WinDivertParseFilter(HANDLE pool, TOKEN *toks, UINT *i,
     INT depth, BOOL and, PERROR error);
 static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
@@ -502,10 +469,10 @@ static PTOKEN_INFO WinDivertTokenLookup(PTOKEN_INFO token_info,
  */
 extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_IPHDR *ppIPHeader, PWINDIVERT_IPV6HDR *ppIPv6Header,
-	UINT8 *pProtocol, PWINDIVERT_ICMPHDR *ppICMPHeader,
-	PWINDIVERT_ICMPV6HDR *ppICMPv6Header, PWINDIVERT_TCPHDR *ppTCPHeader,
-	PWINDIVERT_UDPHDR *ppUDPHeader, PVOID *ppData, UINT *pDataLen,
-	PVOID *ppNext, UINT *pNextLen)
+    UINT8 *pProtocol, PWINDIVERT_ICMPHDR *ppICMPHeader,
+    PWINDIVERT_ICMPV6HDR *ppICMPv6Header, PWINDIVERT_TCPHDR *ppTCPHeader,
+    PWINDIVERT_UDPHDR *ppUDPHeader, PVOID *ppData, UINT *pDataLen,
+    PVOID *ppNext, UINT *pNextLen)
 {
     WINDIVERT_PACKET info;
     if (!WinDivertHelperParsePacketEx(pPacket, packetLen, &info))
@@ -656,121 +623,122 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
 {
     static const TOKEN_INFO token_info[] =
     {
-        {"ACCEPT",              TOKEN_EVENT_ACCEPT,        L___S_},
-        {"BIND",                TOKEN_EVENT_BIND,          L___S_},
-        {"CLOSE",               TOKEN_EVENT_CLOSE,         L___SR},
-        {"CONNECT",             TOKEN_EVENT_CONNECT,       L___S_},
-        {"DELETED",             TOKEN_EVENT_DELETED,       L__F__},
-        {"ESTABLISHED",         TOKEN_EVENT_ESTABLISHED,   L__F__},
-        {"FALSE",               TOKEN_MACRO_FALSE,         LNMFSR},
-        {"FLOW",                TOKEN_FLOW,                L____R},
-        {"ICMP",                TOKEN_MACRO_ICMP,          LNMFSR},
-        {"ICMPV6",              TOKEN_MACRO_ICMPV6,        LNMFSR},
-        {"LISTEN",              TOKEN_EVENT_LISTEN,        L___S_},
-        {"NETWORK",             TOKEN_NETWORK,             L____R},
-        {"NETWORK_FORWARD",     TOKEN_NETWORK_FORWARD,     L____R},
-        {"OPEN",                TOKEN_EVENT_OPEN,          L____R},
-        {"PACKET",              TOKEN_EVENT_PACKET,        LNM___},
-        {"REFLECT",             TOKEN_REFLECT,             L____R},
-        {"SOCKET",              TOKEN_SOCKET,              L____R},
-        {"TCP",                 TOKEN_MACRO_TCP,           LNMFSR},
-        {"TRUE",                TOKEN_MACRO_TRUE,          LNMFSR},
-        {"UDP",                 TOKEN_MACRO_UDP,           LNMFSR},
-        {"and",                 TOKEN_AND,                 LNMFSR},
-        {"endpointId",          TOKEN_ENDPOINT_ID,         L__FS_},
-        {"event",               TOKEN_EVENT,               LNMFSR},
-        {"false",               TOKEN_FALSE,               LNMFSR},
-        {"fragment",            TOKEN_FRAGMENT,            LNM___},
-        {"icmp",                TOKEN_ICMP,                LNMFS_},
-        {"icmp.Body",           TOKEN_ICMP_BODY,           LNM___},
-        {"icmp.Checksum",       TOKEN_ICMP_CHECKSUM,       LNM___},
-        {"icmp.Code",           TOKEN_ICMP_CODE,           LNM___},
-        {"icmp.Type",           TOKEN_ICMP_TYPE,           LNM___},
-        {"icmpv6",              TOKEN_ICMPV6,              LNMFS_},
-        {"icmpv6.Body",         TOKEN_ICMPV6_BODY,         LNM___},
-        {"icmpv6.Checksum",     TOKEN_ICMPV6_CHECKSUM,     LNM___},
-        {"icmpv6.Code",         TOKEN_ICMPV6_CODE,         LNM___},
-        {"icmpv6.Type",         TOKEN_ICMPV6_TYPE,         LNM___},
-        {"ifIdx",               TOKEN_IF_IDX,              LNM___},
-        {"impostor",            TOKEN_IMPOSTOR,            LNM___},
-        {"inbound",             TOKEN_INBOUND,             LN_FS_},
-        {"ip",                  TOKEN_IP,                  LNMFS_},
-        {"ip.Checksum",         TOKEN_IP_CHECKSUM,         LNM___},
-        {"ip.DF",               TOKEN_IP_DF,               LNM___},
-        {"ip.DstAddr",          TOKEN_IP_DST_ADDR,         LNM___},
-        {"ip.FragOff",          TOKEN_IP_FRAG_OFF,         LNM___},
-        {"ip.HdrLength",        TOKEN_IP_HDR_LENGTH,       LNM___},
-        {"ip.Id",               TOKEN_IP_ID,               LNM___},
-        {"ip.Length",           TOKEN_IP_LENGTH,           LNM___},
-        {"ip.MF",               TOKEN_IP_MF,               LNM___},
-        {"ip.Protocol",         TOKEN_IP_PROTOCOL,         LNM___},
-        {"ip.SrcAddr",          TOKEN_IP_SRC_ADDR,         LNM___},
-        {"ip.TOS",              TOKEN_IP_TOS,              LNM___},
-        {"ip.TTL",              TOKEN_IP_TTL,              LNM___},
-        {"ipv6",                TOKEN_IPV6,                LNMFS_},
-        {"ipv6.DstAddr",        TOKEN_IPV6_DST_ADDR,       LNM___},
-        {"ipv6.FlowLabel",      TOKEN_IPV6_FLOW_LABEL,     LNM___},
-        {"ipv6.HopLimit",       TOKEN_IPV6_HOP_LIMIT,      LNM___},
-        {"ipv6.Length",         TOKEN_IPV6_LENGTH,         LNM___},
-        {"ipv6.NextHdr",        TOKEN_IPV6_NEXT_HDR,       LNM___},
-        {"ipv6.SrcAddr",        TOKEN_IPV6_SRC_ADDR,       LNM___},
-        {"ipv6.TrafficClass",   TOKEN_IPV6_TRAFFIC_CLASS,  LNM___},
-        {"layer",               TOKEN_LAYER,               L____R},
-        {"length",              TOKEN_LENGTH,              LNM___},
-        {"localAddr",           TOKEN_LOCAL_ADDR,          LN_FS_},
-        {"localPort",           TOKEN_LOCAL_PORT,          LN_FS_},
-        {"loopback",            TOKEN_LOOPBACK,            LN_FS_},
-        {"not",                 TOKEN_NOT,                 LNMFSR},
-        {"or",                  TOKEN_OR,                  LNMFSR},
-        {"outbound",            TOKEN_OUTBOUND,            LN_FS_},
-        {"packet",              TOKEN_PACKET,              LNM___},
-        {"packet16",            TOKEN_PACKET16,            LNM___},
-        {"packet32",            TOKEN_PACKET32,            LNM___},
-        {"parentEndpointId",    TOKEN_PARENT_ENDPOINT_ID,  L__FS_},
-        {"priority",            TOKEN_PRIORITY,            L____R},
-        {"processId",           TOKEN_PROCESS_ID,          L__FSR},
-        {"protocol",            TOKEN_PROTOCOL,            LN_FS_},
-        {"random16",            TOKEN_RANDOM16,            LNM___},
-        {"random32",            TOKEN_RANDOM32,            LNM___},
-        {"random8",             TOKEN_RANDOM8,             LNM___},
-        {"remoteAddr",          TOKEN_REMOTE_ADDR,         LN_FS_},
-        {"remotePort",          TOKEN_REMOTE_PORT,         LN_FS_},
-        {"subIfIdx",            TOKEN_SUB_IF_IDX,          LNM___},
-        {"tcp",                 TOKEN_TCP,                 LNMFS_},
-        {"tcp.Ack",             TOKEN_TCP_ACK,             LNM___},
-        {"tcp.AckNum",          TOKEN_TCP_ACK_NUM,         LNM___},
-        {"tcp.Checksum",        TOKEN_TCP_CHECKSUM,        LNM___},
-        {"tcp.DstPort",         TOKEN_TCP_DST_PORT,        LNM___},
-        {"tcp.Fin",             TOKEN_TCP_FIN,             LNM___},
-        {"tcp.HdrLength",       TOKEN_TCP_HDR_LENGTH,      LNM___},
-        {"tcp.Payload",         TOKEN_TCP_PAYLOAD,         LNM___},
-        {"tcp.Payload16",       TOKEN_TCP_PAYLOAD16,       LNM___},
-        {"tcp.Payload32",       TOKEN_TCP_PAYLOAD32,       LNM___},
-        {"tcp.PayloadLength",   TOKEN_TCP_PAYLOAD_LENGTH,  LNM___},
-        {"tcp.Psh",             TOKEN_TCP_PSH,             LNM___},
-        {"tcp.Rst",             TOKEN_TCP_RST,             LNM___},
-        {"tcp.SeqNum",          TOKEN_TCP_SEQ_NUM,         LNM___},
-        {"tcp.SrcPort",         TOKEN_TCP_SRC_PORT,        LNM___},
-        {"tcp.Syn",             TOKEN_TCP_SYN,             LNM___},
-        {"tcp.Urg",             TOKEN_TCP_URG,             LNM___},
-        {"tcp.UrgPtr",          TOKEN_TCP_URG_PTR,         LNM___},
-        {"tcp.Window",          TOKEN_TCP_WINDOW,          LNM___},
-        {"timestamp",           TOKEN_TIMESTAMP,           LNMFSR},
-        {"true",                TOKEN_TRUE,                LNMFSR},
-        {"udp",                 TOKEN_UDP,                 LNMFS_},
-        {"udp.Checksum",        TOKEN_UDP_CHECKSUM,        LNM___},
-        {"udp.DstPort",         TOKEN_UDP_DST_PORT,        LNM___},
-        {"udp.Length",          TOKEN_UDP_LENGTH,          LNM___},
-        {"udp.Payload",         TOKEN_UDP_PAYLOAD,         LNM___},
-        {"udp.Payload16",       TOKEN_UDP_PAYLOAD16,       LNM___},
-        {"udp.Payload32",       TOKEN_UDP_PAYLOAD32,       LNM___},
-        {"udp.PayloadLength",   TOKEN_UDP_PAYLOAD_LENGTH,  LNM___},
-        {"udp.SrcPort",         TOKEN_UDP_SRC_PORT,        LNM___},
-        {"zero",                TOKEN_ZERO,                LNMFSR},
+        {"ACCEPT",              TOKEN_EVENT_ACCEPT      },
+        {"BIND",                TOKEN_EVENT_BIND        },
+        {"CLOSE",               TOKEN_EVENT_CLOSE       },
+        {"CONNECT",             TOKEN_EVENT_CONNECT     },
+        {"DELETED",             TOKEN_EVENT_DELETED     },
+        {"ESTABLISHED",         TOKEN_EVENT_ESTABLISHED },
+        {"FALSE",               TOKEN_MACRO_FALSE       },
+        {"FLOW",                TOKEN_FLOW              },
+        {"ICMP",                TOKEN_MACRO_ICMP        },
+        {"ICMPV6",              TOKEN_MACRO_ICMPV6      },
+        {"LISTEN",              TOKEN_EVENT_LISTEN      },
+        {"NETWORK",             TOKEN_NETWORK           },
+        {"NETWORK_FORWARD",     TOKEN_NETWORK_FORWARD   },
+        {"OPEN",                TOKEN_EVENT_OPEN        },
+        {"PACKET",              TOKEN_EVENT_PACKET      },
+        {"REFLECT",             TOKEN_REFLECT           },
+        {"SOCKET",              TOKEN_SOCKET            },
+        {"TCP",                 TOKEN_MACRO_TCP         },
+        {"TRUE",                TOKEN_MACRO_TRUE        },
+        {"UDP",                 TOKEN_MACRO_UDP         },
+        {"and",                 TOKEN_AND               },
+        {"endpointId",          TOKEN_ENDPOINT_ID       },
+        {"event",               TOKEN_EVENT             },
+        {"false",               TOKEN_FALSE             },
+        {"fragment",            TOKEN_FRAGMENT          },
+        {"icmp",                TOKEN_ICMP              },
+        {"icmp.Body",           TOKEN_ICMP_BODY         },
+        {"icmp.Checksum",       TOKEN_ICMP_CHECKSUM     },
+        {"icmp.Code",           TOKEN_ICMP_CODE         },
+        {"icmp.Type",           TOKEN_ICMP_TYPE         },
+        {"icmpv6",              TOKEN_ICMPV6            },
+        {"icmpv6.Body",         TOKEN_ICMPV6_BODY       },
+        {"icmpv6.Checksum",     TOKEN_ICMPV6_CHECKSUM   },
+        {"icmpv6.Code",         TOKEN_ICMPV6_CODE       },
+        {"icmpv6.Type",         TOKEN_ICMPV6_TYPE       },
+        {"ifIdx",               TOKEN_IF_IDX            },
+        {"impostor",            TOKEN_IMPOSTOR          },
+        {"inbound",             TOKEN_INBOUND           },
+        {"ip",                  TOKEN_IP                },
+        {"ip.Checksum",         TOKEN_IP_CHECKSUM       },
+        {"ip.DF",               TOKEN_IP_DF             },
+        {"ip.DstAddr",          TOKEN_IP_DST_ADDR       },
+        {"ip.FragOff",          TOKEN_IP_FRAG_OFF       },
+        {"ip.HdrLength",        TOKEN_IP_HDR_LENGTH     },
+        {"ip.Id",               TOKEN_IP_ID             },
+        {"ip.Length",           TOKEN_IP_LENGTH         },
+        {"ip.MF",               TOKEN_IP_MF             },
+        {"ip.Protocol",         TOKEN_IP_PROTOCOL       },
+        {"ip.SrcAddr",          TOKEN_IP_SRC_ADDR       },
+        {"ip.TOS",              TOKEN_IP_TOS            },
+        {"ip.TTL",              TOKEN_IP_TTL            },
+        {"ipv6",                TOKEN_IPV6              },
+        {"ipv6.DstAddr",        TOKEN_IPV6_DST_ADDR     },
+        {"ipv6.FlowLabel",      TOKEN_IPV6_FLOW_LABEL   },
+        {"ipv6.HopLimit",       TOKEN_IPV6_HOP_LIMIT    },
+        {"ipv6.Length",         TOKEN_IPV6_LENGTH       },
+        {"ipv6.NextHdr",        TOKEN_IPV6_NEXT_HDR     },
+        {"ipv6.SrcAddr",        TOKEN_IPV6_SRC_ADDR     },
+        {"ipv6.TrafficClass",   TOKEN_IPV6_TRAFFIC_CLASS},
+        {"layer",               TOKEN_LAYER             },
+        {"length",              TOKEN_LENGTH            },
+        {"localAddr",           TOKEN_LOCAL_ADDR        },
+        {"localPort",           TOKEN_LOCAL_PORT        },
+        {"loopback",            TOKEN_LOOPBACK          },
+        {"not",                 TOKEN_NOT               },
+        {"or",                  TOKEN_OR                },
+        {"outbound",            TOKEN_OUTBOUND          },
+        {"packet",              TOKEN_PACKET            },
+        {"packet16",            TOKEN_PACKET16          },
+        {"packet32",            TOKEN_PACKET32          },
+        {"parentEndpointId",    TOKEN_PARENT_ENDPOINT_ID},
+        {"priority",            TOKEN_PRIORITY          },
+        {"processId",           TOKEN_PROCESS_ID        },
+        {"protocol",            TOKEN_PROTOCOL          },
+        {"random16",            TOKEN_RANDOM16          },
+        {"random32",            TOKEN_RANDOM32          },
+        {"random8",             TOKEN_RANDOM8           },
+        {"remoteAddr",          TOKEN_REMOTE_ADDR       },
+        {"remotePort",          TOKEN_REMOTE_PORT       },
+        {"subIfIdx",            TOKEN_SUB_IF_IDX        },
+        {"tcp",                 TOKEN_TCP               },
+        {"tcp.Ack",             TOKEN_TCP_ACK           },
+        {"tcp.AckNum",          TOKEN_TCP_ACK_NUM       },
+        {"tcp.Checksum",        TOKEN_TCP_CHECKSUM      },
+        {"tcp.DstPort",         TOKEN_TCP_DST_PORT      },
+        {"tcp.Fin",             TOKEN_TCP_FIN           },
+        {"tcp.HdrLength",       TOKEN_TCP_HDR_LENGTH    },
+        {"tcp.Payload",         TOKEN_TCP_PAYLOAD       },
+        {"tcp.Payload16",       TOKEN_TCP_PAYLOAD16     },
+        {"tcp.Payload32",       TOKEN_TCP_PAYLOAD32     },
+        {"tcp.PayloadLength",   TOKEN_TCP_PAYLOAD_LENGTH},
+        {"tcp.Psh",             TOKEN_TCP_PSH           },
+        {"tcp.Rst",             TOKEN_TCP_RST           },
+        {"tcp.SeqNum",          TOKEN_TCP_SEQ_NUM       },
+        {"tcp.SrcPort",         TOKEN_TCP_SRC_PORT      },
+        {"tcp.Syn",             TOKEN_TCP_SYN           },
+        {"tcp.Urg",             TOKEN_TCP_URG           },
+        {"tcp.UrgPtr",          TOKEN_TCP_URG_PTR       },
+        {"tcp.Window",          TOKEN_TCP_WINDOW        },
+        {"timestamp",           TOKEN_TIMESTAMP         },
+        {"true",                TOKEN_TRUE              },
+        {"udp",                 TOKEN_UDP               },
+        {"udp.Checksum",        TOKEN_UDP_CHECKSUM      },
+        {"udp.DstPort",         TOKEN_UDP_DST_PORT      },
+        {"udp.Length",          TOKEN_UDP_LENGTH        },
+        {"udp.Payload",         TOKEN_UDP_PAYLOAD       },
+        {"udp.Payload16",       TOKEN_UDP_PAYLOAD16     },
+        {"udp.Payload32",       TOKEN_UDP_PAYLOAD32     },
+        {"udp.PayloadLength",   TOKEN_UDP_PAYLOAD_LENGTH},
+        {"udp.SrcPort",         TOKEN_UDP_SRC_PORT      },
+        {"zero",                TOKEN_ZERO              },
     };
     TOKEN_INFO *result;
     char c;
     char token[TOKEN_MAXLEN];
+    UINT32 field;
     UINT i = 0, j;
     UINT tp = 0;
 
@@ -906,9 +874,12 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 sizeof(token_info) / sizeof(TOKEN_INFO), token);
             if (result != NULL)
             {
-                if ((result->flags & (1 << layer)) == 0)
+                field = WinDivertKindToField(result->kind);
+                if (field <= WINDIVERT_FILTER_FIELD_MAX &&
+                        !WinDivertValidateField(layer, field))
                 {
-                    return MAKE_ERROR(WINDIVERT_ERROR_BAD_TOKEN_FOR_LAYER, i-j);
+                    return MAKE_ERROR(WINDIVERT_ERROR_BAD_TOKEN_FOR_LAYER,
+                        i-j);
                 }
                 if (WinDivertExpandMacro(result->kind, layer,
                         &tokens[tp].val[0]))
@@ -1780,14 +1751,196 @@ static INT16 WinDivertFlattenExpr(PEXPR expr, INT16 *label, INT16 succ,
 }
 
 /*
+ * Convert a kind to a field.
+ */
+static UINT32 WinDivertKindToField(KIND kind)
+{
+    switch (kind)
+    {
+        case TOKEN_ZERO:
+            return WINDIVERT_FILTER_FIELD_ZERO;
+        case TOKEN_EVENT:
+            return WINDIVERT_FILTER_FIELD_EVENT;
+        case TOKEN_RANDOM8:
+            return WINDIVERT_FILTER_FIELD_RANDOM8;
+        case TOKEN_RANDOM16:
+            return WINDIVERT_FILTER_FIELD_RANDOM16;
+        case TOKEN_RANDOM32:
+            return WINDIVERT_FILTER_FIELD_RANDOM32;
+        case TOKEN_PACKET:
+            return WINDIVERT_FILTER_FIELD_PACKET;
+        case TOKEN_PACKET16:
+            return WINDIVERT_FILTER_FIELD_PACKET16;
+        case TOKEN_PACKET32:
+            return WINDIVERT_FILTER_FIELD_PACKET32;
+        case TOKEN_LENGTH:
+            return WINDIVERT_FILTER_FIELD_LENGTH;
+        case TOKEN_TIMESTAMP:
+            return WINDIVERT_FILTER_FIELD_TIMESTAMP;
+        case TOKEN_TCP_PAYLOAD:
+            return WINDIVERT_FILTER_FIELD_TCP_PAYLOAD;
+        case TOKEN_TCP_PAYLOAD16:
+            return WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16;
+        case TOKEN_TCP_PAYLOAD32:
+            return WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32;
+        case TOKEN_UDP_PAYLOAD:
+            return WINDIVERT_FILTER_FIELD_UDP_PAYLOAD;
+        case TOKEN_UDP_PAYLOAD16:
+            return WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16;
+        case TOKEN_UDP_PAYLOAD32:
+            return WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32;
+        case TOKEN_OUTBOUND:
+            return WINDIVERT_FILTER_FIELD_OUTBOUND;
+        case TOKEN_INBOUND:
+            return WINDIVERT_FILTER_FIELD_INBOUND;
+        case TOKEN_FRAGMENT:
+            return WINDIVERT_FILTER_FIELD_FRAGMENT;
+        case TOKEN_IF_IDX:
+            return WINDIVERT_FILTER_FIELD_IFIDX;
+        case TOKEN_SUB_IF_IDX:
+            return WINDIVERT_FILTER_FIELD_SUBIFIDX;
+        case TOKEN_LOOPBACK:
+            return WINDIVERT_FILTER_FIELD_LOOPBACK;
+        case TOKEN_IMPOSTOR:
+            return WINDIVERT_FILTER_FIELD_IMPOSTOR;
+        case TOKEN_PROCESS_ID:
+            return WINDIVERT_FILTER_FIELD_PROCESSID;
+        case TOKEN_LOCAL_ADDR:
+            return WINDIVERT_FILTER_FIELD_LOCALADDR;
+        case TOKEN_REMOTE_ADDR:
+            return WINDIVERT_FILTER_FIELD_REMOTEADDR;
+        case TOKEN_LOCAL_PORT:
+            return WINDIVERT_FILTER_FIELD_LOCALPORT;
+        case TOKEN_REMOTE_PORT:
+            return WINDIVERT_FILTER_FIELD_REMOTEPORT;
+        case TOKEN_PROTOCOL:
+            return WINDIVERT_FILTER_FIELD_PROTOCOL;
+        case TOKEN_ENDPOINT_ID:
+            return WINDIVERT_FILTER_FIELD_ENDPOINTID;
+        case TOKEN_PARENT_ENDPOINT_ID:
+            return WINDIVERT_FILTER_FIELD_PARENTENDPOINTID;
+        case TOKEN_LAYER:
+            return WINDIVERT_FILTER_FIELD_LAYER;
+        case TOKEN_PRIORITY:
+            return WINDIVERT_FILTER_FIELD_PRIORITY;
+        case TOKEN_IP:
+            return WINDIVERT_FILTER_FIELD_IP;
+        case TOKEN_IPV6:
+            return WINDIVERT_FILTER_FIELD_IPV6;
+        case TOKEN_ICMP:
+            return WINDIVERT_FILTER_FIELD_ICMP;
+        case TOKEN_ICMPV6:
+            return WINDIVERT_FILTER_FIELD_ICMPV6;
+        case TOKEN_TCP:
+            return WINDIVERT_FILTER_FIELD_TCP;
+        case TOKEN_UDP:
+            return WINDIVERT_FILTER_FIELD_UDP;
+        case TOKEN_IP_HDR_LENGTH:
+            return WINDIVERT_FILTER_FIELD_IP_HDRLENGTH;
+        case TOKEN_IP_TOS:
+            return WINDIVERT_FILTER_FIELD_IP_TOS;
+        case TOKEN_IP_LENGTH:
+            return WINDIVERT_FILTER_FIELD_IP_LENGTH;
+        case TOKEN_IP_ID:
+            return WINDIVERT_FILTER_FIELD_IP_ID;
+        case TOKEN_IP_DF:
+            return WINDIVERT_FILTER_FIELD_IP_DF;
+        case TOKEN_IP_MF:
+            return WINDIVERT_FILTER_FIELD_IP_MF;
+        case TOKEN_IP_FRAG_OFF:
+            return WINDIVERT_FILTER_FIELD_IP_FRAGOFF;
+        case TOKEN_IP_TTL:
+            return WINDIVERT_FILTER_FIELD_IP_TTL;
+        case TOKEN_IP_PROTOCOL:
+            return WINDIVERT_FILTER_FIELD_IP_PROTOCOL;
+        case TOKEN_IP_CHECKSUM:
+            return WINDIVERT_FILTER_FIELD_IP_CHECKSUM;
+        case TOKEN_IP_SRC_ADDR:
+            return WINDIVERT_FILTER_FIELD_IP_SRCADDR;
+        case TOKEN_IP_DST_ADDR:
+            return WINDIVERT_FILTER_FIELD_IP_DSTADDR;
+        case TOKEN_IPV6_TRAFFIC_CLASS:
+            return WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS;
+        case TOKEN_IPV6_FLOW_LABEL:
+            return WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL;
+        case TOKEN_IPV6_LENGTH:
+            return WINDIVERT_FILTER_FIELD_IPV6_LENGTH;
+        case TOKEN_IPV6_NEXT_HDR:
+            return WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR;
+        case TOKEN_IPV6_HOP_LIMIT:
+            return WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT;
+        case TOKEN_IPV6_SRC_ADDR:
+            return WINDIVERT_FILTER_FIELD_IPV6_SRCADDR;
+        case TOKEN_IPV6_DST_ADDR:
+            return WINDIVERT_FILTER_FIELD_IPV6_DSTADDR;
+        case TOKEN_ICMP_TYPE:
+            return WINDIVERT_FILTER_FIELD_ICMP_TYPE;
+        case TOKEN_ICMP_CODE:
+            return WINDIVERT_FILTER_FIELD_ICMP_CODE;
+        case TOKEN_ICMP_CHECKSUM:
+            return WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM;
+        case TOKEN_ICMP_BODY:
+            return WINDIVERT_FILTER_FIELD_ICMP_BODY;
+        case TOKEN_ICMPV6_TYPE:
+            return WINDIVERT_FILTER_FIELD_ICMPV6_TYPE;
+        case TOKEN_ICMPV6_CODE:
+            return WINDIVERT_FILTER_FIELD_ICMPV6_CODE;
+        case TOKEN_ICMPV6_CHECKSUM:
+            return WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM;
+        case TOKEN_ICMPV6_BODY:
+            return WINDIVERT_FILTER_FIELD_ICMPV6_BODY;
+        case TOKEN_TCP_SRC_PORT:
+            return WINDIVERT_FILTER_FIELD_TCP_SRCPORT;
+        case TOKEN_TCP_DST_PORT:
+            return WINDIVERT_FILTER_FIELD_TCP_DSTPORT;
+        case TOKEN_TCP_SEQ_NUM:
+            return WINDIVERT_FILTER_FIELD_TCP_SEQNUM;
+        case TOKEN_TCP_ACK_NUM:
+            return WINDIVERT_FILTER_FIELD_TCP_ACKNUM;
+        case TOKEN_TCP_HDR_LENGTH:
+            return WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH;
+        case TOKEN_TCP_URG:
+            return WINDIVERT_FILTER_FIELD_TCP_URG;
+        case TOKEN_TCP_ACK:
+            return WINDIVERT_FILTER_FIELD_TCP_ACK;
+        case TOKEN_TCP_PSH:
+            return WINDIVERT_FILTER_FIELD_TCP_PSH;
+        case TOKEN_TCP_RST:
+            return WINDIVERT_FILTER_FIELD_TCP_RST;
+        case TOKEN_TCP_SYN:
+            return WINDIVERT_FILTER_FIELD_TCP_SYN;
+        case TOKEN_TCP_FIN:
+            return WINDIVERT_FILTER_FIELD_TCP_FIN;
+        case TOKEN_TCP_WINDOW:
+            return WINDIVERT_FILTER_FIELD_TCP_WINDOW;
+        case TOKEN_TCP_CHECKSUM:
+            return WINDIVERT_FILTER_FIELD_TCP_CHECKSUM;
+        case TOKEN_TCP_URG_PTR:
+            return WINDIVERT_FILTER_FIELD_TCP_URGPTR;
+        case TOKEN_TCP_PAYLOAD_LENGTH:
+            return WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH;
+        case TOKEN_UDP_SRC_PORT:
+            return WINDIVERT_FILTER_FIELD_UDP_SRCPORT;
+        case TOKEN_UDP_DST_PORT:
+            return WINDIVERT_FILTER_FIELD_UDP_DSTPORT;
+        case TOKEN_UDP_LENGTH:
+            return WINDIVERT_FILTER_FIELD_UDP_LENGTH;
+        case TOKEN_UDP_CHECKSUM:
+            return WINDIVERT_FILTER_FIELD_UDP_CHECKSUM;
+        case TOKEN_UDP_PAYLOAD_LENGTH:
+            return WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH;
+        default:
+            return UINT32_MAX;
+    }
+}
+
+/*
  * Emit a test.
  */
 static void WinDivertEmitTest(PEXPR test, UINT16 offset,
     PWINDIVERT_FILTER object)
 {
-    BOOL big;
     PEXPR var = test->arg[0], val = test->arg[1];
-    UINT32 val0;
     switch (test->kind)
     {
         case TOKEN_EQ:
@@ -1811,298 +1964,28 @@ static void WinDivertEmitTest(PEXPR test, UINT16 offset,
         default:
             return;
     }
-    big = FALSE;
-    object->arg[1] = object->arg[2] = object->arg[3] = 0;
-    val0 = val->val[0];
+    object->field = WinDivertKindToField(var->kind);
+    object->neg = (val->neg? 1: 0);
+    object->arg[0] = val->val[0];
+    object->arg[1] = val->val[1];
+    object->arg[2] = val->val[2];
+    object->arg[3] = val->val[3];
     switch (var->kind)
     {
-        case TOKEN_ZERO:
-            object->field = WINDIVERT_FILTER_FIELD_ZERO;
-            break;
-        case TOKEN_EVENT:
-            object->field = WINDIVERT_FILTER_FIELD_EVENT;
-            break;
-        case TOKEN_RANDOM8:
-            object->field = WINDIVERT_FILTER_FIELD_RANDOM8;
-            break;
-        case TOKEN_RANDOM16:
-            object->field = WINDIVERT_FILTER_FIELD_RANDOM16;
-            break;
-        case TOKEN_RANDOM32:
-            object->field = WINDIVERT_FILTER_FIELD_RANDOM32;
-            break;
         case TOKEN_PACKET:
-            object->field = WINDIVERT_FILTER_FIELD_PACKET;
-            object->arg[1] = var->val[0];
-            break;
         case TOKEN_PACKET16:
-            object->field = WINDIVERT_FILTER_FIELD_PACKET16;
-            object->arg[1] = var->val[0];
-            break;
         case TOKEN_PACKET32:
-            object->field = WINDIVERT_FILTER_FIELD_PACKET32;
-            object->arg[1] = var->val[0];
-            break;
-        case TOKEN_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_LENGTH;
-            break;
-        case TOKEN_TIMESTAMP:
-            big = TRUE;
-            object->field = WINDIVERT_FILTER_FIELD_TIMESTAMP;
-            break;
         case TOKEN_TCP_PAYLOAD:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_PAYLOAD;
-            object->arg[1] = var->val[0];
-            break;
         case TOKEN_TCP_PAYLOAD16:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16;
-            object->arg[1] = var->val[0];
-            break;
         case TOKEN_TCP_PAYLOAD32:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32;
-            object->arg[1] = var->val[0];
-            break;
         case TOKEN_UDP_PAYLOAD:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_PAYLOAD;
-            object->arg[1] = var->val[0];
-            break;
         case TOKEN_UDP_PAYLOAD16:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16;
-            object->arg[1] = var->val[0];
-            break;
         case TOKEN_UDP_PAYLOAD32:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32;
             object->arg[1] = var->val[0];
-            break;
-        case TOKEN_OUTBOUND:
-            object->field = WINDIVERT_FILTER_FIELD_OUTBOUND;
-            break;
-        case TOKEN_INBOUND:
-            object->field = WINDIVERT_FILTER_FIELD_INBOUND;
-            break;
-        case TOKEN_FRAGMENT:
-            object->field = WINDIVERT_FILTER_FIELD_FRAGMENT;
-            break;
-        case TOKEN_IF_IDX:
-            object->field = WINDIVERT_FILTER_FIELD_IFIDX;
-            break;
-        case TOKEN_SUB_IF_IDX:
-            object->field = WINDIVERT_FILTER_FIELD_SUBIFIDX;
-            break;
-        case TOKEN_LOOPBACK:
-            object->field = WINDIVERT_FILTER_FIELD_LOOPBACK;
-            break;
-        case TOKEN_IMPOSTOR:
-            object->field = WINDIVERT_FILTER_FIELD_IMPOSTOR;
-            break;
-        case TOKEN_PROCESS_ID:
-            object->field = WINDIVERT_FILTER_FIELD_PROCESSID;
-            break;
-        case TOKEN_LOCAL_ADDR:
-            object->field = WINDIVERT_FILTER_FIELD_LOCALADDR;
-            big = TRUE;
-            break;
-        case TOKEN_REMOTE_ADDR:
-            object->field = WINDIVERT_FILTER_FIELD_REMOTEADDR;
-            big = TRUE;
-            break;
-        case TOKEN_LOCAL_PORT:
-            object->field = WINDIVERT_FILTER_FIELD_LOCALPORT;
-            break;
-        case TOKEN_REMOTE_PORT:
-            object->field = WINDIVERT_FILTER_FIELD_REMOTEPORT;
-            break;
-        case TOKEN_PROTOCOL:
-            object->field = WINDIVERT_FILTER_FIELD_PROTOCOL;
-            break;
-        case TOKEN_ENDPOINT_ID:
-            object->field = WINDIVERT_FILTER_FIELD_ENDPOINTID;
-            big = TRUE;
-            break;
-        case TOKEN_PARENT_ENDPOINT_ID:
-            object->field = WINDIVERT_FILTER_FIELD_PARENTENDPOINTID;
-            big = TRUE;
-            break;
-        case TOKEN_LAYER:
-            object->field = WINDIVERT_FILTER_FIELD_LAYER;
-            break;
-        case TOKEN_PRIORITY:
-            object->field = WINDIVERT_FILTER_FIELD_PRIORITY;
-            break;
-        case TOKEN_IP:
-            object->field = WINDIVERT_FILTER_FIELD_IP;
-            break;
-        case TOKEN_IPV6:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6;
-            break;
-        case TOKEN_ICMP:
-            object->field = WINDIVERT_FILTER_FIELD_ICMP;
-            break;
-        case TOKEN_ICMPV6:
-            object->field = WINDIVERT_FILTER_FIELD_ICMPV6;
-            break;
-        case TOKEN_TCP:
-            object->field = WINDIVERT_FILTER_FIELD_TCP;
-            break;
-        case TOKEN_UDP:
-            object->field = WINDIVERT_FILTER_FIELD_UDP;
-            break;
-        case TOKEN_IP_HDR_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_IP_HDRLENGTH;
-            break;
-        case TOKEN_IP_TOS:
-            object->field = WINDIVERT_FILTER_FIELD_IP_TOS;
-            break;
-        case TOKEN_IP_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_IP_LENGTH;
-            break;
-        case TOKEN_IP_ID:
-            object->field = WINDIVERT_FILTER_FIELD_IP_ID;
-            break;
-        case TOKEN_IP_DF:
-            object->field = WINDIVERT_FILTER_FIELD_IP_DF;
-            break;
-        case TOKEN_IP_MF:
-            object->field = WINDIVERT_FILTER_FIELD_IP_MF;
-            break;
-        case TOKEN_IP_FRAG_OFF:
-            object->field = WINDIVERT_FILTER_FIELD_IP_FRAGOFF;
-            break;
-        case TOKEN_IP_TTL:
-            object->field = WINDIVERT_FILTER_FIELD_IP_TTL;
-            break;
-        case TOKEN_IP_PROTOCOL:
-            object->field = WINDIVERT_FILTER_FIELD_IP_PROTOCOL;
-            break;
-        case TOKEN_IP_CHECKSUM:
-            object->field = WINDIVERT_FILTER_FIELD_IP_CHECKSUM;
-            break;
-        case TOKEN_IP_SRC_ADDR:
-            object->field = WINDIVERT_FILTER_FIELD_IP_SRCADDR;
-            big = TRUE;
-            break;
-        case TOKEN_IP_DST_ADDR:
-            object->field = WINDIVERT_FILTER_FIELD_IP_DSTADDR;
-            big = TRUE;
-            break;
-        case TOKEN_IPV6_TRAFFIC_CLASS:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS;
-            break;
-        case TOKEN_IPV6_FLOW_LABEL:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL;
-            break;
-        case TOKEN_IPV6_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6_LENGTH;
-            break;
-        case TOKEN_IPV6_NEXT_HDR:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR;
-            break;
-        case TOKEN_IPV6_HOP_LIMIT:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT;
-            break;
-        case TOKEN_IPV6_SRC_ADDR:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6_SRCADDR;
-            big = TRUE;
-            break;
-        case TOKEN_IPV6_DST_ADDR:
-            object->field = WINDIVERT_FILTER_FIELD_IPV6_DSTADDR;
-            big = TRUE;
-            break;
-        case TOKEN_ICMP_TYPE:
-            object->field = WINDIVERT_FILTER_FIELD_ICMP_TYPE;
-            break;
-        case TOKEN_ICMP_CODE:
-            object->field = WINDIVERT_FILTER_FIELD_ICMP_CODE;
-            break;
-        case TOKEN_ICMP_CHECKSUM:
-            object->field = WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM;
-            break;
-        case TOKEN_ICMP_BODY:
-            object->field = WINDIVERT_FILTER_FIELD_ICMP_BODY;
-            break;
-        case TOKEN_ICMPV6_TYPE:
-            object->field = WINDIVERT_FILTER_FIELD_ICMPV6_TYPE;
-            break;
-        case TOKEN_ICMPV6_CODE:
-            object->field = WINDIVERT_FILTER_FIELD_ICMPV6_CODE;
-            break;
-        case TOKEN_ICMPV6_CHECKSUM:
-            object->field = WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM;
-            break;
-        case TOKEN_ICMPV6_BODY:
-            object->field = WINDIVERT_FILTER_FIELD_ICMPV6_BODY;
-            break;
-        case TOKEN_TCP_SRC_PORT:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_SRCPORT;
-            break;
-        case TOKEN_TCP_DST_PORT:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_DSTPORT;
-            break;
-        case TOKEN_TCP_SEQ_NUM:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_SEQNUM;
-            break;
-        case TOKEN_TCP_ACK_NUM:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_ACKNUM;
-            break;
-        case TOKEN_TCP_HDR_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH;
-            break;
-        case TOKEN_TCP_URG:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_URG;
-            break;
-        case TOKEN_TCP_ACK:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_ACK;
-            break;
-        case TOKEN_TCP_PSH:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_PSH;
-            break;
-        case TOKEN_TCP_RST:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_RST;
-            break;
-        case TOKEN_TCP_SYN:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_SYN;
-            break;
-        case TOKEN_TCP_FIN:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_FIN;
-            break;
-        case TOKEN_TCP_WINDOW:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_WINDOW;
-            break;
-        case TOKEN_TCP_CHECKSUM:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_CHECKSUM;
-            break;
-        case TOKEN_TCP_URG_PTR:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_URGPTR;
-            break;
-        case TOKEN_TCP_PAYLOAD_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH;
-            break;
-        case TOKEN_UDP_SRC_PORT:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_SRCPORT;
-            break;
-        case TOKEN_UDP_DST_PORT:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_DSTPORT;
-            break;
-        case TOKEN_UDP_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_LENGTH;
-            break;
-        case TOKEN_UDP_CHECKSUM:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_CHECKSUM;
-            break;
-        case TOKEN_UDP_PAYLOAD_LENGTH:
-            object->field = WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH;
             break;
         default:
-            return;
+            break;
     }
-    object->arg[0] = val0;
-    if (big)
-    {
-        object->arg[1] = val->val[1];
-        object->arg[2] = val->val[2];
-        object->arg[3] = val->val[3];
-    }
-    object->neg = (val->neg? 1: 0);
     switch (test->succ)
     {
         case WINDIVERT_FILTER_RESULT_ACCEPT:
@@ -2537,77 +2420,17 @@ extern BOOL WinDivertHelperCompileFilter(const char *filter_str,
 }
 
 /*
- * Big number comparison.
- */
-static int WinDivertCompare128(BOOL neg_a, const UINT32 *a, BOOL neg_b,
-    const UINT32 *b, BOOL big)
-{
-    int neg;
-    if (neg_a && !neg_b)
-    {
-        return -1;
-    }
-    if (!neg_a && neg_b)
-    {
-        return 1;
-    }
-    neg = (neg_a? -1: 1);
-    if (big)
-    {
-        if (a[3] < b[3])
-        {
-            return -neg;
-        }
-        if (a[3] > b[3])
-        {
-            return neg;
-        }
-        if (a[2] < b[2])
-        {
-            return -neg;
-        }
-        if (a[2] > b[2])
-        {
-            return neg;
-        }
-        if (a[1] < b[1])
-        {
-            return -neg;
-        }
-        if (a[1] > b[1])
-        {
-            return neg;
-        }
-    }
-    if (a[0] < b[0])
-    {
-        return -neg;
-    }
-    if (a[0] > b[0])
-    {
-        return neg;
-    }
-    return 0;
-}
-
-/*
  * Get packet/payload data.
  */
-static BOOL WinDivertGetData(const VOID *packet, UINT packet_len, UINT offset,
-    INT idx, UINT size, PVOID data)
+static BOOL WinDivertGetData(const VOID *packet, UINT packet_len, INT min,
+    INT max, INT idx, PVOID data, UINT size)
 {
-    if (idx < 0)
-    {
-        idx += (INT)packet_len;
-    }
-    else
-    {
-        idx += (INT)offset;
-    }
-    if (idx < (INT)offset || idx > (INT)(packet_len - size))
+    idx += (idx < 0? max: min);
+    if (idx < min || idx > (max - (INT)size))
     {
         return FALSE;
     }
+
     memcpy(data, (UINT8 *)packet + idx, size);
     return TRUE;
 }
@@ -2618,26 +2441,23 @@ static BOOL WinDivertGetData(const VOID *packet, UINT packet_len, UINT offset,
 extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     UINT packet_len, const WINDIVERT_ADDRESS *addr)
 {
-    UINT16 pc;
     ERROR err;
     DWORD error;
-    PWINDIVERT_IPHDR iphdr = NULL;
-    PWINDIVERT_IPV6HDR ipv6hdr = NULL;
-    PWINDIVERT_ICMPHDR icmphdr = NULL;
-    PWINDIVERT_ICMPV6HDR icmpv6hdr = NULL;
-    PWINDIVERT_TCPHDR tcphdr = NULL;
-    PWINDIVERT_UDPHDR udphdr = NULL;
     WINDIVERT_PACKET info;
+    PWINDIVERT_IPHDR ip_header = NULL;
+    PWINDIVERT_IPV6HDR ipv6_header = NULL;
+    PWINDIVERT_ICMPHDR icmp_header = NULL;
+    PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
+    PWINDIVERT_TCPHDR tcp_header = NULL;
+    PWINDIVERT_UDPHDR udp_header = NULL;
+    const WINDIVERT_DATA_NETWORK *network_data = NULL;
+    const WINDIVERT_DATA_FLOW *flow_data = NULL;
+    const WINDIVERT_DATA_SOCKET *socket_data = NULL;
+    const WINDIVERT_DATA_REFLECT *reflect_data = NULL;
+    BOOL fragment = FALSE;
     UINT8 protocol = 0;
     UINT header_len = 0, payload_len = 0;
-    UINT64 random64 = 0;
-    UINT32 val[4];
-    ULARGE_INTEGER val64;
-    UINT8 data8;
-    UINT16 data16;
-    UINT32 data32;
-    BOOL pass, big, neg, fragment = FALSE;
-    int cmp;
+    int result;
     HANDLE pool;
     WINDIVERT_FILTER *object;
     UINT obj_len;
@@ -2661,18 +2481,18 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
-            protocol    = info.Protocol;
-            iphdr       = info.IPHeader;
-            ipv6hdr     = info.IPv6Header;
-            icmphdr     = info.ICMPHeader;
-            icmpv6hdr   = info.ICMPv6Header;
-            tcphdr      = info.TCPHeader;
-            udphdr      = info.UDPHeader;
-            payload_len = info.PayloadLength;
-            header_len  = info.HeaderLength;
-            fragment    = info.Fragment;
-            if ((addr->IPv6 && ipv6hdr == NULL) ||
-                (!addr->IPv6 && iphdr == NULL))
+            protocol      = info.Protocol;
+            ip_header     = info.IPHeader;
+            ipv6_header   = info.IPv6Header;
+            icmp_header   = info.ICMPHeader;
+            icmpv6_header = info.ICMPv6Header;
+            tcp_header    = info.TCPHeader;
+            udp_header    = info.UDPHeader;
+            payload_len   = info.PayloadLength;
+            header_len    = info.HeaderLength;
+            fragment      = info.Fragment;
+            if ((addr->IPv6 && ipv6_header == NULL) ||
+                (!addr->IPv6 && ip_header == NULL))
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
@@ -2687,6 +2507,25 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
             }
             break;
         case WINDIVERT_LAYER_REFLECT:
+            break;
+        default:
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+    }
+    switch (addr->Layer)
+    {
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+            network_data = &addr->Network;
+            break;
+        case WINDIVERT_LAYER_FLOW:
+            flow_data = &addr->Flow;
+            break;
+        case WINDIVERT_LAYER_SOCKET:
+            socket_data = &addr->Socket;
+            break;
+        case WINDIVERT_LAYER_REFLECT:
+            reflect_data = &addr->Reflect;
             break;
         default:
             SetLastError(ERROR_INVALID_PARAMETER);
@@ -2712,786 +2551,46 @@ extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
         goto WinDivertHelperEvalFilterError;
     }
 
-    pc = 0;
-    while (TRUE)
+    result = WinDivertExecuteFilter(
+        object,
+        addr->Layer,
+        addr->Timestamp,
+        addr->Event,
+        (addr->IPv6 != 0? FALSE: TRUE),
+        (addr->Outbound != 0? TRUE: FALSE),
+        (addr->Loopback != 0? TRUE: FALSE),
+        (addr->Impostor != 0? TRUE: FALSE),
+        fragment,
+        network_data,
+        flow_data,
+        socket_data,
+        reflect_data,
+        ip_header,
+        ipv6_header,
+        icmp_header,
+        icmpv6_header,
+        tcp_header,
+        udp_header,
+        protocol,
+        packet,
+        packet_len,
+        header_len,
+        payload_len);
+
+    HeapDestroy(pool);
+    if (result < 0)
     {
-        switch (pc)
-        {
-            case WINDIVERT_FILTER_RESULT_ACCEPT:
-                HeapDestroy(pool);
-                return TRUE;
-            case WINDIVERT_FILTER_RESULT_REJECT:
-                HeapDestroy(pool);
-                SetLastError(0);
-                return FALSE;
-            default:
-                if (pc >= obj_len)
-                {
-                    SetLastError(ERROR_INVALID_PARAMETER);
-                    goto WinDivertHelperEvalFilterError;
-                }
-                break;
-        }
-        pass = TRUE;
-        big  = FALSE;
-        switch (object[pc].field)
-        {
-            case WINDIVERT_FILTER_FIELD_ZERO:
-            case WINDIVERT_FILTER_FIELD_EVENT:
-            case WINDIVERT_FILTER_FIELD_TIMESTAMP:
-                pass = TRUE;
-                break;
-            case WINDIVERT_FILTER_FIELD_INBOUND:
-            case WINDIVERT_FILTER_FIELD_OUTBOUND:
-                pass = (addr->Layer != WINDIVERT_LAYER_NETWORK_FORWARD &&
-                        addr->Layer != WINDIVERT_LAYER_REFLECT);
-                break;
-            case WINDIVERT_FILTER_FIELD_LOOPBACK:
-            case WINDIVERT_FILTER_FIELD_IMPOSTOR:
-            case WINDIVERT_FILTER_FIELD_IP:
-            case WINDIVERT_FILTER_FIELD_IPV6:
-            case WINDIVERT_FILTER_FIELD_ICMP:
-            case WINDIVERT_FILTER_FIELD_ICMPV6:
-            case WINDIVERT_FILTER_FIELD_TCP:
-            case WINDIVERT_FILTER_FIELD_UDP:
-                pass = (addr->Layer != WINDIVERT_LAYER_REFLECT);
-                break;
-            case WINDIVERT_FILTER_FIELD_RANDOM8:
-            case WINDIVERT_FILTER_FIELD_RANDOM16:
-            case WINDIVERT_FILTER_FIELD_RANDOM32:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                if (pass && random64 == 0)
-                {
-                    random64 = WinDivertHashPacket((UINT64)addr->Timestamp,
-                        iphdr, ipv6hdr, icmphdr, icmpv6hdr, tcphdr, udphdr);
-                    random64 |= 0xFF00000000000000ull;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_IFIDX:
-            case WINDIVERT_FILTER_FIELD_SUBIFIDX:
-            case WINDIVERT_FILTER_FIELD_PACKET:
-            case WINDIVERT_FILTER_FIELD_PACKET16:
-            case WINDIVERT_FILTER_FIELD_PACKET32:
-            case WINDIVERT_FILTER_FIELD_LENGTH:
-            case WINDIVERT_FILTER_FIELD_FRAGMENT:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                break;
-            case WINDIVERT_FILTER_FIELD_LOCALADDR:
-            case WINDIVERT_FILTER_FIELD_REMOTEADDR:
-            case WINDIVERT_FILTER_FIELD_LOCALPORT:
-            case WINDIVERT_FILTER_FIELD_REMOTEPORT:
-            case WINDIVERT_FILTER_FIELD_PROTOCOL:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_FLOW ||
-                        addr->Layer == WINDIVERT_LAYER_SOCKET);
-                break;
-            case WINDIVERT_FILTER_FIELD_ENDPOINTID:
-            case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
-                pass = (addr->Layer == WINDIVERT_LAYER_FLOW ||
-                        addr->Layer == WINDIVERT_LAYER_SOCKET);
-                break;
-            case WINDIVERT_FILTER_FIELD_PROCESSID:
-                pass = (addr->Layer == WINDIVERT_LAYER_FLOW ||
-                        addr->Layer == WINDIVERT_LAYER_SOCKET ||
-                        addr->Layer == WINDIVERT_LAYER_REFLECT);
-                break;
-            case WINDIVERT_FILTER_FIELD_LAYER:
-            case WINDIVERT_FILTER_FIELD_PRIORITY:
-                pass = (addr->Layer == WINDIVERT_LAYER_REFLECT);
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
-            case WINDIVERT_FILTER_FIELD_IP_TOS:
-            case WINDIVERT_FILTER_FIELD_IP_LENGTH:
-            case WINDIVERT_FILTER_FIELD_IP_ID:
-            case WINDIVERT_FILTER_FIELD_IP_DF:
-            case WINDIVERT_FILTER_FIELD_IP_MF:
-            case WINDIVERT_FILTER_FIELD_IP_FRAGOFF:
-            case WINDIVERT_FILTER_FIELD_IP_TTL:
-            case WINDIVERT_FILTER_FIELD_IP_PROTOCOL:
-            case WINDIVERT_FILTER_FIELD_IP_CHECKSUM:
-            case WINDIVERT_FILTER_FIELD_IP_SRCADDR:
-            case WINDIVERT_FILTER_FIELD_IP_DSTADDR:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                pass = pass && (iphdr != NULL);
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
-            case WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
-            case WINDIVERT_FILTER_FIELD_IPV6_LENGTH:
-            case WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR:
-            case WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT:
-            case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
-            case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                pass = pass && (ipv6hdr != NULL);
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_TYPE:
-            case WINDIVERT_FILTER_FIELD_ICMP_CODE:
-            case WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM:
-            case WINDIVERT_FILTER_FIELD_ICMP_BODY:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                pass = pass && (icmphdr != NULL);
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_TYPE:
-            case WINDIVERT_FILTER_FIELD_ICMPV6_CODE:
-            case WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM:
-            case WINDIVERT_FILTER_FIELD_ICMPV6_BODY:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                pass = pass && (icmpv6hdr != NULL);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_SRCPORT:
-            case WINDIVERT_FILTER_FIELD_TCP_DSTPORT:
-            case WINDIVERT_FILTER_FIELD_TCP_SEQNUM:
-            case WINDIVERT_FILTER_FIELD_TCP_ACKNUM:
-            case WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH:
-            case WINDIVERT_FILTER_FIELD_TCP_URG:
-            case WINDIVERT_FILTER_FIELD_TCP_ACK:
-            case WINDIVERT_FILTER_FIELD_TCP_PSH:
-            case WINDIVERT_FILTER_FIELD_TCP_RST:
-            case WINDIVERT_FILTER_FIELD_TCP_SYN:
-            case WINDIVERT_FILTER_FIELD_TCP_FIN:
-            case WINDIVERT_FILTER_FIELD_TCP_WINDOW:
-            case WINDIVERT_FILTER_FIELD_TCP_CHECKSUM:
-            case WINDIVERT_FILTER_FIELD_TCP_URGPTR:
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                pass = pass && (tcphdr != NULL);
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_SRCPORT:
-            case WINDIVERT_FILTER_FIELD_UDP_DSTPORT:
-            case WINDIVERT_FILTER_FIELD_UDP_LENGTH:
-            case WINDIVERT_FILTER_FIELD_UDP_CHECKSUM:
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
-                pass = (addr->Layer == WINDIVERT_LAYER_NETWORK ||
-                        addr->Layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-                pass = pass && (udphdr != NULL);
-                break;
-            default:
-                SetLastError(ERROR_INVALID_PARAMETER);
-                goto WinDivertHelperEvalFilterError;
-        }
-        if (!pass)
-        {
-            pc = object[pc].failure;
-            continue;
-        }
-        neg = FALSE;
-        switch (object[pc].field)
-        {
-            case WINDIVERT_FILTER_FIELD_ZERO:
-                val[0] = 0;
-                break;
-            case WINDIVERT_FILTER_FIELD_EVENT:
-                val[0] = addr->Event;
-                break;
-            case WINDIVERT_FILTER_FIELD_LAYER:
-                val[0] = addr->Reflect.Layer;
-                break;
-            case WINDIVERT_FILTER_FIELD_PRIORITY:
-            {
-                neg = (addr->Reflect.Priority < 0);
-                val[0] = (UINT32)(neg? -addr->Reflect.Priority:
-                    addr->Reflect.Priority);
-                break;
-            }
-            case WINDIVERT_FILTER_FIELD_RANDOM8:
-                val64.QuadPart = random64;
-                val[0] = ((UINT32)val64.HighPart >> 16) & 0xFF;
-                break;
-            case WINDIVERT_FILTER_FIELD_RANDOM16:
-                val64.QuadPart = random64;
-                val[0] = (UINT32)val64.HighPart & 0xFFFF;
-                break;
-            case WINDIVERT_FILTER_FIELD_RANDOM32:
-                val[0] = (UINT32)random64;
-                break;
-            case WINDIVERT_FILTER_FIELD_PACKET:
-                pass = WinDivertGetData(packet, packet_len, /*offset=*/0,
-                    object[pc].arg[1], sizeof(data8), &data8);
-                val[0] = data8;
-                break;
-            case WINDIVERT_FILTER_FIELD_PACKET16:
-                pass = WinDivertGetData(packet, packet_len, /*offset=*/0,
-                    object[pc].arg[1], sizeof(data16), &data16);
-                val[0] = ntohs(data16);
-                break;
-            case WINDIVERT_FILTER_FIELD_PACKET32:
-                pass = WinDivertGetData(packet, packet_len, /*offset=*/0,
-                    object[pc].arg[1], sizeof(data32), &data32);
-                val[0] = ntohl(data32);
-                break;
-            case WINDIVERT_FILTER_FIELD_LENGTH:
-                val[0] = packet_len;
-                break;
-            case WINDIVERT_FILTER_FIELD_TIMESTAMP:
-            {
-                neg = (addr->Timestamp < 0);
-                val64.QuadPart =
-                    (UINT64)(neg? -addr->Timestamp: addr->Timestamp);
-                big = TRUE;
-                val[0] = (UINT32)val64.LowPart;
-                val[1] = (UINT32)val64.HighPart;
-                val[2] = val[3] = 0;
-                break;
-            }
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD:
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD:
-                pass = WinDivertGetData(packet, packet_len, header_len,
-                    object[pc].arg[1], sizeof(data8), &data8);
-                val[0] = data8;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16:
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16:
-                pass = WinDivertGetData(packet, packet_len, header_len,
-                    object[pc].arg[1], sizeof(data16), &data16);
-                val[0] = ntohs(data16);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32:
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32:
-                pass = WinDivertGetData(packet, packet_len, header_len,
-                    object[pc].arg[1], sizeof(data32), &data32);
-                val[0] = ntohl(data32);
-                break;
-            case WINDIVERT_FILTER_FIELD_INBOUND:
-                val[0] = !addr->Outbound;
-                break;
-            case WINDIVERT_FILTER_FIELD_OUTBOUND:
-                val[0] = addr->Outbound;
-                break;
-            case WINDIVERT_FILTER_FIELD_FRAGMENT:
-                val[0] = (UINT32)fragment;
-                break;
-            case WINDIVERT_FILTER_FIELD_IFIDX:
-                val[0] = addr->Network.IfIdx;
-                break;
-            case WINDIVERT_FILTER_FIELD_SUBIFIDX:
-                val[0] = addr->Network.SubIfIdx;
-                break;
-            case WINDIVERT_FILTER_FIELD_LOOPBACK:
-                val[0] = addr->Loopback;
-                break;
-            case WINDIVERT_FILTER_FIELD_IMPOSTOR:
-                val[0] = addr->Impostor;
-                break;
-            case WINDIVERT_FILTER_FIELD_IP:
-                val[0] = !addr->IPv6;
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6:
-                val[0] = addr->IPv6;
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                    case WINDIVERT_LAYER_NETWORK_FORWARD:
-                        val[0] = (UINT32)(icmphdr != NULL);
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = (UINT32)(!addr->IPv6 &&
-                            addr->Socket.Protocol == IPPROTO_ICMP);
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = (UINT32)(!addr->IPv6 &&
-                            addr->Flow.Protocol == IPPROTO_ICMP);
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                    case WINDIVERT_LAYER_NETWORK_FORWARD:
-                        val[0] = (UINT32)(icmpv6hdr != NULL);
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = (UINT32)(addr->IPv6 &&
-                            addr->Socket.Protocol == IPPROTO_ICMPV6);
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = (UINT32)(addr->IPv6 &&
-                            addr->Flow.Protocol == IPPROTO_ICMPV6);
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                    case WINDIVERT_LAYER_NETWORK_FORWARD:
-                        val[0] = (UINT32)(tcphdr != NULL);
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = (UINT32)(addr->Socket.Protocol == IPPROTO_TCP);
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = (UINT32)(addr->Flow.Protocol == IPPROTO_TCP);
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                    case WINDIVERT_LAYER_NETWORK_FORWARD:
-                        val[0] = (UINT32)(udphdr != NULL);
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = (UINT32)(addr->Socket.Protocol == IPPROTO_UDP);
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = (UINT32)(addr->Flow.Protocol == IPPROTO_UDP);
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
-                val[0] = iphdr->HdrLength;
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_TOS:
-                val[0] = iphdr->TOS;
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_LENGTH:
-                val[0] = ntohs(iphdr->Length);
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_ID:
-                val[0] = ntohs(iphdr->Id);
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_DF:
-                val[0] = WINDIVERT_IPHDR_GET_DF(iphdr);
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_MF:
-                val[0] = WINDIVERT_IPHDR_GET_MF(iphdr);
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_FRAGOFF:
-                val[0] = ntohs(WINDIVERT_IPHDR_GET_FRAGOFF(iphdr));
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_TTL:
-                val[0] = iphdr->TTL;
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_PROTOCOL:
-                val[0] = iphdr->Protocol;
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_CHECKSUM:
-                val[0] = ntohs(iphdr->Checksum);
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_SRCADDR:
-                val[1] = 0x0000FFFF;
-                val[0] = ntohl(iphdr->SrcAddr);
-                break;
-            case WINDIVERT_FILTER_FIELD_IP_DSTADDR:
-                val[1] = 0x0000FFFF;
-                val[0] = ntohl(iphdr->DstAddr);
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS:
-                val[0] = WINDIVERT_IPV6HDR_GET_TRAFFICCLASS(ipv6hdr);
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL:
-                val[0] = ntohl(WINDIVERT_IPV6HDR_GET_FLOWLABEL(ipv6hdr));
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_LENGTH:
-                val[0] = ntohs(ipv6hdr->Length);
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR:
-                val[0] = ipv6hdr->NextHdr;
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT:
-                val[0] = ipv6hdr->HopLimit;
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
-                big = TRUE;
-                val[3] = ntohl(ipv6hdr->SrcAddr[0]);
-                val[2] = ntohl(ipv6hdr->SrcAddr[1]);
-                val[1] = ntohl(ipv6hdr->SrcAddr[2]);
-                val[0] = ntohl(ipv6hdr->SrcAddr[3]);
-                break;
-            case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
-                big = TRUE;
-                val[3] = ntohl(ipv6hdr->DstAddr[0]);
-                val[2] = ntohl(ipv6hdr->DstAddr[1]);
-                val[1] = ntohl(ipv6hdr->DstAddr[2]);
-                val[0] = ntohl(ipv6hdr->DstAddr[3]);
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_TYPE:
-                val[0] = icmphdr->Type;
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_CODE:
-                val[0] = icmphdr->Code;
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM:
-                val[0] = ntohs(icmphdr->Checksum);
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMP_BODY:
-                val[0] = ntohl(icmphdr->Body);
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_TYPE:
-                val[0] = icmpv6hdr->Type;
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_CODE:
-                val[0] = icmpv6hdr->Code;
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM:
-                val[0] = ntohs(icmpv6hdr->Checksum);
-                break;
-            case WINDIVERT_FILTER_FIELD_ICMPV6_BODY:
-                val[0] = ntohl(icmpv6hdr->Body);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_SRCPORT:
-                val[0] = ntohs(tcphdr->SrcPort);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_DSTPORT:
-                val[0] = ntohs(tcphdr->DstPort);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_SEQNUM:
-                val[0] = ntohl(tcphdr->SeqNum);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_ACKNUM:
-                val[0] = ntohl(tcphdr->AckNum);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH:
-                val[0] = tcphdr->HdrLength;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_URG:
-                val[0] = tcphdr->Urg;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_ACK:
-                val[0] = tcphdr->Ack;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_PSH:
-                val[0] = tcphdr->Psh;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_RST:
-                val[0] = tcphdr->Rst;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_SYN:
-                val[0] = tcphdr->Syn;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_FIN:
-                val[0] = tcphdr->Fin;
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_WINDOW:
-                val[0] = ntohs(tcphdr->Window);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_CHECKSUM:
-                val[0] = ntohs(tcphdr->Checksum);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_URGPTR:
-                val[0] = ntohs(tcphdr->UrgPtr);
-                break;
-            case WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH:
-                val[0] = payload_len;
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_SRCPORT:
-                val[0] = ntohs(udphdr->SrcPort);
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_DSTPORT:
-                val[0] = ntohs(udphdr->DstPort);
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_LENGTH:
-                val[0] = ntohs(udphdr->Length);
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_CHECKSUM:
-                val[0] = ntohs(udphdr->Checksum);
-                break;
-            case WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH:
-                val[0] = payload_len;
-                break;
-            case WINDIVERT_FILTER_FIELD_LOCALADDR:
-                big = TRUE;
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                        if (!addr->IPv6)
-                        {
-                            val[3] = val[2] = 0;
-                            val[1] = 0x0000FFFF;
-                            val[0] = ntohl((addr->Outbound? iphdr->SrcAddr:
-                                                            iphdr->DstAddr));
-                        }
-                        else if (addr->Outbound)
-                        {
-                            val[3] = ntohl(ipv6hdr->SrcAddr[0]);
-                            val[2] = ntohl(ipv6hdr->SrcAddr[1]);
-                            val[1] = ntohl(ipv6hdr->SrcAddr[2]);
-                            val[0] = ntohl(ipv6hdr->SrcAddr[3]);
-                        }
-                        else
-                        {
-                            val[3] = ntohl(ipv6hdr->DstAddr[0]);
-                            val[2] = ntohl(ipv6hdr->DstAddr[1]);
-                            val[1] = ntohl(ipv6hdr->DstAddr[2]);
-                            val[0] = ntohl(ipv6hdr->DstAddr[3]);
-                        }
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = addr->Flow.LocalAddr[0];
-                        val[1] = addr->Flow.LocalAddr[1];
-                        val[2] = addr->Flow.LocalAddr[2];
-                        val[3] = addr->Flow.LocalAddr[3];
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = addr->Socket.LocalAddr[0];
-                        val[1] = addr->Socket.LocalAddr[1];
-                        val[2] = addr->Socket.LocalAddr[2];
-                        val[3] = addr->Socket.LocalAddr[3];
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_REMOTEADDR:
-                big = TRUE;
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                        if (!addr->IPv6)
-                        {
-                            val[3] = val[2] = 0;
-                            val[1] = 0x0000FFFF;
-                            val[0] = ntohl((!addr->Outbound? iphdr->SrcAddr:
-                                                             iphdr->DstAddr));
-                        }
-                        else if (!addr->Outbound)
-                        {
-                            val[3] = ntohl(ipv6hdr->SrcAddr[0]);
-                            val[2] = ntohl(ipv6hdr->SrcAddr[1]);
-                            val[1] = ntohl(ipv6hdr->SrcAddr[2]);
-                            val[0] = ntohl(ipv6hdr->SrcAddr[3]);
-                        }
-                        else
-                        {
-                            val[3] = ntohl(ipv6hdr->DstAddr[0]);
-                            val[2] = ntohl(ipv6hdr->DstAddr[1]);
-                            val[1] = ntohl(ipv6hdr->DstAddr[2]);
-                            val[0] = ntohl(ipv6hdr->DstAddr[3]);
-                        }
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = addr->Flow.RemoteAddr[0];
-                        val[1] = addr->Flow.RemoteAddr[1];
-                        val[2] = addr->Flow.RemoteAddr[2];
-                        val[3] = addr->Flow.RemoteAddr[3];
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = addr->Socket.RemoteAddr[0];
-                        val[1] = addr->Socket.RemoteAddr[1];
-                        val[2] = addr->Socket.RemoteAddr[2];
-                        val[3] = addr->Socket.RemoteAddr[3];
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_LOCALPORT:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                        if (tcphdr != NULL)
-                        {
-                            val[0] = ntohs((addr->Outbound? tcphdr->SrcPort:
-                                                            tcphdr->DstPort));
-                        }
-                        else if (udphdr != NULL)
-                        {
-                            val[0] = ntohs((addr->Outbound? udphdr->SrcPort:
-                                                            udphdr->DstPort));
-                        }
-                        else if (icmphdr != NULL)
-                        {
-                            val[0] = (addr->Outbound? icmphdr->Type: 0);
-                        }
-                        else if (icmpv6hdr != NULL)
-                        {
-                            val[0] = (addr->Outbound? icmpv6hdr->Type: 0);
-                        }
-                        else
-                        {
-                            val[0] = 0;
-                        }
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = addr->Flow.LocalPort;
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = addr->Socket.LocalPort;
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_REMOTEPORT:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                        if (tcphdr != NULL)
-                        {
-                            val[0] = ntohs((!addr->Outbound? tcphdr->SrcPort:
-                                                             tcphdr->DstPort));
-                        }
-                        else if (udphdr != NULL)
-                        {
-                            val[0] = ntohs((!addr->Outbound? udphdr->SrcPort:
-                                                             udphdr->DstPort));
-                        }
-                        else if (icmphdr != NULL)
-                        {
-                            val[0] = (!addr->Outbound? icmphdr->Type: 0);
-                        }
-                        else if (icmpv6hdr != NULL)
-                        {
-                            val[0] = (!addr->Outbound? icmpv6hdr->Type: 0);
-                        }
-                        else
-                        {
-                            val[0] = 0;
-                        }
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = addr->Flow.RemotePort;
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = addr->Socket.RemotePort;
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_PROTOCOL:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_NETWORK:
-                        val[0] = protocol;
-                        break;
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = addr->Flow.Protocol;
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = addr->Socket.Protocol;
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_ENDPOINTID:
-                big = TRUE;
-                val[3] = val[2] = 0;
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_FLOW:
-                        val64.QuadPart = addr->Flow.EndpointId;
-                        val[0] = (UINT32)val64.LowPart;
-                        val[1] = (UINT32)val64.HighPart;
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val64.QuadPart = addr->Socket.EndpointId;
-                        val[0] = (UINT32)val64.LowPart;
-                        val[1] = (UINT32)val64.HighPart;
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
-                big = TRUE;
-                val[3] = val[2] = 0;
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_FLOW:
-                        val64.QuadPart = addr->Flow.ParentEndpointId;
-                        val[0] = (UINT32)val64.LowPart;
-                        val[1] = (UINT32)val64.HighPart;
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val64.QuadPart = addr->Socket.ParentEndpointId;
-                        val[0] = (UINT32)val64.LowPart;
-                        val[1] = (UINT32)val64.HighPart;
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            case WINDIVERT_FILTER_FIELD_PROCESSID:
-                switch (addr->Layer)
-                {
-                    case WINDIVERT_LAYER_FLOW:
-                        val[0] = addr->Flow.ProcessId;
-                        break;
-                    case WINDIVERT_LAYER_SOCKET:
-                        val[0] = addr->Socket.ProcessId;
-                        break;
-                    case WINDIVERT_LAYER_REFLECT:
-                        val[0] = addr->Reflect.ProcessId;
-                        break;
-                    default:
-                        SetLastError(ERROR_INVALID_PARAMETER);
-                        goto WinDivertHelperEvalFilterError;
-                }
-                break;
-            default:
-                SetLastError(ERROR_INVALID_PARAMETER);
-                goto WinDivertHelperEvalFilterError;
-        }
-        if (!pass)
-        {
-            pc = object[pc].failure;
-            continue;
-        }
-        cmp = WinDivertCompare128(neg, val, (object[pc].neg? TRUE: FALSE),
-            object[pc].arg, big);
-        switch (object[pc].test)
-        {
-            case WINDIVERT_FILTER_TEST_EQ:
-                pass = (cmp == 0);
-                break;
-            case WINDIVERT_FILTER_TEST_NEQ:
-                pass = (cmp != 0);
-                break;
-            case WINDIVERT_FILTER_TEST_LT:
-                pass = (cmp < 0);
-                break;
-            case WINDIVERT_FILTER_TEST_LEQ:
-                pass = (cmp <= 0);
-                break;
-            case WINDIVERT_FILTER_TEST_GT:
-                pass = (cmp > 0);
-                break;
-            case WINDIVERT_FILTER_TEST_GEQ:
-                pass = (cmp >= 0);
-                break;
-            default:
-                SetLastError(ERROR_INVALID_PARAMETER);
-                goto WinDivertHelperEvalFilterError;
-        }
-        pc = (pass? object[pc].success: object[pc].failure);
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return FALSE;
+    }
+    else if (result == 0)
+    {
+        SetLastError(0);
+        return FALSE;
+    }
+    else
+    {
+        return TRUE;
     }
 
 WinDivertHelperEvalFilterError:
