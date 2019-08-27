@@ -593,8 +593,8 @@ extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.recv.addr = (UINT64)addr;
-    ioctl.recv.addr_len_ptr = (UINT64)NULL;
+    ioctl.recv.addr = (UINT64)(ULONG_PTR)addr;
+    ioctl.recv.addr_len_ptr = (UINT64)(ULONG_PTR)NULL;
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_RECV, &ioctl,
         pPacket, packetLen, readLen);
 }
@@ -608,8 +608,8 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.recv.addr = (UINT64)addr;
-    ioctl.recv.addr_len_ptr = (UINT64)pAddrLen;
+    ioctl.recv.addr = (UINT64)(ULONG_PTR)addr;
+    ioctl.recv.addr_len_ptr = (UINT64)(ULONG_PTR)pAddrLen;
     if (flags != 0)
     {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -635,7 +635,7 @@ extern BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.send.addr = (UINT64)addr;
+    ioctl.send.addr = (UINT64)(ULONG_PTR)addr;
     ioctl.send.addr_len = sizeof(WINDIVERT_ADDRESS);
     return WinDivertIoControl(handle, IOCTL_WINDIVERT_SEND, &ioctl,
         (PVOID)pPacket, packetLen, writeLen);
@@ -650,7 +650,7 @@ extern BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
-    ioctl.send.addr = (UINT64)addr;
+    ioctl.send.addr = (UINT64)(ULONG_PTR)addr;
     ioctl.send.addr_len = addrLen;
     if (flags != 0)
     {
