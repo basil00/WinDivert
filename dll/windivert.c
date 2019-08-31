@@ -43,7 +43,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define WINDIVERTEXPORT
+#ifndef WINDIVERTEXPORT
+#define WINDIVERTEXPORT extern
+#endif
 #include "windivert.h"
 #include "windivert_device.h"
 
@@ -152,8 +154,7 @@ static HMODULE module = NULL;
 /*
  * Dll Entry
  */
-extern BOOL APIENTRY WinDivertDllEntry(HANDLE module0, DWORD reason,
-    LPVOID reserved)
+BOOL APIENTRY WinDivertDllEntry(HANDLE module0, DWORD reason, LPVOID reserved)
 {
     HANDLE event;
     switch (reason)
@@ -420,8 +421,8 @@ static BOOL WinDivertIoControl(HANDLE handle, DWORD code,
 /*
  * Open a WinDivert handle.
  */
-extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
-    INT16 priority, UINT64 flags)
+HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer, INT16 priority,
+    UINT64 flags)
 {
     WINDIVERT_FILTER *object;
     UINT obj_len;
@@ -588,8 +589,8 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 /*
  * Receive a WinDivert packet.
  */
-extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
-    UINT *readLen, PWINDIVERT_ADDRESS addr)
+BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen, UINT *readLen,
+    PWINDIVERT_ADDRESS addr)
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
@@ -602,7 +603,7 @@ extern BOOL WinDivertRecv(HANDLE handle, PVOID pPacket, UINT packetLen,
 /*
  * Receive a WinDivert packet.
  */
-extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
+BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
     UINT *readLen, UINT64 flags, PWINDIVERT_ADDRESS addr, UINT *pAddrLen,
     LPOVERLAPPED overlapped)
 {
@@ -630,7 +631,7 @@ extern BOOL WinDivertRecvEx(HANDLE handle, PVOID pPacket, UINT packetLen,
 /*
  * Send a WinDivert packet.
  */
-extern BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
+BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
     UINT *writeLen, const WINDIVERT_ADDRESS *addr)
 {
     WINDIVERT_IOCTL ioctl;
@@ -644,7 +645,7 @@ extern BOOL WinDivertSend(HANDLE handle, const VOID *pPacket, UINT packetLen,
 /*
  * Send a WinDivert packet.
  */
-extern BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
+BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
     UINT *writeLen, UINT64 flags, const WINDIVERT_ADDRESS *addr, UINT addrLen,
     LPOVERLAPPED overlapped)
 {
@@ -672,7 +673,7 @@ extern BOOL WinDivertSendEx(HANDLE handle, const VOID *pPacket, UINT packetLen,
 /*
  * Shutdown a WinDivert handle.
  */
-extern BOOL WinDivertShutdown(HANDLE handle, WINDIVERT_SHUTDOWN how)
+BOOL WinDivertShutdown(HANDLE handle, WINDIVERT_SHUTDOWN how)
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
@@ -684,7 +685,7 @@ extern BOOL WinDivertShutdown(HANDLE handle, WINDIVERT_SHUTDOWN how)
 /*
  * Close a WinDivert handle.
  */
-extern BOOL WinDivertClose(HANDLE handle)
+BOOL WinDivertClose(HANDLE handle)
 {
     return CloseHandle(handle);
 }
@@ -692,8 +693,7 @@ extern BOOL WinDivertClose(HANDLE handle)
 /*
  * Set a WinDivert parameter.
  */
-extern BOOL WinDivertSetParam(HANDLE handle, WINDIVERT_PARAM param,
-    UINT64 value)
+BOOL WinDivertSetParam(HANDLE handle, WINDIVERT_PARAM param, UINT64 value)
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));
@@ -706,8 +706,7 @@ extern BOOL WinDivertSetParam(HANDLE handle, WINDIVERT_PARAM param,
 /*
  * Get a WinDivert parameter.
  */
-extern BOOL WinDivertGetParam(HANDLE handle, WINDIVERT_PARAM param,
-    UINT64 *pValue)
+BOOL WinDivertGetParam(HANDLE handle, WINDIVERT_PARAM param, UINT64 *pValue)
 {
     WINDIVERT_IOCTL ioctl;
     memset(&ioctl, 0, sizeof(ioctl));

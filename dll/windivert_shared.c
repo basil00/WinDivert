@@ -549,7 +549,7 @@ WinDivertHelperParsePacketExit:
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
-extern BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
+BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     WINDIVERT_ADDRESS *pAddr, UINT64 flags)
 {
     UINT8 pseudo_header[
@@ -754,7 +754,7 @@ static UINT16 WinDivertCalcChecksum(PVOID pseudo_header,
 /*
  * Decrement the TTL.
  */
-extern BOOL WinDivertHelperDecrementTTL(VOID *packet, UINT packetLen)
+BOOL WinDivertHelperDecrementTTL(VOID *packet, UINT packetLen)
 {
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_IPV6HDR ipv6_header;

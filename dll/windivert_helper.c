@@ -272,7 +272,7 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
 /*
  * Parse an IPv4 address.
  */
-extern BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
+BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
 {
     UINT32 addr = 0;
     UINT32 part, i;
@@ -312,7 +312,7 @@ extern BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
 /*
  * Parse an IPv6 address.
  */
-extern BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
+BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
 {
     UINT16 laddr[8] = {0};
     UINT16 raddr[8] = {0};
@@ -467,7 +467,7 @@ static PTOKEN_INFO WinDivertTokenLookup(PTOKEN_INFO token_info,
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
+BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_IPHDR *ppIPHeader, PWINDIVERT_IPV6HDR *ppIPv6Header,
     UINT8 *pProtocol, PWINDIVERT_ICMPHDR *ppICMPHeader,
     PWINDIVERT_ICMPV6HDR *ppICMPv6Header, PWINDIVERT_TCPHDR *ppTCPHeader,
@@ -2354,9 +2354,8 @@ static const char *WinDivertErrorString(UINT code)
 /*
  * Compile the given filter string.
  */
-extern BOOL WinDivertHelperCompileFilter(const char *filter_str, 
-    WINDIVERT_LAYER layer, char *object, UINT obj_len, const char **error,
-    UINT *error_pos)
+BOOL WinDivertHelperCompileFilter(const char *filter_str, WINDIVERT_LAYER layer,
+    char *object, UINT obj_len, const char **error, UINT *error_pos)
 {
     HANDLE pool;
     ERROR err;
@@ -2438,7 +2437,7 @@ static BOOL WinDivertGetData(const VOID *packet, UINT packet_len, INT min,
 /*
  * Evaluate the given filter with the given packet as input.
  */
-extern BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
+BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     UINT packet_len, const WINDIVERT_ADDRESS *addr)
 {
     ERROR err;
@@ -3556,8 +3555,7 @@ static void WinDivertFormatIPv6Addr(PWINDIVERT_STREAM stream,
 /*
  * Format an IPv4 address.
  */
-extern BOOL WinDivertHelperFormatIPv4Address(UINT32 addr, char *buffer,
-    UINT bufLen)
+BOOL WinDivertHelperFormatIPv4Address(UINT32 addr, char *buffer, UINT bufLen)
 {
     WINDIVERT_STREAM stream;
     stream.data     = buffer;
@@ -3577,7 +3575,7 @@ extern BOOL WinDivertHelperFormatIPv4Address(UINT32 addr, char *buffer,
 /*
  * Format an IPv6 address.
  */
-extern BOOL WinDivertHelperFormatIPv6Address(const UINT32 *addr, char *buffer,
+BOOL WinDivertHelperFormatIPv6Address(const UINT32 *addr, char *buffer,
     UINT bufLen)
 {
     WINDIVERT_STREAM stream;
@@ -4176,7 +4174,7 @@ WinDivertHelperFormatFilterError:
 /*
  * WinDivert packet hash function.
  */
-extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
+UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     UINT64 seed)
 {
     PWINDIVERT_IPHDR ip_header = NULL;
@@ -4199,27 +4197,27 @@ extern UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
 /*
  * Byte ordering.
  */
-extern UINT16 WinDivertHelperNtohs(UINT16 x)
+UINT16 WinDivertHelperNtohs(UINT16 x)
 {
     return BYTESWAP16(x);
 }
-extern UINT16 WinDivertHelperHtons(UINT16 x)
+UINT16 WinDivertHelperHtons(UINT16 x)
 {
     return BYTESWAP16(x);
 }
-extern UINT32 WinDivertHelperNtohl(UINT32 x)
+UINT32 WinDivertHelperNtohl(UINT32 x)
 {
     return BYTESWAP32(x);
 }
-extern UINT32 WinDivertHelperHtonl(UINT32 x)
+UINT32 WinDivertHelperHtonl(UINT32 x)
 {
     return BYTESWAP32(x);
 }
-extern UINT64 WinDivertHelperNtohll(UINT64 x)
+UINT64 WinDivertHelperNtohll(UINT64 x)
 {
     return BYTESWAP64(x);
 }
-extern UINT64 WinDivertHelperHtonll(UINT64 x)
+UINT64 WinDivertHelperHtonll(UINT64 x)
 {
     return BYTESWAP64(x);
 }
@@ -4235,21 +4233,21 @@ static void WinDivertByteSwap128(const UINT *inAddr, UINT *outAddr)
         outAddr[i] = tmp[i];
     }
 }
-extern void WinDivertHelperNtohIPv6Address(const UINT *inAddr, UINT *outAddr)
+void WinDivertHelperNtohIPv6Address(const UINT *inAddr, UINT *outAddr)
 {
     WinDivertByteSwap128(inAddr, outAddr);
 }
-extern void WinDivertHelperHtonIPv6Address(const UINT *inAddr, UINT *outAddr)
+void WinDivertHelperHtonIPv6Address(const UINT *inAddr, UINT *outAddr)
 {
     WinDivertByteSwap128(inAddr, outAddr);
 }
 
 // Old names to be removed in next version
-extern void WinDivertHelperNtohIpv6Address(const UINT *inAddr, UINT *outAddr)
+void WinDivertHelperNtohIpv6Address(const UINT *inAddr, UINT *outAddr)
 {
     WinDivertByteSwap128(inAddr, outAddr);
 }
-extern void WinDivertHelperHtonIpv6Address(const UINT *inAddr, UINT *outAddr)
+void WinDivertHelperHtonIpv6Address(const UINT *inAddr, UINT *outAddr)
 {
     WinDivertByteSwap128(inAddr, outAddr);
 }

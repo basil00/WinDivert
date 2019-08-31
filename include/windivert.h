@@ -40,7 +40,7 @@
 #endif      /* WINDIVERT_KERNEL */
 
 #ifndef WINDIVERTEXPORT
-#define WINDIVERTEXPORT     __declspec(dllimport)
+#define WINDIVERTEXPORT     extern __declspec(dllimport)
 #endif      /* WINDIVERTEXPORT */
 
 #ifdef __MINGW32__
@@ -226,7 +226,7 @@ typedef enum
 /*
  * Open a WinDivert handle.
  */
-extern WINDIVERTEXPORT HANDLE WinDivertOpen(
+WINDIVERTEXPORT HANDLE WinDivertOpen(
     __in        const char *filter,
     __in        WINDIVERT_LAYER layer,
     __in        INT16 priority,
@@ -235,7 +235,7 @@ extern WINDIVERTEXPORT HANDLE WinDivertOpen(
 /*
  * Receive (read) a packet from a WinDivert handle.
  */
-extern WINDIVERTEXPORT BOOL WinDivertRecv(
+WINDIVERTEXPORT BOOL WinDivertRecv(
     __in        HANDLE handle,
     __out_opt   VOID *pPacket,
     __in        UINT packetLen,
@@ -245,7 +245,7 @@ extern WINDIVERTEXPORT BOOL WinDivertRecv(
 /*
  * Receive (read) a packet from a WinDivert handle.
  */
-extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
+WINDIVERTEXPORT BOOL WinDivertRecvEx(
     __in        HANDLE handle,
     __out_opt   VOID *pPacket,
     __in        UINT packetLen,
@@ -258,7 +258,7 @@ extern WINDIVERTEXPORT BOOL WinDivertRecvEx(
 /*
  * Send (write/inject) a packet to a WinDivert handle.
  */
-extern WINDIVERTEXPORT BOOL WinDivertSend(
+WINDIVERTEXPORT BOOL WinDivertSend(
     __in        HANDLE handle,
     __in        const VOID *pPacket,
     __in        UINT packetLen,
@@ -268,7 +268,7 @@ extern WINDIVERTEXPORT BOOL WinDivertSend(
 /*
  * Send (write/inject) a packet to a WinDivert handle.
  */
-extern WINDIVERTEXPORT BOOL WinDivertSendEx(
+WINDIVERTEXPORT BOOL WinDivertSendEx(
     __in        HANDLE handle,
     __in        const VOID *pPacket,
     __in        UINT packetLen,
@@ -281,20 +281,20 @@ extern WINDIVERTEXPORT BOOL WinDivertSendEx(
 /*
  * Shutdown a WinDivert handle.
  */
-extern WINDIVERTEXPORT BOOL WinDivertShutdown(
+WINDIVERTEXPORT BOOL WinDivertShutdown(
     __in        HANDLE handle,
     __in        WINDIVERT_SHUTDOWN how);
 
 /*
  * Close a WinDivert handle.
  */
-extern WINDIVERTEXPORT BOOL WinDivertClose(
+WINDIVERTEXPORT BOOL WinDivertClose(
     __in        HANDLE handle);
 
 /*
  * Set a WinDivert handle parameter.
  */
-extern WINDIVERTEXPORT BOOL WinDivertSetParam(
+WINDIVERTEXPORT BOOL WinDivertSetParam(
     __in        HANDLE handle,
     __in        WINDIVERT_PARAM param,
     __in        UINT64 value);
@@ -302,7 +302,7 @@ extern WINDIVERTEXPORT BOOL WinDivertSetParam(
 /*
  * Get a WinDivert handle parameter.
  */
-extern WINDIVERTEXPORT BOOL WinDivertGetParam(
+WINDIVERTEXPORT BOOL WinDivertGetParam(
     __in        HANDLE handle,
     __in        WINDIVERT_PARAM param,
     __out       UINT64 *pValue);
@@ -487,7 +487,7 @@ typedef struct
 /*
  * Hash a packet.
  */
-extern WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
+WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
     __in        const VOID *pPacket,
     __in        UINT packetLen,
     __in        UINT64 seed
@@ -499,7 +499,7 @@ extern WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
+WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __in        const VOID *pPacket,
     __in        UINT packetLen,
     __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
@@ -517,21 +517,21 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
 /*
  * Parse an IPv4 address.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv4Address(
+WINDIVERTEXPORT BOOL WinDivertHelperParseIPv4Address(
     __in        const char *addrStr,
     __out_opt   UINT32 *pAddr);
 
 /*
  * Parse an IPv6 address.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
+WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
     __in        const char *addrStr,
     __out_opt   UINT32 *pAddr);
 
 /*
  * Format an IPv4 address.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv4Address(
+WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv4Address(
     __in        UINT32 addr,
     __out       char *buffer,
     __in        UINT bufLen);
@@ -539,7 +539,7 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv4Address(
 /*
  * Format an IPv6 address.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
+WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
     __in        const UINT32 *pAddr,
     __out       char *buffer,
     __in        UINT bufLen);
@@ -547,7 +547,7 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
 /*
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperCalcChecksums(
+WINDIVERTEXPORT BOOL WinDivertHelperCalcChecksums(
     __inout     VOID *pPacket, 
     __in        UINT packetLen,
     __out_opt   WINDIVERT_ADDRESS *pAddr,
@@ -556,14 +556,14 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperCalcChecksums(
 /*
  * Decrement the TTL/HopLimit.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperDecrementTTL(
+WINDIVERTEXPORT BOOL WinDivertHelperDecrementTTL(
     __inout     VOID *pPacket,
     __in        UINT packetLen);
 
 /*
  * Compile the given filter string.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperCompileFilter(
+WINDIVERTEXPORT BOOL WinDivertHelperCompileFilter(
     __in        const char *filter,
     __in        WINDIVERT_LAYER layer,
     __out_opt   char *object,
@@ -574,7 +574,7 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperCompileFilter(
 /*
  * Evaluate the given filter string.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
+WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
     __in        const char *filter,
     __in        const VOID *pPacket,
     __in        UINT packetLen,
@@ -583,7 +583,7 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
 /*
  * Format the given filter string.
  */
-extern WINDIVERTEXPORT BOOL WinDivertHelperFormatFilter(
+WINDIVERTEXPORT BOOL WinDivertHelperFormatFilter(
     __in        const char *filter,
     __in        WINDIVERT_LAYER layer,
     __out       char *buffer,
@@ -592,32 +592,32 @@ extern WINDIVERTEXPORT BOOL WinDivertHelperFormatFilter(
 /*
  * Byte ordering.
  */
-extern WINDIVERTEXPORT UINT16 WinDivertHelperNtohs(
+WINDIVERTEXPORT UINT16 WinDivertHelperNtohs(
     __in        UINT16 x);
-extern WINDIVERTEXPORT UINT16 WinDivertHelperHtons(
+WINDIVERTEXPORT UINT16 WinDivertHelperHtons(
     __in        UINT16 x);
-extern WINDIVERTEXPORT UINT32 WinDivertHelperNtohl(
+WINDIVERTEXPORT UINT32 WinDivertHelperNtohl(
     __in        UINT32 x);
-extern WINDIVERTEXPORT UINT32 WinDivertHelperHtonl(
+WINDIVERTEXPORT UINT32 WinDivertHelperHtonl(
     __in        UINT32 x);
-extern WINDIVERTEXPORT UINT64 WinDivertHelperNtohll(
+WINDIVERTEXPORT UINT64 WinDivertHelperNtohll(
     __in        UINT64 x);
-extern WINDIVERTEXPORT UINT64 WinDivertHelperHtonll(
+WINDIVERTEXPORT UINT64 WinDivertHelperHtonll(
     __in        UINT64 x);
-extern WINDIVERTEXPORT void WinDivertHelperNtohIPv6Address(
+WINDIVERTEXPORT void WinDivertHelperNtohIPv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);
-extern WINDIVERTEXPORT void WinDivertHelperHtonIPv6Address(
+WINDIVERTEXPORT void WinDivertHelperHtonIPv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);
 
 /*
  * Old names to be removed in the next version.
  */
-extern WINDIVERTEXPORT void WinDivertHelperNtohIpv6Address(
+WINDIVERTEXPORT void WinDivertHelperNtohIpv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);
-extern WINDIVERTEXPORT void WinDivertHelperHtonIpv6Address(
+WINDIVERTEXPORT void WinDivertHelperHtonIpv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);
 
