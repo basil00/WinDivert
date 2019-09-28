@@ -522,7 +522,8 @@ BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     }
     if (ppNext != NULL)
     {
-        *ppNext = (info.Extended? (PVOID)((UINT8 *)pPacket + packetLen): NULL);
+        *ppNext = (info.Extended? (PVOID)((UINT8 *)pPacket +
+            (info.HeaderLength + info.PayloadLength)): NULL);
     }
     if (pNextLen != NULL)
     {

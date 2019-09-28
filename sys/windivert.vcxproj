@@ -46,8 +46,6 @@
   </ProjectConfiguration>
  </ItemGroup>
  <ItemGroup>
- </ItemGroup>
- <ItemGroup>
   <ResourceCompile Include="windivert.rc" />
  </ItemGroup>
  <ItemGroup>
