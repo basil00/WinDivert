@@ -531,8 +531,8 @@ WinDivertHelperParsePacketExit:
     pInfo->Fragment      = (fragment? 1: 0);
     pInfo->MF            = (MF? 1: 0);
     pInfo->FragOff       = (UINT32)frag_off;
-    pInfo->Truncated     = (total_len < packetLen? 1: 0);
-    pInfo->Extended      = (total_len > packetLen? 1: 0);
+    pInfo->Truncated     = (total_len > packetLen? 1: 0);
+    pInfo->Extended      = (total_len < packetLen? 1: 0);
     pInfo->Reserved1     = 0;
     pInfo->IPHeader      = ip_header;
     pInfo->IPv6Header    = ipv6_header;
