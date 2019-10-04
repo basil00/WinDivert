@@ -32,7 +32,6 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-
 #include <ntifs.h>
 #include <ntddk.h>
 #include <fwpsk.h>
@@ -44,6 +43,7 @@
 #include <guiddef.h>
 
 #include "windivert_device.h"
+#include "windivert_log.h"
 
 /*
  * WDK function declaration cruft.
@@ -304,6 +304,7 @@ static LONGLONG counts_per_ms = 0;
 static POOL_TYPE non_paged_pool = NonPagedPool;
 static MM_PAGE_PRIORITY no_write_flag = 0;
 static MM_PAGE_PRIORITY no_exec_flag  = 0;
+static LONG64 num_opens = 0;
 
 /*
  * Priorities.
@@ -491,6 +492,8 @@ static void windivert_reflect_event_notify(context_t context,
 static void windivert_reflect_established_notify(context_t context,
     LONGLONG timestamp);
 extern void windivert_reflect_worker(IN WDFWORKITEM item);
+static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
+    const wchar_t *msg_str);
 
 /*
  * WinDivert sublayer GUIDs
@@ -1245,11 +1248,11 @@ driver_entry_exit:
 /*
  * WinDivert driver unload routine.
  */
-extern VOID windivert_unload(IN WDFDRIVER driver)
+extern VOID windivert_unload(IN WDFDRIVER driver_0)
 {
-    UNREFERENCED_PARAMETER(driver);
-
+    PDRIVER_OBJECT driver = WdfDriverWdmGetDriverObject(driver_0);
     windivert_driver_unload();
+    windivert_log_event(PsGetCurrentProcess(), driver, L"UNLOAD");
 }
 
 /*
@@ -3116,6 +3119,7 @@ windivert_ioctl_bad_flags:
             UINT32 process_id;
             WINDIVERT_LAYER layer;
             UINT8 filter_len;
+            WDFDEVICE device;
 
             ioctl = (PWINDIVERT_IOCTL)inbuf;
             filter_flags = ioctl->startup.flags;
@@ -3172,8 +3176,15 @@ windivert_ioctl_bad_flags:
             context->reflect.open           = FALSE;
             context->shutdown_recv_enabled  =
                 (layer != WINDIVERT_LAYER_REFLECT);
+            device = context->device;
             KeReleaseInStackQueuedSpinLock(&lock_handle);
 
+            if (InterlockedIncrement64(&num_opens) == 1)
+            {
+                PDRIVER_OBJECT driver = WdfDriverWdmGetDriverObject(
+                    WdfDeviceGetDriver(device));
+                windivert_log_event(process, driver, L"LOAD");
+            }
             windivert_reflect_open_event(context);
 
             status = windivert_install_callouts(context, layer, filter_flags);
@@ -6180,5 +6191,69 @@ void windivert_reflect_worker(IN WDFWORKITEM item)
     }
     reflect_worker_queued = FALSE;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
+}
+
+/*
+ * Log a driver event.
+ */
+static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
+    const wchar_t *msg_str)
+{
+    const wchar_t windivert_str[] = WINDIVERT_DEVICE_NAME
+        WINDIVERT_VERSION_LSTR;
+    wchar_t pid_str[16];
+    size_t windivert_size = sizeof(windivert_str), msg_size, pid_size, size;
+    UNICODE_STRING string;
+    UINT8 *str;
+    PIO_ERROR_LOG_PACKET packet;
+    NTSTATUS status;
+
+    size = ERROR_LOG_MAXIMUM_SIZE - sizeof(wchar_t) -
+        (sizeof(IO_ERROR_LOG_PACKET) + windivert_size + sizeof(pid_str));
+    status = RtlStringCbLengthW(msg_str, size, &msg_size);
+    if (!NT_SUCCESS(status))
+    {
+        return;
+    }
+    msg_size += sizeof(wchar_t);
+
+    if (process != NULL)
+    {
+        string.Length        = 0;
+        string.MaximumLength = sizeof(pid_str);
+        string.Buffer        = pid_str;
+        status = RtlIntegerToUnicodeString(
+            (UINT32)(ULONG_PTR)PsGetProcessId(process), 10, &string);
+        pid_size = string.Length + sizeof(wchar_t);
+    }
+    if (process == NULL || !NT_SUCCESS(status))
+    {
+        pid_str[0] = pid_str[1] = pid_str[2] = L'?';
+        pid_str[3] = L'\0';
+        pid_size = 4 * sizeof(wchar_t);
+    }
+
+    size = sizeof(IO_ERROR_LOG_PACKET) + windivert_size + msg_size + pid_size;
+    if (size > ERROR_LOG_MAXIMUM_SIZE)
+    {
+        return;
+    }
+    packet = (PIO_ERROR_LOG_PACKET)IoAllocateErrorLogEntry(driver, (UCHAR)size);
+    if (packet == NULL)
+    {
+        return;
+    }
+    RtlZeroMemory(packet, size);
+    packet->NumberOfStrings = 3;
+    packet->StringOffset    = sizeof(IO_ERROR_LOG_PACKET);
+    packet->ErrorCode       = WINDIVERT_INFO_EVENT;
+    str = (UINT8 *)packet + packet->StringOffset;
+    RtlCopyMemory(str, windivert_str, windivert_size);
+    str += windivert_size;
+    RtlCopyMemory(str, msg_str, msg_size);
+    str += msg_size;
+    RtlCopyMemory(str, pid_str, pid_size);
+
+    IoWriteErrorLogEntry(packet);
 }
 

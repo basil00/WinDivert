@@ -310,3 +310,5 @@ WinDivert 2.1.0
     - Fix missing Flow.EndpointId and Flow.ParentEndpointId for IPv6 flows.
 WinDivert 2.2.0
     - Implement new packet parser that correctly handles IP fragments.
+    - Add a new "fragment" filter field that matches IP fragments.
+    - (Un)Loading the WinDivert driver will cause a system event to be logged.

@@ -38,7 +38,7 @@
 /*
  * NOTE: This is the low-level interface to the WinDivert device driver.
  *       This interface should not be used directly, instead use the high-level
- *       interface provided by the divert API.
+ *       interface provided by the WinDivert API.
  */
 
 #define WINDIVERT_KERNEL

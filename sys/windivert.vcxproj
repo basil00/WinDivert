@@ -46,6 +46,12 @@
   </ProjectConfiguration>
  </ItemGroup>
  <ItemGroup>
+  <MessageCompile Include="windivert_log.mc">
+   <RCFilePath>.</RCFilePath>
+   <HeaderFilePath>.</HeaderFilePath>
+  </MessageCompile>
+ </ItemGroup>
+ <ItemGroup>
   <ResourceCompile Include="windivert.rc" />
  </ItemGroup>
  <ItemGroup>

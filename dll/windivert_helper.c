@@ -32,11 +32,6 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#include <stdio.h>
-#include <stdlib.h>
-
-
-
 /****************************************************************************/
 /* WINDIVERT HELPER IMPLEMENTATION                                          */
 /****************************************************************************/
@@ -2149,8 +2144,8 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
 {
     INT16 ip;
     UINT16 succ, fail;
-    BOOL result[WINDIVERT_FILTER_MAXLEN];
-    BOOL result_succ, result_fail, result_test;
+    BOOLEAN result[WINDIVERT_FILTER_MAXLEN];
+    BOOLEAN result_succ, result_fail, result_test;
 
     if (length == 0)
     {

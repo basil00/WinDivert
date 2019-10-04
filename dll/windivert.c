@@ -264,6 +264,33 @@ static BOOLEAN WinDivertGetDriverFileName(LPWSTR sys_str)
 }
 
 /*
+ * Register event log.  It is not an error if this function fails.
+ */
+static void WinDivertRegisterEventSource(const wchar_t *windivert_sys)
+{
+    HKEY key;
+    size_t len;
+    DWORD types = 7;
+
+    if (!WinDivertStrLen(windivert_sys, MAX_PATH, &len))
+    {
+        return;
+    }
+    if (RegCreateKeyExA(HKEY_LOCAL_MACHINE,
+            "System\\CurrentControlSet\\Services\\EventLog\\System\\WinDivert",
+            0, NULL, REG_OPTION_VOLATILE, KEY_SET_VALUE, NULL, &key, NULL)
+                != ERROR_SUCCESS)
+    {
+        return;
+    }
+    RegSetValueExW(key, L"EventMessageFile", 0, REG_SZ, (LPBYTE)windivert_sys,
+            (len + 1) * sizeof(wchar_t));
+    RegSetValueExA(key, "TypesSupported", 0, REG_DWORD, (LPBYTE)&types,
+            sizeof(types));
+    RegCloseKey(key);
+}
+
+/*
  * Install the WinDivert driver.
  */
 static BOOLEAN WinDivertDriverInstall(VOID)
@@ -324,6 +351,9 @@ static BOOLEAN WinDivertDriverInstall(VOID)
         goto WinDivertDriverInstallExit;
     }
 
+    // Register event logging:
+    WinDivertRegisterEventSource(windivert_sys);
+
 WinDivertDriverInstallExit:
 
     success = (service != NULL);
@@ -356,7 +386,7 @@ WinDivertDriverInstallExit:
     ReleaseMutex(mutex);
     CloseHandle(mutex);
     SetLastError(err);
-    
+
     return success;
 }
 
