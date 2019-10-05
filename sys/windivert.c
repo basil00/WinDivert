@@ -294,8 +294,12 @@ typedef struct flow_s *flow_t;
 /*
  * Global state.
  */
-static HANDLE inject_handle = NULL;
-static HANDLE injectv6_handle = NULL;
+static HANDLE inject_handle_forward  = NULL;
+static HANDLE injectv6_handle_forward  = NULL;
+static HANDLE inject_handle_in = NULL;
+static HANDLE inject_handle_out = NULL;
+static HANDLE injectv6_handle_in = NULL;
+static HANDLE injectv6_handle_out = NULL;
 static NDIS_HANDLE nbl_pool_handle = NULL;
 static NDIS_HANDLE nb_pool_handle = NULL;
 static HANDLE engine_handle = NULL;
@@ -1050,20 +1054,55 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     WdfControlFinishInitializing(device);
 
     // Create the packet injection handles.
-    status = FwpsInjectionHandleCreate0(AF_INET, 
+    status = FwpsInjectionHandleCreate0(AF_INET,
         FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
-        &inject_handle);
+        &inject_handle_forward);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to create WFP packet injection handle", status);
+        DEBUG_ERROR("failed to create WFP forward packet injection handle", status);
         goto driver_entry_exit;
     }
-    status = FwpsInjectionHandleCreate0(AF_INET6, 
+    status = FwpsInjectionHandleCreate0(AF_INET6,
         FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
-        &injectv6_handle);
+        &injectv6_handle_forward);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to create WFP ipv6 packet injection handle",
+        DEBUG_ERROR("failed to create WFP ipv6 forward packet injection handle", status);
+        goto driver_entry_exit;
+    }
+
+    status = FwpsInjectionHandleCreate0(AF_INET,
+        FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
+        &inject_handle_in);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to create WFP inbound packet injection handle", status);
+        goto driver_entry_exit;
+    }
+    status = FwpsInjectionHandleCreate0(AF_INET,
+        FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
+        &inject_handle_out);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to create WFP outbound packet injection handle", status);
+        goto driver_entry_exit;
+    }
+
+    status = FwpsInjectionHandleCreate0(AF_INET6,
+        FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
+        &injectv6_handle_in);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to create WFP ipv6 inbound packet injection handle",
+            status);
+        goto driver_entry_exit;
+    }
+    status = FwpsInjectionHandleCreate0(AF_INET6,
+        FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
+        &injectv6_handle_out);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to create WFP ipv6 outbound packet injection handle",
             status);
         goto driver_entry_exit;
     }
@@ -1264,13 +1303,29 @@ static void windivert_driver_unload(void)
 
     DEBUG("UNLOAD: unloading the WinDivert driver");
 
-    if (inject_handle != NULL)
+    if (inject_handle_forward != NULL)
     {
-        FwpsInjectionHandleDestroy0(inject_handle);
+        FwpsInjectionHandleDestroy0(inject_handle_forward);
     }
-    if (injectv6_handle != NULL)
+    if (injectv6_handle_forward != NULL)
     {
-        FwpsInjectionHandleDestroy0(injectv6_handle);
+        FwpsInjectionHandleDestroy0(injectv6_handle_forward);
+    }
+    if (inject_handle_in != NULL)
+    {
+        FwpsInjectionHandleDestroy0(inject_handle_in);
+    }
+    if (inject_handle_out != NULL)
+    {
+        FwpsInjectionHandleDestroy0(inject_handle_out);
+    }
+    if (injectv6_handle_in != NULL)
+    {
+        FwpsInjectionHandleDestroy0(injectv6_handle_in);
+    }
+    if (injectv6_handle_out != NULL)
+    {
+        FwpsInjectionHandleDestroy0(injectv6_handle_out);
     }
     if (nbl_pool_handle != NULL)
     {
@@ -2671,9 +2726,9 @@ windivert_write_too_small_packet:
         }
 
         // Inject packet:
-        handle = (ipv4? inject_handle: injectv6_handle);
         if (layer == WINDIVERT_LAYER_NETWORK_FORWARD)
         {
+            handle = (ipv4? inject_handle_forward: injectv6_handle_forward);
             status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
                 (ipv4? AF_INET: AF_INET6), UNSPECIFIED_COMPARTMENT_ID,
                 addr[i].Network.IfIdx, buffers, windivert_inject_complete,
@@ -2681,12 +2736,14 @@ windivert_write_too_small_packet:
         }
         else if (addr[i].Outbound != 0)
         {
+            handle = (ipv4? inject_handle_out: injectv6_handle_out);
             status = FwpsInjectNetworkSendAsync0(handle, (HANDLE)priority, 0,
                 UNSPECIFIED_COMPARTMENT_ID, buffers, windivert_inject_complete,
                 data_copy);
         }
         else
         {
+            handle = (ipv4? inject_handle_in: injectv6_handle_in);
             status = FwpsInjectNetworkReceiveAsync0(handle, (HANDLE)priority, 0,
                 UNSPECIFIED_COMPARTMENT_ID, addr[i].Network.IfIdx,
                 addr[i].Network.SubIfIdx, buffers, windivert_inject_complete,
@@ -3701,13 +3758,33 @@ static void windivert_network_classify(context_t context,
     }
     if (ipv4)
     {
-        packet_state = FwpsQueryPacketInjectionState0(inject_handle, buffers,
-            &packet_context);
+        if ( context->layer == WINDIVERT_LAYER_NETWORK_FORWARD ) {
+            packet_state = FwpsQueryPacketInjectionState0(inject_handle_forward, buffers,
+                &packet_context);
+        }
+        else if ( outbound ) {
+            packet_state = FwpsQueryPacketInjectionState0(inject_handle_out, buffers,
+                &packet_context);
+        }
+	else {
+            packet_state = FwpsQueryPacketInjectionState0(inject_handle_in, buffers,
+                &packet_context);
+        }
     }
     else
     {
-        packet_state = FwpsQueryPacketInjectionState0(injectv6_handle,
-            buffers, &packet_context);
+        if ( context->layer == WINDIVERT_LAYER_NETWORK_FORWARD ) {
+            packet_state = FwpsQueryPacketInjectionState0(injectv6_handle_forward, buffers,
+                &packet_context);
+        }
+	else if ( outbound ) {
+            packet_state = FwpsQueryPacketInjectionState0(injectv6_handle_out,
+                buffers, &packet_context);
+        }
+	else {
+            packet_state = FwpsQueryPacketInjectionState0(injectv6_handle_in,
+                buffers, &packet_context);
+        }
     }
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -5142,9 +5219,9 @@ static void windivert_reinject_packet(packet_t packet)
         return;
     }
     priority = packet->priority;
-    handle = (packet->ipv6? injectv6_handle: inject_handle);
     if (packet->layer == WINDIVERT_LAYER_NETWORK_FORWARD)
     {
+        handle = (packet->ipv6? injectv6_handle_forward: inject_handle_forward);
         status = FwpsInjectForwardAsync0(handle, (HANDLE)priority, 0,
             (packet->ipv6? AF_INET6: AF_INET), UNSPECIFIED_COMPARTMENT_ID,
             network_data->IfIdx, buffers, windivert_reinject_complete, 
@@ -5152,12 +5229,14 @@ static void windivert_reinject_packet(packet_t packet)
     }
     else if (packet->outbound)
     {
+        handle = (packet->ipv6? injectv6_handle_out: inject_handle_out);
         status = FwpsInjectNetworkSendAsync0(handle, (HANDLE)priority, 0,
             UNSPECIFIED_COMPARTMENT_ID, buffers, windivert_reinject_complete,
             (HANDLE)packet);
     }
     else
     {
+        handle = (packet->ipv6? injectv6_handle_in: inject_handle_in);
         status = FwpsInjectNetworkReceiveAsync0(handle, (HANDLE)priority, 0,
             UNSPECIFIED_COMPARTMENT_ID, network_data->IfIdx,
             network_data->SubIfIdx, buffers, windivert_reinject_complete,
