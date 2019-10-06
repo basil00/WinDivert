@@ -294,8 +294,8 @@ typedef struct flow_s *flow_t;
 /*
  * Global state.
  */
-static HANDLE inject_handle_forward  = NULL;
-static HANDLE injectv6_handle_forward  = NULL;
+static HANDLE inject_handle_forward = NULL;
+static HANDLE injectv6_handle_forward = NULL;
 static HANDLE inject_handle_in = NULL;
 static HANDLE inject_handle_out = NULL;
 static HANDLE injectv6_handle_in = NULL;
@@ -1059,7 +1059,8 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         &inject_handle_forward);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to create WFP forward packet injection handle", status);
+        DEBUG_ERROR("failed to create WFP forward packet injection handle",
+            status);
         goto driver_entry_exit;
     }
     status = FwpsInjectionHandleCreate0(AF_INET6,
@@ -1067,16 +1068,17 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         &injectv6_handle_forward);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to create WFP ipv6 forward packet injection handle", status);
+        DEBUG_ERROR("failed to create WFP ipv6 forward packet injection handle",
+            status);
         goto driver_entry_exit;
     }
-
     status = FwpsInjectionHandleCreate0(AF_INET,
         FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
         &inject_handle_in);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to create WFP inbound packet injection handle", status);
+        DEBUG_ERROR("failed to create WFP inbound packet injection handle",
+            status);
         goto driver_entry_exit;
     }
     status = FwpsInjectionHandleCreate0(AF_INET,
@@ -1084,10 +1086,10 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         &inject_handle_out);
     if (!NT_SUCCESS(status))
     {
-        DEBUG_ERROR("failed to create WFP outbound packet injection handle", status);
+        DEBUG_ERROR("failed to create WFP outbound packet injection handle",
+            status);
         goto driver_entry_exit;
     }
-
     status = FwpsInjectionHandleCreate0(AF_INET6,
         FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
         &injectv6_handle_in);
@@ -3758,30 +3760,36 @@ static void windivert_network_classify(context_t context,
     }
     if (ipv4)
     {
-        if ( context->layer == WINDIVERT_LAYER_NETWORK_FORWARD ) {
-            packet_state = FwpsQueryPacketInjectionState0(inject_handle_forward, buffers,
-                &packet_context);
+        if (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD)
+        {
+            packet_state = FwpsQueryPacketInjectionState0(inject_handle_forward,
+                buffers, &packet_context);
         }
-        else if ( outbound ) {
-            packet_state = FwpsQueryPacketInjectionState0(inject_handle_out, buffers,
-                &packet_context);
+        else if (outbound)
+        {
+            packet_state = FwpsQueryPacketInjectionState0(inject_handle_out,
+                buffers, &packet_context);
         }
-	else {
-            packet_state = FwpsQueryPacketInjectionState0(inject_handle_in, buffers,
-                &packet_context);
+        else
+        {
+            packet_state = FwpsQueryPacketInjectionState0(inject_handle_in,
+                buffers, &packet_context);
         }
     }
     else
     {
-        if ( context->layer == WINDIVERT_LAYER_NETWORK_FORWARD ) {
-            packet_state = FwpsQueryPacketInjectionState0(injectv6_handle_forward, buffers,
-                &packet_context);
+        if (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD)
+        {
+            packet_state = FwpsQueryPacketInjectionState0(
+                injectv6_handle_forward, buffers, &packet_context);
         }
-	else if ( outbound ) {
+        else if (outbound)
+        {
             packet_state = FwpsQueryPacketInjectionState0(injectv6_handle_out,
                 buffers, &packet_context);
         }
-	else {
+        else
+        {
             packet_state = FwpsQueryPacketInjectionState0(injectv6_handle_in,
                 buffers, &packet_context);
         }
