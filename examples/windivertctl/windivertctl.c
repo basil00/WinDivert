@@ -244,11 +244,14 @@ usage:
         SetConsoleTextAttribute(console, FOREGROUND_RED | FOREGROUND_GREEN);
         switch (addr.Reflect.Layer)
         {
+            case WINDIVERT_LAYER_ETHERNET:
+                fputs("ETHERNET", stdout);
+                break;
             case WINDIVERT_LAYER_NETWORK:
                 fputs("NETWORK", stdout);
                 break;
             case WINDIVERT_LAYER_NETWORK_FORWARD:
-                fputs("NETWORK_FORWARD", stdout);
+                fputs("FORWARD", stdout);
                 break;
             case WINDIVERT_LAYER_FLOW:
                 fputs("FLOW", stdout);

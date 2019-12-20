@@ -1274,10 +1274,10 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
     // non-matching random values have been lost:
     if ((!random &&
             WinDivertHelperEvalFilter(filter, buf[idx], buf_len[idx],
-                &addr[idx]) != result) ||
+                WINDIVERT_LAYER_NETWORK, &addr[idx]) != result) ||
         (random && result && 
             !WinDivertHelperEvalFilter(filter, buf[idx], buf_len[idx],
-                &addr[idx])))
+                WINDIVERT_LAYER_NETWORK, &addr[idx])))
     {
         fprintf(stderr, "error: filter \"%s\" does not match the given "
             "packet\n", filter);
@@ -1415,7 +1415,8 @@ static DWORD monitor_worker(LPVOID arg)
         addr.Outbound = TRUE;
         addr.IPv6     = (iphdr->Version == 4? FALSE: TRUE);
         if (WinDivertHelperEvalFilter(object_1, tests[i].packet->packet,
-                tests[i].packet->packet_len, &addr) != tests[i].match)
+                tests[i].packet->packet_len, WINDIVERT_LAYER_NETWORK, &addr)
+                    != tests[i].match)
         {
             fprintf(stderr, "error: failed to match recompiled filter "
                 "(test = %.3u, filter = \"%s\" formatted = \"%s\", "

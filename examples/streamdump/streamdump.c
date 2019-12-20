@@ -193,8 +193,8 @@ int __cdecl main(int argc, char **argv)
             continue;
         }
 
-        WinDivertHelperParsePacket(packet, packet_len, &ip_header, NULL, NULL,
-            NULL, NULL, &tcp_header, NULL, NULL, NULL, NULL, NULL);
+        WinDivertHelperParsePacket(packet, packet_len, addr.Layer, NULL,
+            &ip_header, NULL, NULL, NULL, NULL, &tcp_header, NULL, NULL, NULL);
         if (ip_header == NULL || tcp_header == NULL)
         {
             warning("failed to parse packet (%d)", GetLastError());
@@ -236,7 +236,7 @@ int __cdecl main(int argc, char **argv)
             }
         }
 
-        WinDivertHelperCalcChecksums(packet, packet_len, &addr, 0);
+        WinDivertHelperCalcChecksums(packet, packet_len, addr.Layer, &addr, 0);
         if (!WinDivertSend(handle, packet, packet_len, NULL, &addr))
         {
             warning("failed to send packet (%d)", GetLastError());

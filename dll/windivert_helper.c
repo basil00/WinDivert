@@ -143,11 +143,16 @@ typedef enum
     TOKEN_PARENT_ENDPOINT_ID,
     TOKEN_LAYER,
     TOKEN_PRIORITY,
-    TOKEN_FLOW,
-    TOKEN_SOCKET,
-    TOKEN_NETWORK,
-    TOKEN_NETWORK_FORWARD,
-    TOKEN_REFLECT,
+    TOKEN_ETH_DST_ADDR,
+    TOKEN_ETH_SRC_ADDR,
+    TOKEN_ETH_TYPE,
+    TOKEN_LAYER_FLOW,
+    TOKEN_LAYER_SOCKET,
+    TOKEN_LAYER_NETWORK,
+    TOKEN_LAYER_NETWORK_FORWARD,
+    TOKEN_LAYER_REFLECT,
+    TOKEN_LAYER_ETHERNET,
+    TOKEN_EVENT_FRAME,
     TOKEN_EVENT_PACKET,
     TOKEN_EVENT_ESTABLISHED,
     TOKEN_EVENT_DELETED,
@@ -260,9 +265,57 @@ static BOOL WinDivertCondExecFilter(PWINDIVERT_FILTER filter, UINT length,
 static int WinDivertCompare128(BOOL neg_a, const UINT32 *a, BOOL neg_b,
     const UINT32 *b, BOOL big);
 static BOOL WinDivertDeserializeFilter(PWINDIVERT_STREAM stream,
-    PWINDIVERT_FILTER filter, UINT *length);
+    WINDIVERT_LAYER layer, PWINDIVERT_FILTER filter, UINT *length);
 static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     WINDIVERT_LAYER layer, BOOL top_level, BOOL and);
+
+/*
+ * Parse a MAC address.
+ */
+extern BOOL WinDivertHelperParseMACAddress(const char *str, UINT8 *addr_ptr)
+{
+    UINT i, j;
+    UINT8 part;
+    char c;
+
+    for (i = 0; i < 6; i++)
+    {
+        part = 0;
+        for (j = 0; j < 2; j++)
+        {
+            c = *str++;
+            part <<= 4;
+            if (c >= '0' && c <= '9')
+            {
+                part += (UINT8)(c - '0');
+            }
+            else if (c >= 'a' && c <= 'f')
+            {
+                part += (UINT8)(c - 'a') + 10;
+            }
+            else if (c >= 'A' && c <= 'F')
+            {
+                part += (UINT8)(c - 'A') + 10;
+            }
+            else
+            {
+                SetLastError(ERROR_INVALID_PARAMETER);
+                return FALSE;
+            }
+        }
+        if ((i != 5? *str != ':': *str != '\0'))
+        {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+        str++;
+        if (addr_ptr != NULL)
+        {
+            addr_ptr[5-i] = part;
+        }
+    }
+    return TRUE;
+}
 
 /*
  * Parse an IPv4 address.
@@ -463,14 +516,14 @@ static PTOKEN_INFO WinDivertTokenLookup(PTOKEN_INFO token_info,
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
 BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
+    WINDIVERT_LAYER layer, PWINDIVERT_ETHHDR *ppEthHeader,
     PWINDIVERT_IPHDR *ppIPHeader, PWINDIVERT_IPV6HDR *ppIPv6Header,
     UINT8 *pProtocol, PWINDIVERT_ICMPHDR *ppICMPHeader,
     PWINDIVERT_ICMPV6HDR *ppICMPv6Header, PWINDIVERT_TCPHDR *ppTCPHeader,
-    PWINDIVERT_UDPHDR *ppUDPHeader, PVOID *ppData, UINT *pDataLen,
-    PVOID *ppNext, UINT *pNextLen)
+    PWINDIVERT_UDPHDR *ppUDPHeader, PVOID *ppData, UINT *pDataLen)
 {
     WINDIVERT_PACKET info;
-    if (!WinDivertHelperParsePacketEx(pPacket, packetLen, &info))
+    if (!WinDivertHelperParsePacketEx(pPacket, packetLen, layer, &info))
     {
         return FALSE;
     }
@@ -482,6 +535,10 @@ BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     if (pProtocol != NULL)
     {
         *pProtocol = info.Protocol;
+    }
+    if (ppEthHeader != NULL)
+    {
+        *ppEthHeader = info.EthHeader;
     }
     if (ppIPHeader != NULL)
     {
@@ -515,16 +572,6 @@ BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     {
         *pDataLen = info.PayloadLength;
     }
-    if (ppNext != NULL)
-    {
-        *ppNext = (info.Extended? (PVOID)((UINT8 *)pPacket +
-            (info.HeaderLength + info.PayloadLength)): NULL);
-    }
-    if (pNextLen != NULL)
-    {
-        *pNextLen = (info.Extended?
-            packetLen - (info.HeaderLength + info.PayloadLength): 0);
-    }
 
     return TRUE;
 }
@@ -536,21 +583,27 @@ static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer, UINT32 *val)
 {
     switch (kind)
     {
-        case TOKEN_NETWORK:
+		case TOKEN_LAYER_ETHERNET:
+            *val = WINDIVERT_LAYER_ETHERNET;
+            return TRUE;
+        case TOKEN_LAYER_NETWORK:
             *val = WINDIVERT_LAYER_NETWORK;
             return TRUE;
-        case TOKEN_NETWORK_FORWARD:
+        case TOKEN_LAYER_NETWORK_FORWARD:
             *val = WINDIVERT_LAYER_NETWORK_FORWARD;
             return TRUE;
-        case TOKEN_FLOW:
+        case TOKEN_LAYER_FLOW:
             *val = WINDIVERT_LAYER_FLOW;
             return TRUE;
-        case TOKEN_SOCKET:
+        case TOKEN_LAYER_SOCKET:
             *val = WINDIVERT_LAYER_SOCKET;
             return TRUE;
-        case TOKEN_REFLECT:
+        case TOKEN_LAYER_REFLECT:
             *val = WINDIVERT_LAYER_REFLECT;
             return TRUE;
+        case TOKEN_EVENT_FRAME:
+            *val = WINDIVERT_EVENT_ETHERNET_FRAME;
+            return (layer == WINDIVERT_LAYER_ETHERNET);
         case TOKEN_EVENT_PACKET:
             *val = WINDIVERT_EVENT_NETWORK_PACKET;
             return (layer == WINDIVERT_LAYER_NETWORK ||
@@ -619,121 +672,128 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
 {
     static const TOKEN_INFO token_info[] =
     {
-        {"ACCEPT",              TOKEN_EVENT_ACCEPT      },
-        {"BIND",                TOKEN_EVENT_BIND        },
-        {"CLOSE",               TOKEN_EVENT_CLOSE       },
-        {"CONNECT",             TOKEN_EVENT_CONNECT     },
-        {"DELETED",             TOKEN_EVENT_DELETED     },
-        {"ESTABLISHED",         TOKEN_EVENT_ESTABLISHED },
-        {"FALSE",               TOKEN_MACRO_FALSE       },
-        {"FLOW",                TOKEN_FLOW              },
-        {"ICMP",                TOKEN_MACRO_ICMP        },
-        {"ICMPV6",              TOKEN_MACRO_ICMPV6      },
-        {"LISTEN",              TOKEN_EVENT_LISTEN      },
-        {"NETWORK",             TOKEN_NETWORK           },
-        {"NETWORK_FORWARD",     TOKEN_NETWORK_FORWARD   },
-        {"OPEN",                TOKEN_EVENT_OPEN        },
-        {"PACKET",              TOKEN_EVENT_PACKET      },
-        {"REFLECT",             TOKEN_REFLECT           },
-        {"SOCKET",              TOKEN_SOCKET            },
-        {"TCP",                 TOKEN_MACRO_TCP         },
-        {"TRUE",                TOKEN_MACRO_TRUE        },
-        {"UDP",                 TOKEN_MACRO_UDP         },
-        {"and",                 TOKEN_AND               },
-        {"endpointId",          TOKEN_ENDPOINT_ID       },
-        {"event",               TOKEN_EVENT             },
-        {"false",               TOKEN_FALSE             },
-        {"fragment",            TOKEN_FRAGMENT          },
-        {"icmp",                TOKEN_ICMP              },
-        {"icmp.Body",           TOKEN_ICMP_BODY         },
-        {"icmp.Checksum",       TOKEN_ICMP_CHECKSUM     },
-        {"icmp.Code",           TOKEN_ICMP_CODE         },
-        {"icmp.Type",           TOKEN_ICMP_TYPE         },
-        {"icmpv6",              TOKEN_ICMPV6            },
-        {"icmpv6.Body",         TOKEN_ICMPV6_BODY       },
-        {"icmpv6.Checksum",     TOKEN_ICMPV6_CHECKSUM   },
-        {"icmpv6.Code",         TOKEN_ICMPV6_CODE       },
-        {"icmpv6.Type",         TOKEN_ICMPV6_TYPE       },
-        {"ifIdx",               TOKEN_IF_IDX            },
-        {"impostor",            TOKEN_IMPOSTOR          },
-        {"inbound",             TOKEN_INBOUND           },
-        {"ip",                  TOKEN_IP                },
-        {"ip.Checksum",         TOKEN_IP_CHECKSUM       },
-        {"ip.DF",               TOKEN_IP_DF             },
-        {"ip.DstAddr",          TOKEN_IP_DST_ADDR       },
-        {"ip.FragOff",          TOKEN_IP_FRAG_OFF       },
-        {"ip.HdrLength",        TOKEN_IP_HDR_LENGTH     },
-        {"ip.Id",               TOKEN_IP_ID             },
-        {"ip.Length",           TOKEN_IP_LENGTH         },
-        {"ip.MF",               TOKEN_IP_MF             },
-        {"ip.Protocol",         TOKEN_IP_PROTOCOL       },
-        {"ip.SrcAddr",          TOKEN_IP_SRC_ADDR       },
-        {"ip.TOS",              TOKEN_IP_TOS            },
-        {"ip.TTL",              TOKEN_IP_TTL            },
-        {"ipv6",                TOKEN_IPV6              },
-        {"ipv6.DstAddr",        TOKEN_IPV6_DST_ADDR     },
-        {"ipv6.FlowLabel",      TOKEN_IPV6_FLOW_LABEL   },
-        {"ipv6.HopLimit",       TOKEN_IPV6_HOP_LIMIT    },
-        {"ipv6.Length",         TOKEN_IPV6_LENGTH       },
-        {"ipv6.NextHdr",        TOKEN_IPV6_NEXT_HDR     },
-        {"ipv6.SrcAddr",        TOKEN_IPV6_SRC_ADDR     },
-        {"ipv6.TrafficClass",   TOKEN_IPV6_TRAFFIC_CLASS},
-        {"layer",               TOKEN_LAYER             },
-        {"length",              TOKEN_LENGTH            },
-        {"localAddr",           TOKEN_LOCAL_ADDR        },
-        {"localPort",           TOKEN_LOCAL_PORT        },
-        {"loopback",            TOKEN_LOOPBACK          },
-        {"not",                 TOKEN_NOT               },
-        {"or",                  TOKEN_OR                },
-        {"outbound",            TOKEN_OUTBOUND          },
-        {"packet",              TOKEN_PACKET            },
-        {"packet16",            TOKEN_PACKET16          },
-        {"packet32",            TOKEN_PACKET32          },
-        {"parentEndpointId",    TOKEN_PARENT_ENDPOINT_ID},
-        {"priority",            TOKEN_PRIORITY          },
-        {"processId",           TOKEN_PROCESS_ID        },
-        {"protocol",            TOKEN_PROTOCOL          },
-        {"random16",            TOKEN_RANDOM16          },
-        {"random32",            TOKEN_RANDOM32          },
-        {"random8",             TOKEN_RANDOM8           },
-        {"remoteAddr",          TOKEN_REMOTE_ADDR       },
-        {"remotePort",          TOKEN_REMOTE_PORT       },
-        {"subIfIdx",            TOKEN_SUB_IF_IDX        },
-        {"tcp",                 TOKEN_TCP               },
-        {"tcp.Ack",             TOKEN_TCP_ACK           },
-        {"tcp.AckNum",          TOKEN_TCP_ACK_NUM       },
-        {"tcp.Checksum",        TOKEN_TCP_CHECKSUM      },
-        {"tcp.DstPort",         TOKEN_TCP_DST_PORT      },
-        {"tcp.Fin",             TOKEN_TCP_FIN           },
-        {"tcp.HdrLength",       TOKEN_TCP_HDR_LENGTH    },
-        {"tcp.Payload",         TOKEN_TCP_PAYLOAD       },
-        {"tcp.Payload16",       TOKEN_TCP_PAYLOAD16     },
-        {"tcp.Payload32",       TOKEN_TCP_PAYLOAD32     },
-        {"tcp.PayloadLength",   TOKEN_TCP_PAYLOAD_LENGTH},
-        {"tcp.Psh",             TOKEN_TCP_PSH           },
-        {"tcp.Rst",             TOKEN_TCP_RST           },
-        {"tcp.SeqNum",          TOKEN_TCP_SEQ_NUM       },
-        {"tcp.SrcPort",         TOKEN_TCP_SRC_PORT      },
-        {"tcp.Syn",             TOKEN_TCP_SYN           },
-        {"tcp.Urg",             TOKEN_TCP_URG           },
-        {"tcp.UrgPtr",          TOKEN_TCP_URG_PTR       },
-        {"tcp.Window",          TOKEN_TCP_WINDOW        },
-        {"timestamp",           TOKEN_TIMESTAMP         },
-        {"true",                TOKEN_TRUE              },
-        {"udp",                 TOKEN_UDP               },
-        {"udp.Checksum",        TOKEN_UDP_CHECKSUM      },
-        {"udp.DstPort",         TOKEN_UDP_DST_PORT      },
-        {"udp.Length",          TOKEN_UDP_LENGTH        },
-        {"udp.Payload",         TOKEN_UDP_PAYLOAD       },
-        {"udp.Payload16",       TOKEN_UDP_PAYLOAD16     },
-        {"udp.Payload32",       TOKEN_UDP_PAYLOAD32     },
-        {"udp.PayloadLength",   TOKEN_UDP_PAYLOAD_LENGTH},
-        {"udp.SrcPort",         TOKEN_UDP_SRC_PORT      },
-        {"zero",                TOKEN_ZERO              },
+        {"ACCEPT",              TOKEN_EVENT_ACCEPT         },
+        {"BIND",                TOKEN_EVENT_BIND           },
+        {"CLOSE",               TOKEN_EVENT_CLOSE          },
+        {"CONNECT",             TOKEN_EVENT_CONNECT        },
+        {"DELETED",             TOKEN_EVENT_DELETED        },
+        {"ESTABLISHED",         TOKEN_EVENT_ESTABLISHED    },
+        {"ETHERNET",            TOKEN_LAYER_ETHERNET       },
+        {"FALSE",               TOKEN_MACRO_FALSE          },
+        {"FRAME",               TOKEN_EVENT_FRAME          },
+        {"FLOW",                TOKEN_LAYER_FLOW           },
+        {"ICMP",                TOKEN_MACRO_ICMP           },
+        {"ICMPV6",              TOKEN_MACRO_ICMPV6         },
+        {"LISTEN",              TOKEN_EVENT_LISTEN         },
+        {"NETWORK",             TOKEN_LAYER_NETWORK        },
+        {"NETWORK_FORWARD",     TOKEN_LAYER_NETWORK_FORWARD},
+        {"OPEN",                TOKEN_EVENT_OPEN           },
+        {"PACKET",              TOKEN_EVENT_PACKET         },
+        {"REFLECT",             TOKEN_LAYER_REFLECT        },
+        {"SOCKET",              TOKEN_LAYER_SOCKET         },
+        {"TCP",                 TOKEN_MACRO_TCP            },
+        {"TRUE",                TOKEN_MACRO_TRUE           },
+        {"UDP",                 TOKEN_MACRO_UDP            },
+        {"and",                 TOKEN_AND                  },
+        {"b",                   TOKEN_BYTES                },
+        {"endpointId",          TOKEN_ENDPOINT_ID          },
+        {"eth.DstAddr",         TOKEN_ETH_DST_ADDR         },
+        {"eth.SrcAddr",         TOKEN_ETH_SRC_ADDR         },
+        {"eth.Type",            TOKEN_ETH_TYPE             },
+        {"event",               TOKEN_EVENT                },
+        {"false",               TOKEN_FALSE                },
+        {"fragment",            TOKEN_FRAGMENT             },
+        {"icmp",                TOKEN_ICMP                 },
+        {"icmp.Body",           TOKEN_ICMP_BODY            },
+        {"icmp.Checksum",       TOKEN_ICMP_CHECKSUM        },
+        {"icmp.Code",           TOKEN_ICMP_CODE            },
+        {"icmp.Type",           TOKEN_ICMP_TYPE            },
+        {"icmpv6",              TOKEN_ICMPV6               },
+        {"icmpv6.Body",         TOKEN_ICMPV6_BODY          },
+        {"icmpv6.Checksum",     TOKEN_ICMPV6_CHECKSUM      },
+        {"icmpv6.Code",         TOKEN_ICMPV6_CODE          },
+        {"icmpv6.Type",         TOKEN_ICMPV6_TYPE          },
+        {"ifIdx",               TOKEN_IF_IDX               },
+        {"impostor",            TOKEN_IMPOSTOR             },
+        {"inbound",             TOKEN_INBOUND              },
+        {"ip",                  TOKEN_IP                   },
+        {"ip.Checksum",         TOKEN_IP_CHECKSUM          },
+        {"ip.DF",               TOKEN_IP_DF                },
+        {"ip.DstAddr",          TOKEN_IP_DST_ADDR          },
+        {"ip.FragOff",          TOKEN_IP_FRAG_OFF          },
+        {"ip.HdrLength",        TOKEN_IP_HDR_LENGTH        },
+        {"ip.Id",               TOKEN_IP_ID                },
+        {"ip.Length",           TOKEN_IP_LENGTH            },
+        {"ip.MF",               TOKEN_IP_MF                },
+        {"ip.Protocol",         TOKEN_IP_PROTOCOL          },
+        {"ip.SrcAddr",          TOKEN_IP_SRC_ADDR          },
+        {"ip.TOS",              TOKEN_IP_TOS               },
+        {"ip.TTL",              TOKEN_IP_TTL               },
+        {"ipv6",                TOKEN_IPV6                 },
+        {"ipv6.DstAddr",        TOKEN_IPV6_DST_ADDR        },
+        {"ipv6.FlowLabel",      TOKEN_IPV6_FLOW_LABEL      },
+        {"ipv6.HopLimit",       TOKEN_IPV6_HOP_LIMIT       },
+        {"ipv6.Length",         TOKEN_IPV6_LENGTH          },
+        {"ipv6.NextHdr",        TOKEN_IPV6_NEXT_HDR        },
+        {"ipv6.SrcAddr",        TOKEN_IPV6_SRC_ADDR        },
+        {"ipv6.TrafficClass",   TOKEN_IPV6_TRAFFIC_CLASS   },
+        {"layer",               TOKEN_LAYER                },
+        {"length",              TOKEN_LENGTH               },
+        {"localAddr",           TOKEN_LOCAL_ADDR           },
+        {"localPort",           TOKEN_LOCAL_PORT           },
+        {"loopback",            TOKEN_LOOPBACK             },
+        {"not",                 TOKEN_NOT                  },
+        {"or",                  TOKEN_OR                   },
+        {"outbound",            TOKEN_OUTBOUND             },
+        {"packet",              TOKEN_PACKET               },
+        {"packet16",            TOKEN_PACKET16             },
+        {"packet32",            TOKEN_PACKET32             },
+        {"parentEndpointId",    TOKEN_PARENT_ENDPOINT_ID   },
+        {"priority",            TOKEN_PRIORITY             },
+        {"processId",           TOKEN_PROCESS_ID           },
+        {"protocol",            TOKEN_PROTOCOL             },
+        {"random16",            TOKEN_RANDOM16             },
+        {"random32",            TOKEN_RANDOM32             },
+        {"random8",             TOKEN_RANDOM8              },
+        {"remoteAddr",          TOKEN_REMOTE_ADDR          },
+        {"remotePort",          TOKEN_REMOTE_PORT          },
+        {"subIfIdx",            TOKEN_SUB_IF_IDX           },
+        {"tcp",                 TOKEN_TCP                  },
+        {"tcp.Ack",             TOKEN_TCP_ACK              },
+        {"tcp.AckNum",          TOKEN_TCP_ACK_NUM          },
+        {"tcp.Checksum",        TOKEN_TCP_CHECKSUM         },
+        {"tcp.DstPort",         TOKEN_TCP_DST_PORT         },
+        {"tcp.Fin",             TOKEN_TCP_FIN              },
+        {"tcp.HdrLength",       TOKEN_TCP_HDR_LENGTH       },
+        {"tcp.Payload",         TOKEN_TCP_PAYLOAD          },
+        {"tcp.Payload16",       TOKEN_TCP_PAYLOAD16        },
+        {"tcp.Payload32",       TOKEN_TCP_PAYLOAD32        },
+        {"tcp.PayloadLength",   TOKEN_TCP_PAYLOAD_LENGTH   },
+        {"tcp.Psh",             TOKEN_TCP_PSH              },
+        {"tcp.Rst",             TOKEN_TCP_RST              },
+        {"tcp.SeqNum",          TOKEN_TCP_SEQ_NUM          },
+        {"tcp.SrcPort",         TOKEN_TCP_SRC_PORT         },
+        {"tcp.Syn",             TOKEN_TCP_SYN              },
+        {"tcp.Urg",             TOKEN_TCP_URG              },
+        {"tcp.UrgPtr",          TOKEN_TCP_URG_PTR          },
+        {"tcp.Window",          TOKEN_TCP_WINDOW           },
+        {"timestamp",           TOKEN_TIMESTAMP            },
+        {"true",                TOKEN_TRUE                 },
+        {"udp",                 TOKEN_UDP                  },
+        {"udp.Checksum",        TOKEN_UDP_CHECKSUM         },
+        {"udp.DstPort",         TOKEN_UDP_DST_PORT         },
+        {"udp.Length",          TOKEN_UDP_LENGTH           },
+        {"udp.Payload",         TOKEN_UDP_PAYLOAD          },
+        {"udp.Payload16",       TOKEN_UDP_PAYLOAD16        },
+        {"udp.Payload32",       TOKEN_UDP_PAYLOAD32        },
+        {"udp.PayloadLength",   TOKEN_UDP_PAYLOAD_LENGTH   },
+        {"udp.SrcPort",         TOKEN_UDP_SRC_PORT         },
+        {"zero",                TOKEN_ZERO                 },
     };
     TOKEN_INFO *result;
     char c;
     char token[TOKEN_MAXLEN];
+    UINT8 eth_addr[6];
     UINT32 field;
     UINT i = 0, j;
     UINT tp = 0;
@@ -890,13 +950,6 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
                 continue;
             }
 
-            // Check for 'b':
-            if (token[0] == 'b' && token[1] == '\0')
-            {
-                tokens[tp].kind = TOKEN_BYTES;
-                continue;
-            }
-
             // Check for base 10 number:
             if (WinDivertAToI(token, &end, num, sizeof(num)/sizeof(num[0])))
             {
@@ -924,6 +977,22 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
             {
                 tokens[tp].kind = TOKEN_NUMBER;
                 memcpy(tokens[tp].val, num, sizeof(tokens[tp].val));
+                tp++;
+                continue;
+            }
+
+            // Check for MAC address:
+            if (WinDivertHelperParseMACAddress(token, eth_addr))
+            {
+                tokens[tp].val[0] =
+                    (UINT32)eth_addr[0] |
+                    ((UINT32)eth_addr[1] << 8) |
+                    ((UINT32)eth_addr[2] << 16) |
+                    ((UINT32)eth_addr[3] << 24);
+                tokens[tp].val[1] =
+                    (UINT32)eth_addr[4] |
+                    ((UINT32)eth_addr[5] << 8);
+                tokens[tp].kind = TOKEN_NUMBER;
                 tp++;
                 continue;
             }
@@ -1042,6 +1111,9 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
         {{{0}}, TOKEN_PARENT_ENDPOINT_ID},
         {{{0}}, TOKEN_LAYER},
         {{{0}}, TOKEN_PRIORITY},
+        {{{0}}, TOKEN_ETH_DST_ADDR},
+        {{{0}}, TOKEN_ETH_SRC_ADDR},
+        {{{0}}, TOKEN_ETH_TYPE},
     };
 
     // Binary search:
@@ -1200,6 +1272,9 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
         case TOKEN_PARENT_ENDPOINT_ID:
         case TOKEN_LENGTH:
         case TOKEN_LAYER:
+        case TOKEN_ETH_DST_ADDR:
+        case TOKEN_ETH_SRC_ADDR:
+        case TOKEN_ETH_TYPE:
         case TOKEN_IP_HDR_LENGTH:
         case TOKEN_IP_TOS:
         case TOKEN_IP_LENGTH:
@@ -1554,6 +1629,7 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_IP_FRAG_OFF:
             lb[0] = 0; ub[0] = 0x1FFF;
             break;
+        case TOKEN_ETH_TYPE:
         case TOKEN_IP_TOS:
         case TOKEN_IP_LENGTH:
         case TOKEN_IP_ID:
@@ -1606,6 +1682,12 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
             ub[0] = 0xFFFFFFFF;
             ub[1] = 0x7FFFFFFF;
             neg_lb = TRUE;
+            break;
+        case TOKEN_ETH_DST_ADDR:
+        case TOKEN_ETH_SRC_ADDR:
+            lb[0] = lb[1] = 0;
+            ub[0] = 0xFFFFFFFF;
+            ub[1] = 0xFFFF;
             break;
         case TOKEN_ENDPOINT_ID:
         case TOKEN_PARENT_ENDPOINT_ID:
@@ -1831,6 +1913,12 @@ static UINT32 WinDivertKindToField(KIND kind)
             return WINDIVERT_FILTER_FIELD_TCP;
         case TOKEN_UDP:
             return WINDIVERT_FILTER_FIELD_UDP;
+        case TOKEN_ETH_DST_ADDR:
+            return WINDIVERT_FILTER_FIELD_ETH_DST_ADDR;
+        case TOKEN_ETH_SRC_ADDR:
+            return WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR;
+        case TOKEN_ETH_TYPE:
+            return WINDIVERT_FILTER_FIELD_ETH_TYPE;
         case TOKEN_IP_HDR_LENGTH:
             return WINDIVERT_FILTER_FIELD_IP_HDRLENGTH;
         case TOKEN_IP_TOS:
@@ -2054,7 +2142,8 @@ static UINT64 WinDivertAnalyzeFilter(WINDIVERT_LAYER layer,
         return 0;
     }
 
-    if (layer == WINDIVERT_LAYER_NETWORK ||
+    if (layer == WINDIVERT_LAYER_ETHERNET ||
+        layer == WINDIVERT_LAYER_NETWORK ||
         layer == WINDIVERT_LAYER_NETWORK_FORWARD)
     {
         // Inbound?
@@ -2078,7 +2167,8 @@ static UINT64 WinDivertAnalyzeFilter(WINDIVERT_LAYER layer,
         flags |= (result? WINDIVERT_FILTER_FLAG_OUTBOUND: 0);
     }
 
-    if (layer != WINDIVERT_LAYER_REFLECT)
+    if (layer != WINDIVERT_LAYER_ETHERNET &&
+        layer != WINDIVERT_LAYER_REFLECT)
     {
         // IPv4? 
         result = WinDivertCondExecFilter(filter, length,
@@ -2258,7 +2348,7 @@ static ERROR WinDivertCompileFilter(const char *filter, HANDLE pool,
         stream.max      = UINT_MAX;
         stream.overflow = FALSE;
 
-        if (!WinDivertDeserializeFilter(&stream, object, obj_len))
+        if (!WinDivertDeserializeFilter(&stream, layer, object, obj_len))
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return MAKE_ERROR(WINDIVERT_ERROR_BAD_OBJECT, 0);
@@ -2434,17 +2524,19 @@ static BOOL WinDivertGetData(const VOID *packet, UINT packet_len, INT min,
  * Evaluate the given filter with the given packet as input.
  */
 BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
-    UINT packet_len, const WINDIVERT_ADDRESS *addr)
+    UINT packet_len, WINDIVERT_LAYER layer, const WINDIVERT_ADDRESS *addr)
 {
     ERROR err;
     DWORD error;
     WINDIVERT_PACKET info;
+    PWINDIVERT_ETHHDR eth_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
     PWINDIVERT_ICMPV6HDR icmpv6_header = NULL;
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
+    const WINDIVERT_DATA_ETHERNET *ethernet_data = NULL;
     const WINDIVERT_DATA_NETWORK *network_data = NULL;
     const WINDIVERT_DATA_FLOW *flow_data = NULL;
     const WINDIVERT_DATA_SOCKET *socket_data = NULL;
@@ -2462,8 +2554,9 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
         SetLastError(ERROR_INVALID_PARAMETER);
         return FALSE;
     }
-    switch (addr->Layer)
+    switch (layer)
     {
+        case WINDIVERT_LAYER_ETHERNET:
         case WINDIVERT_LAYER_NETWORK:
         case WINDIVERT_LAYER_NETWORK_FORWARD:
             if (packet == NULL)
@@ -2471,12 +2564,14 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
-            if (!WinDivertHelperParsePacketEx((PVOID)packet, packet_len, &info))
+            if (!WinDivertHelperParsePacketEx((PVOID)packet, packet_len,
+                    layer, &info))
             {
                 SetLastError(ERROR_INVALID_PARAMETER);
                 return FALSE;
             }
             protocol      = info.Protocol;
+            eth_header    = info.EthHeader;
             ip_header     = info.IPHeader;
             ipv6_header   = info.IPv6Header;
             icmp_header   = info.ICMPHeader;
@@ -2507,8 +2602,11 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
     }
-    switch (addr->Layer)
+    switch (layer)
     {
+        case WINDIVERT_LAYER_ETHERNET:
+            ethernet_data = &addr->Ethernet;
+            break;
         case WINDIVERT_LAYER_NETWORK:
         case WINDIVERT_LAYER_NETWORK_FORWARD:
             network_data = &addr->Network;
@@ -2539,7 +2637,7 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     {
         goto WinDivertHelperEvalFilterError;
     }
-    err = WinDivertCompileFilter(filter, pool, addr->Layer, object, &obj_len);
+    err = WinDivertCompileFilter(filter, pool, layer, object, &obj_len);
     if (IS_ERROR(err))
     {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -2548,7 +2646,7 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
 
     result = WinDivertExecuteFilter(
         object,
-        addr->Layer,
+        layer,
         addr->Timestamp,
         addr->Event,
         (addr->IPv6 != 0? FALSE: TRUE),
@@ -2556,10 +2654,12 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
         (addr->Loopback != 0? TRUE: FALSE),
         (addr->Impostor != 0? TRUE: FALSE),
         fragment,
+        ethernet_data,
         network_data,
         flow_data,
         socket_data,
         reflect_data,
+        eth_header,
         ip_header,
         ipv6_header,
         icmp_header,
@@ -2720,7 +2820,7 @@ static BOOL WinDivertDeserializeLabel(PWINDIVERT_STREAM stream, UINT16 *label)
  * Deserialize a test.
  */
 static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
-    PWINDIVERT_FILTER filter)
+    WINDIVERT_LAYER layer, PWINDIVERT_FILTER filter)
 {
     UINT32 val;
     UINT16 success, failure;
@@ -2732,7 +2832,7 @@ static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
     }
 
     if (!WinDivertDeserializeNumber(stream, 2, &val) ||
-            val > WINDIVERT_FILTER_FIELD_MAX)
+            !WinDivertValidateField(layer, val))
     {
         return FALSE;
     }
@@ -2773,6 +2873,8 @@ static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
         case WINDIVERT_FILTER_FIELD_ENDPOINTID:
         case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
         case WINDIVERT_FILTER_FIELD_TIMESTAMP:
+        case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
+        case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
             if (!WinDivertDeserializeNumber(stream, 7, &filter->arg[1]))
             {
                 return FALSE;
@@ -2854,7 +2956,7 @@ static BOOL WinDivertDeserializeFilterHeader(PWINDIVERT_STREAM stream,
  * Deserialize a filter.
  */
 static BOOL WinDivertDeserializeFilter(PWINDIVERT_STREAM stream,
-    PWINDIVERT_FILTER filter, UINT *length)
+    WINDIVERT_LAYER layer, PWINDIVERT_FILTER filter, UINT *length)
 {
     UINT i;
 
@@ -2865,7 +2967,7 @@ static BOOL WinDivertDeserializeFilter(PWINDIVERT_STREAM stream,
 
     for (i = 0; i < *length; i++)
     {
-        if (!WinDivertDeserializeTest(stream, filter + i))
+        if (!WinDivertDeserializeTest(stream, layer, filter + i))
         {
             return FALSE;
         }
@@ -2967,6 +3069,12 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             kind = TOKEN_UDP; break;
         case WINDIVERT_FILTER_FIELD_ICMPV6:
             kind = TOKEN_ICMPV6; break;
+        case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
+            kind = TOKEN_ETH_DST_ADDR; break;
+        case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
+            kind = TOKEN_ETH_SRC_ADDR; break;
+        case WINDIVERT_FILTER_FIELD_ETH_TYPE:
+            kind = TOKEN_ETH_TYPE; break;
         case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
             kind = TOKEN_IP_HDR_LENGTH; break;
         case WINDIVERT_FILTER_FIELD_IP_TOS:
@@ -3483,6 +3591,36 @@ static void WinDivertFormatHexNumber(PWINDIVERT_STREAM stream,
 }
 
 /*
+ * Format a MAC address.
+ */
+static void WinDivertFormatMacAddr(PWINDIVERT_STREAM stream, const UINT8 *addr)
+{
+    UINT8 part, dig;
+    INT i, j;
+
+    for (i = 0; i < 6; i++)
+    {
+        part = addr[5-i];
+        for (j = 0; j < 2; j++)
+        {
+            dig = (j == 0? part >> 4: part & 0xF);
+            if (dig <= 9)
+            {
+                WinDivertPutChar(stream, '0' + dig);
+            }
+            else
+            {
+                WinDivertPutChar(stream, 'a' + (dig - 10));
+            }
+        }
+        if (i != 5)
+        {
+            WinDivertPutChar(stream, ':');
+        }
+    }
+}
+
+/*
  * Format an IPv4 address.
  */
 static void WinDivertFormatIPv4Addr(PWINDIVERT_STREAM stream, UINT32 addr)
@@ -3549,6 +3687,27 @@ static void WinDivertFormatIPv6Addr(PWINDIVERT_STREAM stream,
 }
 
 /*
+ * Format a MAC address.
+ */
+extern BOOL WinDivertHelperFormatMACAddress(const UINT8 *addr, char *buffer,
+    UINT bufLen)
+{
+    WINDIVERT_STREAM stream;
+    stream.data     = buffer;
+    stream.pos      = 0;
+    stream.max      = bufLen;
+    stream.overflow = FALSE;
+    WinDivertFormatMacAddr(&stream, addr);
+    WinDivertPutNul(&stream);
+    if (stream.overflow)
+    {
+        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        return FALSE;
+    }
+    return TRUE;
+}
+
+/*
  * Format an IPv4 address.
  */
 BOOL WinDivertHelperFormatIPv4Address(UINT32 addr, char *buffer, UINT bufLen)
@@ -3596,8 +3755,8 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     WINDIVERT_LAYER layer)
 {
     PEXPR field = expr->arg[0], val = expr->arg[1];
-    BOOL is_ipv4_addr = FALSE, is_ipv6_addr = FALSE, is_layer = FALSE,
-        is_event = FALSE, is_hex = FALSE;
+    BOOL is_eth_addr = FALSE, is_ipv4_addr = FALSE, is_ipv6_addr = FALSE,
+        is_layer = FALSE, is_event = FALSE, is_hex = FALSE;
 
     switch (field->kind)
     {
@@ -3642,8 +3801,20 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
                     break;
             }
             break;
+        case TOKEN_ETH_SRC_ADDR:
+        case TOKEN_ETH_DST_ADDR:
+            if (val->val[2] != 0 || val->val[3] != 0 || val->val[1] > 0xFFFF)
+            {
+                break;
+            }
+            is_eth_addr = TRUE;
+            break;
         case TOKEN_IP_SRC_ADDR:
         case TOKEN_IP_DST_ADDR:
+            if (val->val[2] != 0 || val->val[3] != 0 || val->val[1] != 0xFFFF)
+            {
+                break;
+            }
             is_ipv4_addr = TRUE;
             break;
         case TOKEN_IPV6_SRC_ADDR:
@@ -3673,6 +3844,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         case TOKEN_UDP_PAYLOAD32:
         case TOKEN_ICMP_CHECKSUM:
         case TOKEN_ICMPV6_CHECKSUM:
+        case TOKEN_ETH_TYPE:
             is_hex = TRUE;
             break;
         default:
@@ -3700,7 +3872,18 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     {
         WinDivertPutChar(stream, '-');
     }
-    if (is_ipv4_addr)
+    if (is_eth_addr)
+    {
+        UINT8 eth_addr[6];
+        eth_addr[0] = (UINT8)val->val[0];
+        eth_addr[1] = (UINT8)(val->val[0] >> 8);
+        eth_addr[2] = (UINT8)(val->val[0] >> 16);
+        eth_addr[3] = (UINT8)(val->val[0] >> 24);
+        eth_addr[4] = (UINT8)val->val[1];
+        eth_addr[5] = (UINT8)(val->val[1] >> 8);
+        WinDivertFormatMacAddr(stream, eth_addr);
+    }
+    else if (is_ipv4_addr)
     {
         WinDivertFormatIPv4Addr(stream, val->val[0]);
     }
@@ -3712,6 +3895,8 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     {
         switch (val->val[0])
         {
+            case WINDIVERT_LAYER_ETHERNET:
+                WinDivertPutString(stream, "ETHERNET"); break;
             case WINDIVERT_LAYER_NETWORK:
                 WinDivertPutString(stream, "NETWORK"); break;
             case WINDIVERT_LAYER_NETWORK_FORWARD:
@@ -3730,6 +3915,16 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
     {
         switch (layer)
         {
+            case WINDIVERT_LAYER_ETHERNET:
+                if (val->val[0] == WINDIVERT_EVENT_ETHERNET_FRAME)
+                {
+                    WinDivertPutString(stream, "FRAME");
+                }
+                else
+                {
+                    WinDivertFormatDecNumber32(stream, val->val[0]);
+                }
+                break;
             case WINDIVERT_LAYER_NETWORK:
             case WINDIVERT_LAYER_NETWORK_FORWARD:
                 if (val->val[0] == WINDIVERT_EVENT_NETWORK_PACKET)
@@ -3920,6 +4115,12 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             WinDivertPutString(stream, "udp"); return;
         case TOKEN_ICMPV6:
             WinDivertPutString(stream, "icmpv6"); return;
+        case TOKEN_ETH_DST_ADDR:
+            WinDivertPutString(stream, "eth.DstAddr"); return;
+        case TOKEN_ETH_SRC_ADDR:
+            WinDivertPutString(stream, "eth.SrcAddr"); return;
+        case TOKEN_ETH_TYPE:
+            WinDivertPutString(stream, "eth.Type"); return;
         case TOKEN_IP_HDR_LENGTH:
             WinDivertPutString(stream, "ip.HdrLength"); return;
         case TOKEN_IP_TOS:
@@ -4171,8 +4372,9 @@ WinDivertHelperFormatFilterError:
  * WinDivert packet hash function.
  */
 UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
-    UINT64 seed)
+    WINDIVERT_LAYER layer, UINT64 seed)
 {
+    PWINDIVERT_ETHHDR eth_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -4180,14 +4382,14 @@ UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
 
-    if (!WinDivertHelperParsePacket((PVOID)pPacket, packetLen, &ip_header,
-            &ipv6_header, NULL, &icmp_header, &icmpv6_header, &tcp_header,
-            &udp_header, NULL, NULL, NULL, NULL))
+    if (!WinDivertHelperParsePacket((PVOID)pPacket, packetLen, layer,
+            &eth_header, &ip_header, &ipv6_header, NULL, &icmp_header,
+            &icmpv6_header, &tcp_header, &udp_header, NULL, NULL))
     {
         return 0;
     }
-    return WinDivertHashPacket(seed, ip_header, ipv6_header, icmp_header,
-        icmpv6_header, tcp_header, udp_header);
+    return WinDivertHashPacket(seed, eth_header, ip_header, ipv6_header,
+        icmp_header, icmpv6_header, tcp_header, udp_header);
 }
 
 /*
@@ -4216,6 +4418,26 @@ UINT64 WinDivertHelperNtohll(UINT64 x)
 UINT64 WinDivertHelperHtonll(UINT64 x)
 {
     return BYTESWAP64(x);
+}
+static void WinDivertByteSwap48(const UINT8 *inAddr, UINT8 *outAddr)
+{
+    UINT8 tmp[6], i;    // tmp[] allows overlapping inAddr/outAddr
+    for (i = 0; i < 6; i++)
+    {
+        tmp[5-i] = inAddr[i];
+    }
+    for (i = 0; i < 6; i++)
+    {
+        outAddr[i] = tmp[i];
+    }
+}
+extern void WinDivertHelperNtohMACAddress(const UINT8 *inAddr, UINT8 *outAddr)
+{
+    WinDivertByteSwap48(inAddr, outAddr);
+}
+extern void WinDivertHelperHtonMACAddress(const UINT8 *inAddr, UINT8 *outAddr)
+{
+    WinDivertByteSwap48(inAddr, outAddr);
 }
 static void WinDivertByteSwap128(const UINT *inAddr, UINT *outAddr)
 {

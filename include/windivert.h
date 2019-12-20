@@ -79,7 +79,17 @@ typedef enum
     WINDIVERT_LAYER_FLOW = 2,           /* Flow layer. */
     WINDIVERT_LAYER_SOCKET = 3,         /* Socket layer. */
     WINDIVERT_LAYER_REFLECT = 4,        /* Reflect layer. */
+    WINDIVERT_LAYER_ETHERNET = 5,       /* Ethernet layer. */
 } WINDIVERT_LAYER, *PWINDIVERT_LAYER;
+
+/*
+ * WinDivert ETHERNET layer data.
+ */
+typedef struct
+{
+    UINT32 IfIdx;                       /* Packet's interface index. */
+    UINT32 SubIfIdx;                    /* Packet's sub-interface index. */
+} WINDIVERT_DATA_ETHERNET, *PWINDIVERT_DATA_ETHERNET;
 
 /*
  * WinDivert NETWORK and NETWORK_FORWARD layer data.
@@ -153,9 +163,12 @@ typedef struct
     UINT32 TCPChecksum:1;               /* Packet has valid TCP checksum? */
     UINT32 UDPChecksum:1;               /* Packet has valid UDP checksum? */
     UINT32 Reserved1:8;
-    UINT32 Reserved2;
+    UINT32 Reserved2:12;
+    UINT32 Length:20;                   /* Packet length. */
     union
     {
+        WINDIVERT_DATA_ETHERNET Ethernet;
+                                        /* Ethernet layer data. */
         WINDIVERT_DATA_NETWORK Network; /* Network layer data. */
         WINDIVERT_DATA_FLOW Flow;       /* Flow layer data. */
         WINDIVERT_DATA_SOCKET Socket;   /* Socket layer data. */
@@ -183,6 +196,7 @@ typedef enum
     WINDIVERT_EVENT_SOCKET_CLOSE = 7,   /* Socket close. */
     WINDIVERT_EVENT_REFLECT_OPEN = 8,   /* WinDivert handle opened. */
     WINDIVERT_EVENT_REFLECT_CLOSE = 9,  /* WinDivert handle closed. */
+    WINDIVERT_EVENT_ETHERNET_FRAME = 10,/* Ethernet frame. */
 } WINDIVERT_EVENT, *PWINDIVERT_EVENT;
 
 /*
@@ -336,8 +350,15 @@ WINDIVERTEXPORT BOOL WinDivertGetParam(
 #endif
 
 /*
- * IPv4/IPv6/ICMP/ICMPv6/TCP/UDP header definitions.
+ * Ethernet/IPv4/IPv6/ICMP/ICMPv6/TCP/UDP header definitions.
  */
+typedef struct
+{
+    UINT8 DstAddr[6];
+    UINT8 SrcAddr[6];
+    UINT16 Type;
+} WINDIVERT_ETHHDR, *PWINDIVERT_ETHHDR;
+
 typedef struct
 {
     UINT8  HdrLength:4;
@@ -490,6 +511,7 @@ typedef struct
 WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
     __in        const VOID *pPacket,
     __in        UINT packetLen,
+    __in        WINDIVERT_LAYER layer,
     __in        UINT64 seed
 #ifdef __cplusplus
                 = 0
@@ -502,6 +524,8 @@ WINDIVERTEXPORT UINT64 WinDivertHelperHashPacket(
 WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __in        const VOID *pPacket,
     __in        UINT packetLen,
+    __in        WINDIVERT_LAYER layer,
+    __out_opt   PWINDIVERT_ETHHDR *ppEthHdr,
     __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt   PWINDIVERT_IPV6HDR *ppIpv6Hdr,
     __out_opt   UINT8 *pProtocol,
@@ -510,9 +534,14 @@ WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __out_opt   PWINDIVERT_TCPHDR *ppTcpHdr,
     __out_opt   PWINDIVERT_UDPHDR *ppUdpHdr,
     __out_opt   PVOID *ppData,
-    __out_opt   UINT *pDataLen,
-    __out_opt   PVOID *ppNext,
-    __out_opt   UINT *pNextLen);
+    __out_opt   UINT *pDataLen);
+
+/*
+ * Parse a MAC address.
+ */
+WINDIVERTEXPORT BOOL WinDivertHelperParseMACAddress(
+    __in        const char *addrStr,
+    __out_opt   UINT8 *pAddr);
 
 /*
  * Parse an IPv4 address.
@@ -527,6 +556,14 @@ WINDIVERTEXPORT BOOL WinDivertHelperParseIPv4Address(
 WINDIVERTEXPORT BOOL WinDivertHelperParseIPv6Address(
     __in        const char *addrStr,
     __out_opt   UINT32 *pAddr);
+
+/*
+ * Format a MAC address.
+ */
+WINDIVERTEXPORT BOOL WinDivertHelperFormatMACAddress(
+    __in        const UINT8 *pAddr,
+    __out       char *buffer,
+    __in        UINT bufLen);
 
 /*
  * Format an IPv4 address.
@@ -550,6 +587,7 @@ WINDIVERTEXPORT BOOL WinDivertHelperFormatIPv6Address(
 WINDIVERTEXPORT BOOL WinDivertHelperCalcChecksums(
     __inout     VOID *pPacket, 
     __in        UINT packetLen,
+    __in        WINDIVERT_LAYER layer,
     __out_opt   WINDIVERT_ADDRESS *pAddr,
     __in        UINT64 flags);
 
@@ -558,7 +596,8 @@ WINDIVERTEXPORT BOOL WinDivertHelperCalcChecksums(
  */
 WINDIVERTEXPORT BOOL WinDivertHelperDecrementTTL(
     __inout     VOID *pPacket,
-    __in        UINT packetLen);
+    __in        UINT packetLen,
+    __in        WINDIVERT_LAYER layer);
 
 /*
  * Compile the given filter string.
@@ -578,6 +617,7 @@ WINDIVERTEXPORT BOOL WinDivertHelperEvalFilter(
     __in        const char *filter,
     __in        const VOID *pPacket,
     __in        UINT packetLen,
+    __in        WINDIVERT_LAYER layer,
     __in        const WINDIVERT_ADDRESS *pAddr);
 
 /*
@@ -604,6 +644,12 @@ WINDIVERTEXPORT UINT64 WinDivertHelperNtohll(
     __in        UINT64 x);
 WINDIVERTEXPORT UINT64 WinDivertHelperHtonll(
     __in        UINT64 x);
+WINDIVERTEXPORT void WinDivertHelperNtohMACAddress(
+    __in        const UINT8 *inAddr,
+    __out       UINT8 *outAddr);
+WINDIVERTEXPORT void WinDivertHelperHtonMACAddress(
+    __in        const UINT8 *inAddr,
+    __out       UINT8 *outAddr);
 WINDIVERTEXPORT void WinDivertHelperNtohIPv6Address(
     __in        const UINT *inAddr,
     __out       UINT *outAddr);

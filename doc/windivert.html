@@ -1,11 +1,11 @@
 <!doctype html>
 <html lang="en">
 <head>
-    <title>WinDivert 2.2 Documentation</title>
+    <title>WinDivert 3.0 Documentation</title>
     <meta charset="UTF-8"/>
 </head>
 <body>
-<h1>WinDivert 2.2: Windows Packet Divert</h1>
+<h1>WinDivert 3.0: Windows Packet Divert</h1>
 <h2>Table of Contents</h2>
 <ul>
 <li><a href="#introduction">1. Introduction</a></li>
@@ -34,25 +34,28 @@
 </li>
 <li><a href="#helper_programming_api">6. Helper Programming API</a>
 <ul>
-<li><a href="#divert_iphdr">6.1 WINDIVERT_IPHDR</a></li>
-<li><a href="#divert_ipv6hdr">6.2 WINDIVERT_IPV6HDR</a></li>
-<li><a href="#divert_icmphdr">6.3 WINDIVERT_ICMPHDR</a></li>
-<li><a href="#divert_icmpv6hdr">6.4 WINDIVERT_ICMPV6HDR</a></li>
-<li><a href="#divert_tcphdr">6.5 WINDIVERT_TCPHDR</a></li>
-<li><a href="#divert_udphdr">6.6 WINDIVERT_UDPHDR</a></li>
-<li><a href="#divert_helper_parse_packet">6.7 WinDivertHelperParsePacket</a></li>
-<li><a href="#divert_helper_hash_packet">6.8 WinDivertHelperHashPacket</a></li>
-<li><a href="#divert_helper_parse_ipv4_address">6.9 WinDivertHelperParseIPv4Address</a></li>
-<li><a href="#divert_helper_parse_ipv6_address">6.10 WinDivertHelperParseIPv6Address</a></li>
-<li><a href="#divert_helper_format_ipv4_address">6.11 WinDivertHelperFormatIPv4Address</a></li>
-<li><a href="#divert_helper_format_ipv6_address">6.12 WinDivertHelperFormatIPv6Address</a></li>
-<li><a href="#divert_helper_calc_checksums">6.13 WinDivertHelperCalcChecksums</a></li>
-<li><a href="#divert_helper_dec_ttl">6.14 WinDivertHelperDecrementTTL</a></li>
-<li><a href="#divert_helper_compile_filter">6.15 WinDivertHelperCompileFilter</a></li>
-<li><a href="#divert_helper_eval_filter">6.16 WinDivertHelperEvalFilter</a></li>
-<li><a href="#divert_helper_format_filter">6.17 WinDivertHelperFormatFilter</a></li>
-<li><a href="#divert_helper_ntoh">6.18 WinDivertHelperNtoh*</a></li>
-<li><a href="#divert_helper_hton">6.19 WinDivertHelperHton*</a></li>
+<li><a href="#divert_ethhdr">6.1 WINDIVERT_ETHHDR</a></li>
+<li><a href="#divert_iphdr">6.2 WINDIVERT_IPHDR</a></li>
+<li><a href="#divert_ipv6hdr">6.3 WINDIVERT_IPV6HDR</a></li>
+<li><a href="#divert_icmphdr">6.4 WINDIVERT_ICMPHDR</a></li>
+<li><a href="#divert_icmpv6hdr">6.5 WINDIVERT_ICMPV6HDR</a></li>
+<li><a href="#divert_tcphdr">6.6 WINDIVERT_TCPHDR</a></li>
+<li><a href="#divert_udphdr">6.7 WINDIVERT_UDPHDR</a></li>
+<li><a href="#divert_helper_parse_packet">6.8 WinDivertHelperParsePacket</a></li>
+<li><a href="#divert_helper_hash_packet">6.9 WinDivertHelperHashPacket</a></li>
+<li><a href="#divert_helper_parse_mac_address">6.10 WinDivertHelperParseMACAddress</a></li>
+<li><a href="#divert_helper_parse_ipv4_address">6.11 WinDivertHelperParseIPv4Address</a></li>
+<li><a href="#divert_helper_parse_ipv6_address">6.12 WinDivertHelperParseIPv6Address</a></li>
+<li><a href="#divert_helper_format_mac_address">6.13 WinDivertHelperFormatMacAddress</a></li>
+<li><a href="#divert_helper_format_ipv4_address">6.14 WinDivertHelperFormatIPv4Address</a></li>
+<li><a href="#divert_helper_format_ipv6_address">6.15 WinDivertHelperFormatIPv6Address</a></li>
+<li><a href="#divert_helper_calc_checksums">6.16 WinDivertHelperCalcChecksums</a></li>
+<li><a href="#divert_helper_dec_ttl">6.17 WinDivertHelperDecrementTTL</a></li>
+<li><a href="#divert_helper_compile_filter">6.18 WinDivertHelperCompileFilter</a></li>
+<li><a href="#divert_helper_eval_filter">6.19 WinDivertHelperEvalFilter</a></li>
+<li><a href="#divert_helper_format_filter">6.20 WinDivertHelperFormatFilter</a></li>
+<li><a href="#divert_helper_ntoh">6.21 WinDivertHelperNtoh*</a></li>
+<li><a href="#divert_helper_hton">6.22 WinDivertHelperHton*</a></li>
 </ul>
 </li>
 <li><a href="#filter_language">7. Filter Language</a>
@@ -72,7 +75,7 @@
 <p>
 WinDivert is a powerful user-mode 
 capture/sniffing/modification/blocking/re-injection package for
-Windows 7, Windows 8 and Windows 10.
+Windows 8 and Windows 10, as well as Windows Server 2012/2016/2019.
 WinDivert can be used to implement user-mode packet filters, packet sniffers,
 firewalls, NAT, VPNs, tunneling applications, etc., without the need to
 write kernel-mode code.
@@ -116,25 +119,26 @@ The source code for WinDivert is available for download at:
 To build the WinDivert drivers from source:
 </p>
 <ol>
-<li> Download and install <a href="http://www.microsoft.com/whdc/devtools/wdk/default.mspx">
-Windows Driver Kit 7.1.0</a>.</li>
-<li> Open a <i>x86 Free Build Environment</i> console.</li>
+<li> Download and install Visual Studio 2015 and Windows Driver Kit (WDK).</li>
+<li> Open a Visual Studio 2015 <i>Developer Command Prompt</i>.</li>
 <li> In the WinDivert package root directory, run the command:
 <pre>
-wddk-build.bat
+msvc-build.bat
 </pre>
-This will build the <code>install\WDDK\i386\WinDivert32.sys</code> driver.</li>
-<li> Next, open a <i>x64 Free Build Environment</i> console.</li>
-<li> Re-run the <code>wddk-build.bat</code> command to build the
-<code>install\WDDK\amd64\WinDivert64.sys</code> driver.</li>
+This will build the <code>install\MSVC\i386\WinDivert32.sys</code> and
+<code>install\WDDK\amd64\WinDivert64.sys</code> drivers.</li>
 </ol>
 <p>
-To build the WinDivert user-mode library (<code>WinDivert.dll</code>) and sample
-programs:
+Note that the <code>msvc-build.bat</code> script will also build the
+<code>WinDivert.dll</code> and sample programs.
+However, these versions are not used in the official distribution
+because of the dependency on the Visual Studio 2015 C runtime.
+</p><p>
+To build the (dependency free) WinDivert user-mode library
+(<code>WinDivert.dll</code>) and sample programs:
 </p>
 <ol>
-<li> First, build the WinDivert drivers by running the
-<code>wddk-build.bat</code> command described above.</li>
+<li> First, build the WinDivert drivers as described above.</li>
 <li> In Linux (with the MinGW cross-compilers installed) and in the
 WinDivert package root directory, run the command:
 <pre>
@@ -272,6 +276,7 @@ typedef enum
     WINDIVERT_LAYER_FLOW,
     WINDIVERT_LAYER_SOCKET,
     WINDIVERT_LAYER_REFLECT,
+    WINDIVERT_LAYER_ETHERNET,
 } <b>WINDIVERT_LAYER</b>, *<b>PWINDIVERT_LAYER</b>;
 </pre>
 </td></tr></table>
@@ -308,6 +313,15 @@ PID?
 </th>
 <th>
 </th>
+</tr>
+<tr>
+<td>
+<code>WINDIVERT_LAYER_ETHERNET</code>
+</td>
+<td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td>
+<td>
+Ethernet frames to/from the local machine.
+</td>
 </tr>
 <tr>
 <td>
@@ -367,12 +381,21 @@ Here, the layer capabilities are:
      an event/packet is available at this layer, or not.
 </ul>
 <p>
-The <code>WINDIVERT_LAYER_NETWORK</code> and
-<code>WINDIVERT_LAYER_NETWORK_FORWARD</code>
-layers allow the user application to capture/block/inject network packets
+The <code>WINDIVERT_LAYER_ETHERNET</code>
+layer allows the user application to capture/block/inject ethernet
+frames passing to/from the local machine.
+An ethernet frame will start with <i>ethernet header</i>,
+followed by a packet from an upper layer protocol, such as
+IPv4, IPv6, ARP, etc.
+</p>
+<p>
+The <code>WINDIVERT_LAYER_NETWORK</code> (and
+<code>WINDIVERT_LAYER_NETWORK_FORWARD</code>)
+layers allow the user application to
+capture/block/inject network packets
 passing to/from (and through) the local machine.
-Due to technical limitations, process ID information is not available
-at these layers.
+Network layer packets start with either an IPv4 or IPv6 header,
+typically followed by a transport layer payload (e.g., TCP or UDP).
 </p>
 <p>
 The <code>WINDIVERT_LAYER_FLOW</code> layer captures information about
@@ -393,8 +416,10 @@ The <code>WINDIVERT_LAYER_SOCKET</code> layer can capture or block events
 corresponding to socket operations, such as <code>bind()</code>,
 <code>connect()</code>, <code>listen()</code>, etc., or the termination
 of socket operations, such as a TCP socket disconnection.
-Unlike the flow layer, most socket-related events can be blocked.
-However, it is not possible to inject new or modified socket events.
+Unlike the flow layer, most socket-related events can be blocked,
+but it is not possible to inject new or modified socket events.
+Some events at this layer may be <i>implicit</i>, meaning that the event
+does not correspond to an explicit call to a WinSock2 function.
 Process ID information (of the process responsible for the socket operation)
 is available at this layer.
 Due to technical limitations, this layer cannot capture events that
@@ -434,6 +459,7 @@ typedef enum
     WINDIVERT_EVENT_SOCKET_CLOSE,
     WINDIVERT_EVENT_REFLECT_OPEN,
     WINDIVERT_EVENT_REFLECT_CLOSE,
+    WINDIVERT_EVENT_ETHERNET_FRAME,
 } <b>WINDIVERT_EVENT</b>, *<b>PWINDIVERT_EVENT</b>;
 </pre>
 </td></tr></table>
@@ -443,6 +469,27 @@ typedef enum
 Each layer supports one or more <i>events</i> summarized below:
 </p>
 <ul>
+<li>
+<p>
+<b><code>WINDIVERT_LAYER_ETHERNET</code></b>:
+Only a single event is supported:
+</p>
+<center>
+<table border="1" cellpadding="5" width="50%">
+<tr>
+<th>Event</th>
+<th>Description</th>
+<tr>
+<td>
+<code>WINDIVERT_EVENT_ETHERNET_FRAME</code>
+</td>
+<td>
+A new ethernet frame.
+</td>
+</tr>
+</table>
+</center>
+</li>
 <li>
 <p>
 <b><code>WINDIVERT_LAYER_NETWORK</code></b> and
@@ -464,8 +511,6 @@ A new network packet.
 </tr>
 </table>
 </center>
-<ul>
-</ul>
 </li>
 <li>
 <p>
@@ -589,6 +634,12 @@ typedef struct
 {
     UINT32 IfIdx;
     UINT32 SubIfIdx;
+} <b>WINDIVERT_DATA_ETHERNET</b>, *<b>PWINDIVERT_DATA_ETHERNET</b>;
+
+typedef struct
+{
+    UINT32 IfIdx;
+    UINT32 SubIfIdx;
 } <b>WINDIVERT_DATA_NETWORK</b>, *<b>PWINDIVERT_DATA_NETWORK</b>;
 
 typedef struct
@@ -627,22 +678,24 @@ typedef struct
 typedef struct
 {
     INT64  Timestamp;
-    UINT64 Layer:8;
-    UINT64 Event:8;
-    UINT64 Sniffed:1;
-    UINT64 Outbound:1;
-    UINT64 Loopback:1;
-    UINT64 Impostor:1;
-    UINT64 IPv6:1;
-    UINT64 IPChecksum:1;
-    UINT64 TCPChecksum:1;
-    UINT64 UDPChecksum:1;
+    UINT32 Layer:8;
+    UINT32 Event:8;
+    UINT32 Sniffed:1;
+    UINT32 Outbound:1;
+    UINT32 Loopback:1;
+    UINT32 Impostor:1;
+    UINT32 IPv6:1;
+    UINT32 IPChecksum:1;
+    UINT32 TCPChecksum:1;
+    UINT32 UDPChecksum:1;
+    UINT32 Length:20;
     union
     {
-        WINDIVERT_DATA_NETWORK Network;
-        WINDIVERT_DATA_FLOW    Flow;
-        WINDIVERT_DATA_SOCKET  Socket;
-        WINDIVERT_DATA_REFLECT Reflect;
+        WINDIVERT_DATA_ETHERNET Ethernet;
+        WINDIVERT_DATA_NETWORK  Network;
+        WINDIVERT_DATA_FLOW     Flow;
+        WINDIVERT_DATA_SOCKET   Socket;
+        WINDIVERT_DATA_REFLECT  Reflect;
     };
 } <b>WINDIVERT_ADDRESS</b>, *<b>PWINDIVERT_ADDRESS</b>;
 </pre>
@@ -669,6 +722,11 @@ valid, <code>0</code> otherwise.</li>
 valid, <code>0</code> otherwise.</li>
 <li> <code>UDPChecksum</code>: Set to <code>1</code> if the UDP checksum is
 valid, <code>0</code> otherwise.</li>
+<li> <code>Length</code>: Set to the length of the packet.</li>
+<li> <code>Ethernet.IfIdx</code>: The interface index on which the frame
+     arrived (for inbound frames), or is to be sent (for outbound frames).</li>
+<li> <code>Ethernet.SubIfIdx</code>: The sub-interface index for
+     <code>IfIdx</code>.</li>
 <li> <code>Network.IfIdx</code>: The interface index on which the packet arrived
     (for inbound packets), or is to be sent (for outbound packets).</li>
 <li> <code>Network.SubIfIdx</code>: The sub-interface index for <code>IfIdx</code>.</li>
@@ -754,11 +812,20 @@ When <i>IP/TCP/UDP checksum offloading</i> is enabled, it is possible that
 captured packets do not have valid checksums.
 Invalid checksums may be arbitrary values.
 </p><p>
+The <code>Length</code> field corresponds to the length of the packet.
+This is mostly used for <i>batch mode</i>, where multiple packets are
+stored in the same buffer.
+</p><p>
+The <code>Ethernet.*</code> fields are only valid at the
+<code>WINDIVERT_LAYER_ETHERNET</code> layer.
+The <code>Ethernet.IfIdx</code>/<code>Ethernet.SubIfIdx</code> indicate the
+frame's network adapter (a.k.a. interface) index.
+</p><p>
 The <code>Network.*</code> fields are only valid at the
 <code>WINDIVERT_LAYER_NETWORK</code> and
 <code>WINDIVERT_LAYER_NETWORK_FORWARD</code> layers.
-The <code>Network.IfIdx</code>/<code>Network.SubIfIdx</code> indicate the packet's
-network adapter (a.k.a. interface) index.
+The <code>Network.IfIdx</code>/<code>Network.SubIfIdx</code> indicate the
+packet's network adapter (a.k.a. interface) index.
 These values are ignored for <i>outbound</i> packets.
 </p><p>
 The <code>Flow.*</code> fields are only valid at the
@@ -807,10 +874,18 @@ the opened handle.
 Most address fields are ignored by
 <a href="#divert_send"><code>WinDivertSend()</code></a>.
 The exceptions are
-<code>Outbound</code> (for <code>WINDIVERT_LAYER_NETWORK</code> only),
+<code>Outbound</code> (for
+<code>WINDIVERT_LAYER_ETHERNET</code>/<code>WINDIVERT_LAYER_NETWORK</code>
+only),
 <code>Impostor</code>, <code>IPChecksum</code>, <code>TCPChecksum</code>,
-<code>UDPChecksum</code>, <code>Network.IfIdx</code> and
+<code>UDPChecksum</code>, <code>Ethernet.IfIdx</code>,
+<code>Ethernet.SubIfIdx</code>, <code>Network.IfIdx</code> and
 <code>Network.SubIfIdx</code>.
+The <code>Length</code> field is used for <i>batch mode</i> where
+multiple packets are injected at once.
+That said, the <code>Length</code> field is ignored for the last packet of the
+batch, in which case the remaining buffer length determines the
+injected packet size.
 </p>
 </dd></dl>
 
@@ -991,11 +1066,18 @@ Description
 </tr>
 <tr>
 <td>
-<code>WINDIVERT_LAYER_NETWORK = 0</code>
+<code>WINDIVERT_LAYER_ETHERNET</code>
+</td>
+<td>
+Ethernet frames to/from the local machine.
+</td>
+</tr>
+<tr>
+<td>
+<code>WINDIVERT_LAYER_NETWORK</code>
 </td>
 <td>
 Network packets to/from the local machine.
-This is the default layer.
 </td>
 </tr>
 <tr>
@@ -1292,6 +1374,17 @@ Description
 </tr>
 <tr>
 <td>
+<code>WINDIVERT_LAYER_ETHERNET</code>
+</td>
+<td>
+&#10004;
+</td>
+<td>
+Ethernet frame.
+</td>
+</tr>
+<tr>
+<td>
 <code>WINDIVERT_LAYER_NETWORK</code>
 </td>
 <td>
@@ -1543,8 +1636,10 @@ modified version, or a completely new packet.
 Injected packets can be captured and diverted again by other WinDivert
 handles with lower priorities.
 </p><p>
-Only the <code>WINDIVERT_LAYER_NETWORK</code> and
-<code>WINDIVERT_LAYER_NETWORK_FORWARD</code> <a href="#divert_layers">layers</a>
+Only the <code>WINDIVERT_LAYER_ETHERMET</code>,
+<code>WINDIVERT_LAYER_NETWORK</code> and
+<code>WINDIVERT_LAYER_NETWORK_FORWARD</code>
+<a href="#divert_layers">layers</a>
 support packet injection, as summarized below:
 </p>
 <center>
@@ -1556,6 +1651,14 @@ Layer
 <th>
 Inject?
 </th>
+</tr>
+<tr>
+<td>
+<code>WINDIVERT_LAYER_ETHERNET</code>
+</td>
+<td>
+&#10004;
+</td>
 </tr>
 <tr>
 <td>
@@ -1597,7 +1700,8 @@ Inject?
 </table>
 </center>
 <p>
-For the <code>WINDIVERT_LAYER_NETWORK</code> layer the
+For the <code>WINDIVERT_LAYER_ETHERNET</code> and
+<code>WINDIVERT_LAYER_NETWORK</code> layers, the
 <code>pAddr-&gt;Outbound</code> value determines which direction the packet
 is injected.
 If the <code>pAddr-&gt;Outbound</code> field is <code>1</code>,
@@ -1958,7 +2062,29 @@ The WinDivert helper programming API is a collection of definitions
 and functions designed to make writing WinDivert applications easier.
 The use of the helper API is optional.
 
-<a name="divert_iphdr"><h3>6.1 WINDIVERT_IPHDR</h3></a>
+<a name="divert_ethhdr"><h3>6.1 WINDIVERT_ETHHDR</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT8 DstAddr[6];
+    UINT8 SrcAddr[6];
+    UINT16 Type;
+} <b>WINDIVERT_ETHHDR</b>, *<b>PWINDIVERT_ETHHDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Fields</b><br>
+See <a href="https://en.wikipedia.org/wiki/Ethernet_frame#Header">here</a>
+for more information.
+</p><p>
+<b>Remarks</b><br>
+Ethernet frame header definition.
+</p>
+</dl></dd>
+
+<a name="divert_iphdr"><h3>6.2 WINDIVERT_IPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2001,7 +2127,7 @@ definitions:
 </ul>
 </dl></dd>
 
-<a name="divert_ipv6hdr"><h3>6.2 WINDIVERT_IPV6HDR</h3></a>
+<a name="divert_ipv6hdr"><h3>6.3 WINDIVERT_IPV6HDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2037,7 +2163,7 @@ definitions:
 </ul>
 </dl></dd>
 
-<a name="divert_icmphdr"><h3>6.3 WINDIVERT_ICMPHDR</h3></a>
+<a name="divert_icmphdr"><h3>6.4 WINDIVERT_ICMPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2060,7 +2186,7 @@ ICMP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_icmpv6hdr"><h3>6.4 WINDIVERT_ICMPV6HDR</h3></a>
+<a name="divert_icmpv6hdr"><h3>6.5 WINDIVERT_ICMPV6HDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2083,7 +2209,7 @@ ICMPv6 header definition.
 </p>
 </dl></dd>
 
-<a name="divert_tcphdr"><h3>6.5 WINDIVERT_TCPHDR</h3></a>
+<a name="divert_tcphdr"><h3>6.6 WINDIVERT_TCPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2118,7 +2244,7 @@ TCP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_udphdr"><h3>6.6 WINDIVERT_UDPHDR</h3></a>
+<a name="divert_udphdr"><h3>6.7 WINDIVERT_UDPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2141,12 +2267,14 @@ UDP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_helper_parse_packet"><h3>6.7 WinDivertHelperParsePacket</h3></a>
+<a name="divert_helper_parse_packet"><h3>6.8 WinDivertHelperParsePacket</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParsePacket</b>(
     __in PVOID pPacket,
     __in UINT packetLen,
+    __in WINDIVERT_LAYER layer,
+    __out_opt PWINDIVERT_ETHHDR *ppEthHdr,
     __out_opt PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt PWINDIVERT_IPV6HDR *ppIpv6Hdr,
     __out_opt UINT8 *pProtocol,
@@ -2155,9 +2283,7 @@ BOOL <b>WinDivertHelperParsePacket</b>(
     __out_opt PWINDIVERT_TCPHDR *ppTcpHdr,
     __out_opt PWINDIVERT_UDPHDR *ppUdpHdr,
     __out_opt PVOID *ppData,
-    __out_opt UINT *pDataLen,
-    __out_opt PVOID *ppNext,
-    __out_opt UINT *pNextLen
+    __out_opt UINT *pDataLen
 );
 </pre>
 </td></tr></table>
@@ -2166,6 +2292,8 @@ BOOL <b>WinDivertHelperParsePacket</b>(
 <ul>
 <li> <code>pPacket</code>: The packet(s) to be parsed.</li>
 <li> <code>packetLen</code>: The total length of the packet(s) <code>pPacket</code>.</li>
+<li> <code>layer</code>: The layer.</li>
+<li> <code>ppEthHdr</code>: Output pointer to a <code>WINDIVERT_ETHHDR</code>.</li>
 <li> <code>ppIpHdr</code>: Output pointer to a <code>WINDIVERT_IPHDR</code>.</li>
 <li> <code>ppIpv6Hdr</code>: Output pointer to a <code>WINDIVERT_IPV6HDR</code>.</li>
 <li> <code>pProtocol</code>: Output transport protocol.</li>
@@ -2175,17 +2303,17 @@ BOOL <b>WinDivertHelperParsePacket</b>(
 <li> <code>ppUdpHdr</code>: Output pointer to a <code>WINDIVERT_UDPHDR</code>.</li>
 <li> <code>ppData</code>: Output pointer to the packet's data/payload.</li>
 <li> <code>pDataLen</code>: Output data/payload length.</li>
-<li> <code>ppNext</code>: Output pointer to the next packet (if present).</li>
-<li> <code>pNextLen</code>: Output next packet length.</li>
 </ul>
 <p>
 <b>Return Value</b><br>
 <code>TRUE</code> if successful, <code>FALSE</code> if an error occurred.
 </p><p>
 <b>Remarks</b><br>
-Parses a raw packet or batch of packets (e.g. from <a
-href="#divert_recv"><code>WinDivertRecv()</code></a>) into the
-various packet headers and/or payloads that may or may not be present.
+Parses a raw packet (e.g. from <a
+href="#divert_recv"><code>WinDivertRecv()</code></a>) 
+from the <code>WINDIVERT_LAYER_ETHERNET</code> or
+<code>WINDIVERT_LAYER_NETWORK*</code> layers
+into the various packet headers and/or payloads that may or may not be present.
 </p><p>
 Each output parameter may be <code>NULL</code> or non-<code>NULL</code>.
 For non-<code>NULL</code> parameters, this function will write the pointer to
@@ -2194,41 +2322,24 @@ otherwise.
 Any non-<code>NULL</code> pointer that is returned:
 </p>
 <ol>
-<li> Is a pointer into the original <code>pPacket</code> packet buffer; and</li>
+<li> Is a pointer into the original <code>pPacket</code> packet buffer
+     (this function does not allocate any memory); and</li>
 <li> There is enough space in <code>pPacket</code> to fit the header.</li>
 </ol>
 <p>
 This function does not do any verification of the header/payload contents
 beyond checking the header length and any other minimal information required
 for parsing.
-This function will always succeed provided the <code>pPacket</code> buffer
-contains at least one IPv4 or IPv6 header and the <code>packetLen</code> is
-correct.
-</p><p>
-By default this function will parse a single packet.
-However, if either <code>ppNext</code> or <code>pNextLen</code> are
-non-<code>NULL</code>, then the <code>pPacket</code> parameter can point
-to a batch (&gt;1) of packets
-(and <code>packetLen</code> can be the total length of the batch).
-In this case, the function will parse the first packet, and a pointer to the
-remaining packet(s) will be written to <code>ppNext</code>,
-and the remaining length will be written to <code>pNextLen</code>.
-This makes it convenient to loop over every packet in the batch as follows:
+This function will succeed if at least one header can be parsed.
 </p>
-<pre>
-    while (WinDivertHelperParsePacket(pPacket, packetLen, ..., &amp;pPacket, &amp;packetLen))
-    {
-        ...
-    }
-</pre>
-</dd></dl>
 
-<a name="divert_helper_hash_packet"><h3>6.8 WinDivertHelperHashPacket</h3></a>
+<a name="divert_helper_hash_packet"><h3>6.9 WinDivertHelperHashPacket</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT64 <b>WinDivertHelperHashPacket</b>(
     __in const VOID *pPacket,
     __in UINT packetLen,
+    __in WINDIVERT_LAYER layer,
     __in UINT64 seed = 0
 );
 </pre>
@@ -2238,6 +2349,7 @@ UINT64 <b>WinDivertHelperHashPacket</b>(
 <ul>
 <li> <code>pPacket</code>: The packet to be hashed.</li>
 <li> <code>packetLen</code>: The total length of the packet <code>pPacket</code>.</li>
+<li> <code>layer</code>: The layer.</li>
 <li> <code>seed</code>: An optional seed value.</li>
 </ul>
 <p>
@@ -2258,7 +2370,37 @@ The optional <code>seed</code> value is also incorporated into the hash.
 <p>
 </dd></dl>
 
-<a name="divert_helper_parse_ipv4_address"><h3>6.9 WinDivertHelperParseIPv4Address</h3></a>
+<a name="divert_helper_parse_mac_address"><h3>6.10 WinDivertHelperParseMACAddress</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperParseMACAddress</b>(
+    __in const char *addrStr,
+    __out_opt UINT8 *pAddr
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p><b>Parameters</b></p>
+<ul>
+<li> <code>addrStr</code>: The address string.</li>
+<li> <code>pAddr</code>: Output address.</li>
+</ul>
+<p>
+<b>Return Value</b><br>
+<code>TRUE</code> if successful, <code>FALSE</code> if an error occurred.
+Use <code>GetLastError()</code> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Parses a MAC address stored in <code>addrStr</code>.
+If <code>pAddr</code> is non-<code>NULL</code>, the result is be stored in
+host-byte-order.
+Use
+<a href="#divert_helper_hton"><code>WinDivertHelperHtonMACAddress()</code></a>
+to convert the result into network-byte-order.
+</p>
+</dd></dl>
+
+<a name="divert_helper_parse_ipv4_address"><h3>6.11 WinDivertHelperParseIPv4Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParseIPv4Address</b>(
@@ -2287,7 +2429,7 @@ to convert the result into network-byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_parse_ipv6_address"><h3>6.10 WinDivertHelperParseIPv6Address</h3></a>
+<a name="divert_helper_parse_ipv6_address"><h3>6.12 WinDivertHelperParseIPv6Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParseIPv6Address</b>(
@@ -2317,7 +2459,34 @@ to convert the result into network-byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_format_ipv4_address"><h3>6.11 WinDivertHelperParseIPv4Address</h3></a>
+<a name="divert_helper_format_mac_address"><h3>6.13 WinDivertHelperParseMacAddress</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+BOOL <b>WinDivertHelperFormatMacAddress</b>(
+    __in const UINT8 *addr,
+    __out char *buffer,
+    __in UINT bufLen
+);
+</pre>
+</td></tr></table>
+<dl><dd>
+<p><b>Parameters</b></p>
+<ul>
+<li> <code>addr</code>: The Mac address in host-byte order.</li>
+<li> <code>buffer</code>: The buffer to store the formatted string.</li>
+<li> <code>bufLen</code>: The length of <code>buffer</code>.
+</ul>
+<p>
+<b>Return Value</b><br>
+<code>TRUE</code> if successful, <code>FALSE</code> if an error occurred.
+Use <code>GetLastError()</code> to get the reason for the error.
+</p><p>
+<b>Remarks</b><br>
+Convert a Mac address into a string.
+</p>
+</dd></dl>
+
+<a name="divert_helper_format_ipv4_address"><h3>6.14 WinDivertHelperParseIPv4Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperFormatIPv4Address</b>(
@@ -2344,7 +2513,7 @@ Convert an IPv4 address into a string.
 </p>
 </dd></dl>
 
-<a name="divert_helper_format_ipv6_address"><h3>6.12 WinDivertHelperParseIPv6Address</h3></a>
+<a name="divert_helper_format_ipv6_address"><h3>6.15 WinDivertHelperParseIPv6Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperFormatIPv6Address</b>(
@@ -2371,12 +2540,13 @@ Convert an IPv6 address into a string.
 </p>
 </dd></dl>
 
-<a name="divert_helper_calc_checksums"><h3>6.13 WinDivertHelperCalcChecksums</h3></a>
+<a name="divert_helper_calc_checksums"><h3>6.16 WinDivertHelperCalcChecksums</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCalcChecksums</b>(
     __inout VOID *pPacket,
     __in UINT packetLen,
+    __in WINDIVERT_LAYER layer,
     __out_opt WINDIVERT_ADDRESS *pAddr,
     __in UINT64 flags
 );
@@ -2387,6 +2557,7 @@ BOOL <b>WinDivertHelperCalcChecksums</b>(
 <ul>
 <li> <code>pPacket</code>: The packet to be modified.</li>
 <li> <code>packetLen</code>: The total length of the packet <code>pPacket</code>.</li>
+<li> <code>layer</code>: The layer.</li>
 <li> <code>pAddr</code>: Optional pointer to a
     <a href="#divert_address"><code>WINDIVERT_ADDRESS</code></a> structure.</li>
 <li> <code>flags</code>: One or more of the following flags:
@@ -2429,12 +2600,13 @@ packet injection.
 </p>
 </dd></dl>
 
-<a name="divert_helper_dec_ttl"><h3>6.14 WinDivertHelperDecrementTTL</h3></a>
+<a name="divert_helper_dec_ttl"><h3>6.17 WinDivertHelperDecrementTTL</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperDecrementTTL</b>(
     __inout VOID *packet,
-    __in packetLen
+    __in packetLen,
+    __in WINDIVERT_LAYER layer
 );
 </pre>
 </td></tr></table>
@@ -2443,6 +2615,7 @@ BOOL <b>WinDivertHelperDecrementTTL</b>(
 <ul>
 <li> <code>pPacket</code>: The packet to be modified.</li>
 <li> <code>packetLen</code>: The total length of the packet <code>pPacket</code>.</li>
+<li> <code>layer</code>: The layer.</li>
 </ul>
 <p>
 <b>Return Value</b><br>
@@ -2463,7 +2636,7 @@ This function updates the checksum field incrementally.
 </p>
 </dd></dl>
 
-<a name="divert_helper_compile_filter"><h3>6.15 WinDivertHelperCompileFilter</h3></a>
+<a name="divert_helper_compile_filter"><h3>6.18 WinDivertHelperCompileFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCompileFilter</b>(
@@ -2514,13 +2687,14 @@ objects, and therefore do not need to be deallocated.
 <p>
 </dd></dl>
 
-<a name="divert_helper_eval_filter"><h3>6.16 WinDivertHelperEvalFilter</h3></a>
+<a name="divert_helper_eval_filter"><h3>6.19 WinDivertHelperEvalFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperEvalFilter</b>(
     __in const char *filter,
     __in const VOID *pPacket,
     __in UINT packetLen,
+    __in WINDIVERT_LAYER layer,
     __in const WINDIVERT_ADDRESS *pAddr
 );
 </pre>
@@ -2531,6 +2705,7 @@ BOOL <b>WinDivertHelperEvalFilter</b>(
 <li> <code>filter</code>: The packet filter string to be evaluated.</li>
 <li> <code>pPacket</code>: The packet.</li>
 <li> <code>packetLen</code>: The total length of the packet <code>pPacket</code>.</li>
+<li> <code>layer</code>: The layer.</li>
 <li> <code>pAddr</code>: The <code>WINDIVERT_ADDRESS</code> of the packet
     <code>pPacket</code>.</li>
 </ul>
@@ -2558,10 +2733,10 @@ function.
 <p>
 </dd></dl>
 
-<a name="divert_helper_format_filter"><h3>6.17 WinDivertHelperFormatFilter</h3></a>
+<a name="divert_helper_format_filter"><h3>6.20 WinDivertHelperFormatFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>WinDivertHelperEvalFilter</b>(
+BOOL <b>WinDivertHelperFormatFilter</b>(
     __in const char *filter,
     __in WINDIVERT_LAYER layer,
     __out char *buffer,
@@ -2592,7 +2767,7 @@ returned by <a href="#divert_recv"><code>WinDivertRecv()</code></a>.
 </p>
 </dd></dl>
 
-<a name="divert_helper_ntoh"><h3>6.18 WinDivertHelperNtoh*</h3></a>
+<a name="divert_helper_ntoh"><h3>6.21 WinDivertHelperNtoh*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperNtohs</b>(
@@ -2604,6 +2779,9 @@ UINT32 <b>WinDivertHelperNtohl</b>(
 UINT64 <b>WinDivertHelperNtohll</b>(
     __in UINT64 x
 );
+void <b>WinDivertHelperNtohMACAddress</b>(
+    __in const UINT8 *inAddr,
+    __out UINT8 *outAddr);
 void <b>WinDivertHelperNtohIPv6Address</b>(
     __in const UINT *inAddr,
     __out UINT *outAddr
@@ -2614,8 +2792,8 @@ void <b>WinDivertHelperNtohIPv6Address</b>(
 <p><b>Parameters</b></p>
 <ul>
 <li> <code>x</code>: The input value in network byte-order.</li>
-<li> <code>inAddr</code>: The input IPv6 address in network byte-order.</li>
-<li> <code>outAddr</code>: A buffer for the output IPv6 address in host
+<li> <code>inAddr</code>: The input MAC/IPv6 address in network byte-order.</li>
+<li> <code>outAddr</code>: A buffer for the output MAC/IPv6 address in host
 	byte-order.</li>
 </ul>
 <p>
@@ -2627,7 +2805,7 @@ Converts a value/IPv6-address from network to host byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_hton"><h3>6.19 WinDivertHelperHton*</h3></a>
+<a name="divert_helper_hton"><h3>6.22 WinDivertHelperHton*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperHtons</b>(
@@ -2639,6 +2817,9 @@ UINT32 <b>WinDivertHelperHtonl</b>(
 UINT64 <b>WinDivertHelperHtonll</b>(
     __in UINT64 x
 );
+void <b>WinDivertHelperHtonMACAddress</b>(
+    __in const UINT8 *inAddr,
+    __out UINT8 *outAddr);
 void <b>WinDivertHelperHtonIPv6Address</b>(
     __in const UINT *inAddr,
     __out UINT *outAddr
@@ -2649,8 +2830,8 @@ void <b>WinDivertHelperHtonIPv6Address</b>(
 <p><b>Parameters</b></p>
 <ul>
 <li> <code>x</code>: The input value in host byte-order.</li>
-<li> <code>inAddr</code>: The input IPv6 address in host byte-order.</li>
-<li> <code>outAddr</code>: A buffer for the output IPv6 address in network
+<li> <code>inAddr</code>: The input MAC/IPv6 address in host byte-order.</li>
+<li> <code>outAddr</code>: A buffer for the output MAC/IPv6 address in network
 	byte-order.</li>
 </ul>
 <p>
@@ -2681,7 +2862,7 @@ This could be achieved using the following filter.
 HANDLE handle = WinDivertOpen(
     "outbound and "
     "tcp.PayloadLength &gt; 0 and "
-    "tcp.DstPort == 80", 0, 0, 0);
+    "tcp.DstPort == 80", WINDIVERT_LAYER_NETWORK, 0, 0);
 </pre>
 <p>
 This filter selects only the subset of all traffic that is:
@@ -2740,55 +2921,56 @@ The possible fields are:
 </p>
 <center>
 <table border="1" cellpadding="5">
-<tr><th>Field</th><th colspan="5">Layer</th><th>Description</th></tr>
-<tr><th></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
-<tr><td><code>zero</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The value zero</td></tr>
-<tr><td><code>timestamp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The packet/event timestamp</td></tr>
-<tr><td><code>event</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The event</td></tr>
-<tr><td><code>outbound</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is outbound?</td></tr>
-<tr><td><code>inbound</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is inbound?</td></tr>
-<tr><td><code>ifIdx</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Interface index</td></tr>
-<tr><td><code>subIfIdx</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Sub-interface index</td></tr>
-<tr><td><code>loopback</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is loopback packet?</td></tr>
-<tr><td><code>impostor</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Is impostor packet?</td></tr>
-<tr><td><code>fragment</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Is IP fragment packet?</td></tr>
-<tr><td><code>endpointId</code></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Endpoint ID</td></tr>
-<tr><td><code>parentEndpointId</code></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Parent endpoint ID</td></tr>
-<tr><td><code>processId</code></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>Process ID</td></tr>
-<tr><td><code>random8</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>8-bit random number</td></tr>
-<tr><td><code>random16</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>16-bit random number</td></tr>
-<tr><td><code>random32</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>32-bit random number</td></tr>
-<tr><td><code>layer</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td>The handle's layer</td></tr>
-<tr><td><code>priority</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td>The handle's priority</td></tr>
-<tr><td><code>packet[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 8-bit word of the packet</td></tr>
-<tr><td><code>packet16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the packet</td></tr>
-<tr><td><code>packet32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the packet</td></tr>
-<tr><td><code>length</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The packet length</td></tr>
-<tr><td><code>ip</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv4?</td></tr>
-<tr><td><code>ipv6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv6?</td></tr>
-<tr><td><code>icmp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMP?</td></tr>
-<tr><td><code>icmpv6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMPv6?</td></tr>
-<tr><td><code>tcp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is TCP?</td></tr>
-<tr><td><code>udp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is UDP?</td></tr>
-<tr><td><code>protocol</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The protocol</td></tr>
-<tr><td><code>localAddr</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The local address</td></tr>
-<tr><td><code>localPort</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The local port</td></tr>
-<tr><td><code>remoteAddr</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote address</td></tr>
-<tr><td><code>remotePort</code></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote port</td></tr>
-<tr><td><code>ip.*</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv4 fields (see <code>WINDIVERT_IPHDR</code>)</td></tr>
-<tr><td><code>ipv6.*</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv6 fields (see <code>WINDIVERT_IPV6HDR</code>)</td></tr>
-<tr><td><code>icmp.*</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>ICMP fields (see <code>WINDIVERT_ICMPHDR</code>)</td></tr>
-<tr><td><code>icmpv6.*</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>ICMPV6 fields (see <code>WINDIVERT_ICMPV6HDR</code>)</td></tr>
-<tr><td><code>tcp.*</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>TCP fields (see <code>WINDIVERT_TCPHDR</code>)</td></tr>
-<tr><td><code>tcp.PayloadLength</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The TCP payload length</td></tr>
-<tr><td><code>tcp.Payload[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 8-bit word of the TCP payload</td></tr>
-<tr><td><code>tcp.Payload16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the TCP payload</td></tr>
-<tr><td><code>tcp.Payload32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the TCP payload</td></tr>
-<tr><td><code>udp.*</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>UDP fields (see <code>WINDIVERT_UDPHDR</code>)</td></tr>
-<tr><td><code>udp.PayloadLength</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The UDP payload length</td></tr>
-<tr><td><code>udp.Payload[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 8-bit word of the UDP payload</td></tr>
-<tr><td><code>udp.Payload16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the UDP payload</td></tr>
-<tr><td><code>udp.Payload32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the UDP payload</td></tr>
+<tr><th>Field</th><th colspan="6">Layer</th><th>Description</th></tr>
+<tr><th></th><th><code>ETHERNET</code></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
+<tr><td><code>zero</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The value zero</td></tr>
+<tr><td><code>timestamp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The packet/event timestamp</td></tr>
+<tr><td><code>event</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>The event</td></tr>
+<tr><td><code>outbound</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is outbound?</td></tr>
+<tr><td><code>inbound</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td></td><td></td><td>Is inbound?</td></tr>
+<tr><td><code>ifIdx</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Interface index</td></tr>
+<tr><td><code>subIfIdx</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Sub-interface index</td></tr>
+<tr><td><code>loopback</code></td><td></td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is loopback packet?</td></tr>
+<tr><td><code>impostor</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Is impostor packet?</td></tr>
+<tr><td><code>fragment</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>Is IP fragment packet?</td></tr>
+<tr><td><code>endpointId</code></td><td></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Endpoint ID</td></tr>
+<tr><td><code>parentEndpointId</code></td><td></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>Parent endpoint ID</td></tr>
+<tr><td><code>processId</code></td><td></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>Process ID</td></tr>
+<tr><td><code>random8</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>8-bit random number</td></tr>
+<tr><td><code>random16</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>16-bit random number</td></tr>
+<tr><td><code>random32</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>32-bit random number</td></tr>
+<tr><td><code>layer</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td>The handle's layer</td></tr>
+<tr><td><code>priority</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td>The handle's priority</td></tr>
+<tr><td><code>packet[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 8-bit word of the packet</td></tr>
+<tr><td><code>packet16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the packet</td></tr>
+<tr><td><code>packet32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the packet</td></tr>
+<tr><td><code>length</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The packet length</td></tr>
+<tr><td><code>ip</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv4?</td></tr>
+<tr><td><code>ipv6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv6?</td></tr>
+<tr><td><code>icmp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMP?</td></tr>
+<tr><td><code>icmpv6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMPv6?</td></tr>
+<tr><td><code>tcp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is TCP?</td></tr>
+<tr><td><code>udp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is UDP?</td></tr>
+<tr><td><code>protocol</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The protocol</td></tr>
+<tr><td><code>localAddr</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The local address</td></tr>
+<tr><td><code>localPort</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The local port</td></tr>
+<tr><td><code>remoteAddr</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote address</td></tr>
+<tr><td><code>remotePort</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote port</td></tr>
+<tr><td><code>eth.*</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td>Ethernet fields (see <code>WINDIVERT_ETHHDR</code>)</td></tr>
+<tr><td><code>ip.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv4 fields (see <code>WINDIVERT_IPHDR</code>)</td></tr>
+<tr><td><code>ipv6.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv6 fields (see <code>WINDIVERT_IPV6HDR</code>)</td></tr>
+<tr><td><code>icmp.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>ICMP fields (see <code>WINDIVERT_ICMPHDR</code>)</td></tr>
+<tr><td><code>icmpv6.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>ICMPV6 fields (see <code>WINDIVERT_ICMPV6HDR</code>)</td></tr>
+<tr><td><code>tcp.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>TCP fields (see <code>WINDIVERT_TCPHDR</code>)</td></tr>
+<tr><td><code>tcp.PayloadLength</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The TCP payload length</td></tr>
+<tr><td><code>tcp.Payload[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 8-bit word of the TCP payload</td></tr>
+<tr><td><code>tcp.Payload16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the TCP payload</td></tr>
+<tr><td><code>tcp.Payload32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the TCP payload</td></tr>
+<tr><td><code>udp.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>UDP fields (see <code>WINDIVERT_UDPHDR</code>)</td></tr>
+<tr><td><code>udp.PayloadLength</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The UDP payload length</td></tr>
+<tr><td><code>udp.Payload[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 8-bit word of the UDP payload</td></tr>
+<tr><td><code>udp.Payload16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the UDP payload</td></tr>
+<tr><td><code>udp.Payload32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the UDP payload</td></tr>
 </table>
 </center>
 <p>
@@ -2799,6 +2981,7 @@ packet does not contain a TCP header.
 The <code>processId</code> field matches the ID of the process associated
 to an event.
 Due to technical limitations, this field is not supported by the
+<code>WINDIVERT_LAYER_ETHERNET</code> and
 <code>WINDIVERT_LAYER_NETWORK*</code> layers.
 That said, it is usually possible to associate process IDs to network packets 
 matching the same network 5-tuple.
@@ -2843,31 +3026,33 @@ The possible macros are:
 </p>
 <center>
 <table border="1" cellpadding="5" width="75%">
-<tr><th>Macro</th><th colspan="5">Layer</th><th>Value</th></tr>
-<tr><th></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
-<tr><td><code>TRUE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>1</code></td></tr>
-<tr><td><code>FALSE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>0</code></td></tr>
-<tr><td><code>TCP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_TCP</code> (<code>6</code>)</td></tr>
-<tr><td><code>UDP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_UDP</code> (<code>17</code>)</td></tr>
-<tr><td><code>ICMP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_ICMP</code> (<code>1</code>)</td></tr>
-<tr><td><code>ICMPV6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_ICMPV6</code> (<code>58</code>)</td></tr>
-<tr><td><code>PACKET</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td><code>WINDIVERT_EVENT_NETWORK_PACKET</code></td></tr>
-<tr><td><code>ESTABLISHED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_ESTABLISHED</code></td></tr>
-<tr><td><code>DELETED</code></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_DELETED</code></td></tr>
-<tr><td><code>BIND</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_BIND</code></td></tr>
-<tr><td><code>CONNECT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_CONNECT</code></td></tr>
-<tr><td><code>ACCEPT</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_ACCEPT</code></td></tr>
-<tr><td><code>LISTEN</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_LISTEN</code></td></tr>
-<tr><td><code>OPEN</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_EVENT_REFLECT_OPEN</code></td></tr>
-<tr><td><code>CLOSE</code></td><td></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td><code>WINDIVERT_EVENT_SOCKET_CLOSE</code>
+<tr><th>Macro</th><th colspan="6">Layer</th><th>Value</th></tr>
+<tr><th></th><th><code>ETHERNET</code></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
+<tr><td><code>TRUE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>1</code></td></tr>
+<tr><td><code>FALSE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>0</code></td></tr>
+<tr><td><code>TCP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_TCP</code> (<code>6</code>)</td></tr>
+<tr><td><code>UDP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_UDP</code> (<code>17</code>)</td></tr>
+<tr><td><code>ICMP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_ICMP</code> (<code>1</code>)</td></tr>
+<tr><td><code>ICMPV6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_ICMPV6</code> (<code>58</code>)</td></tr>
+<tr><td><code>FRAME</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td><code>WINDIVERT_EVENT_ETHERNET_FRAME</code></td></tr>
+<tr><td><code>PACKET</code></td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td><code>WINDIVERT_EVENT_NETWORK_PACKET</code></td></tr>
+<tr><td><code>ESTABLISHED</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_ESTABLISHED</code></td></tr>
+<tr><td><code>DELETED</code></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td></td><td><code>WINDIVERT_EVENT_FLOW_DELETED</code></td></tr>
+<tr><td><code>BIND</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_BIND</code></td></tr>
+<tr><td><code>CONNECT</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_CONNECT</code></td></tr>
+<tr><td><code>ACCEPT</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_ACCEPT</code></td></tr>
+<tr><td><code>LISTEN</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td></td><td><code>WINDIVERT_EVENT_SOCKET_LISTEN</code></td></tr>
+<tr><td><code>OPEN</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_EVENT_REFLECT_OPEN</code></td></tr>
+<tr><td><code>CLOSE</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td>&#10004;</td><td><code>WINDIVERT_EVENT_SOCKET_CLOSE</code>
 for the <code>SOCKET</code> layer, or
 <code>WINDIVERT_EVENT_REFLECT_CLOSE</code> for the <code>REFLECT</code>
 layer.</td></tr>
-<tr><td><code>NETWORK</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_NETWORK</code></td></tr>
-<tr><td><code>NETWORK_FORWARD</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_NETWORK_FORWARD</code></td></tr>
-<tr><td><code>FLOW</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW</code></td></tr>
-<tr><td><code>SOCKET</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_SOCKET</code></td></tr>
-<tr><td><code>REFLECT</code></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_REFLECT</code></td></tr>
+<tr><td><code>ETHERNET</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_ETHERNET</code></td></tr>
+<tr><td><code>NETWORK</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_NETWORK</code></td></tr>
+<tr><td><code>NETWORK_FORWARD</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_NETWORK_FORWARD</code></td></tr>
+<tr><td><code>FLOW</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_FLOW</code></td></tr>
+<tr><td><code>SOCKET</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_SOCKET</code></td></tr>
+<tr><td><code>REFLECT</code></td><td></td><td></td><td></td><td></td><td></td><td>&#10004;</td><td><code>WINDIVERT_LAYER_REFLECT</code></td></tr>
 </table>
 </center>
 
@@ -2880,7 +3065,7 @@ Divert all outbound (non-local) web traffic:
 HANDLE handle = WinDivertOpen(
         "outbound and !loopback and "
         "(tcp.DstPort == 80 or udp.DstPort == 53)",
-        0, 0, 0
+        WINDIVERT_LAYER_NETWORK, 0, 0
     );
 </pre>
 </li>
@@ -2890,20 +3075,20 @@ Divert all inbound TCP SYNs:
 HANDLE handle = WinDivertOpen(
         "inbound and "
         "tcp.Syn",
-        0, 0, 0
+        WINDIVERT_LAYER_NETWORK, 0, 0
     );
 </pre>
 </li>
 <li>
 Divert all traffic:
 <pre>
-HANDLE handle = WinDivertOpen("true", 0, 0, 0);
+HANDLE handle = WinDivertOpen("true", WINDIVERT_LAYER_NETWORK, 0, 0);
 </pre>
 </li>
 <li>
 Divert no traffic:
 <pre>
-HANDLE handle = WinDivertOpen("false", 0, 0, 0);
+HANDLE handle = WinDivertOpen("false", WINDIVERT_LAYER_NETWORK, 0, 0);
 </pre>
 This is useful for packet injection.
 </ol>

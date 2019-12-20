@@ -38,6 +38,7 @@
  * useful for performance testing.
  *
  * usage: passthru.exe [windivert-filter] [num-threads] [batch-size] [priority]
+ *                     [layer]
  */
 
 #include <winsock2.h>
@@ -47,69 +48,162 @@
 
 #include "windivert.h"
 
-#define MTU 1500
-
-typedef struct
-{
-    HANDLE handle;
-    int batch;
-} CONFIG, *PCONFIG;
-
 static DWORD passthru(LPVOID arg);
+
+/*
+ * Options.
+ */
+static int threads           = 1;
+static int batch             = WINDIVERT_BATCH_MAX;
+static int priority          = 0;
+static WINDIVERT_LAYER layer = WINDIVERT_LAYER_NETWORK;
+static int size              = (0x10000 + 4096);
+
+/*
+ * Print usage and exit.
+ */
+static void usage(const char *prog)
+{
+    fprintf(stderr, "usage: %s [OPTIONS] filter-string\n\n", prog);
+    fprintf(stderr, "OPTIONS:\n");
+    fprintf(stderr, "\t--batch N\n");
+    fprintf(stderr, "\t\tSet the batch size to N (default=%u)\n",
+        WINDIVERT_BATCH_MAX);
+    fprintf(stderr, "\t--layer LAYER\n");
+    fprintf(stderr, "\t\tSet the filter layer to LAYER (default=network).\n");
+    fprintf(stderr, "\t\tValid values are {ethernet,network,forward}.\n");
+    fprintf(stderr, "\t--priority N\n");
+    fprintf(stderr, "\t\tSet the filter priority to N (default=0)\n");
+    fprintf(stderr, "\t--size N\n");
+    fprintf(stderr, "\t\tSet the buffer size to N (default=%u)\n",
+        (0x10000 + 4096));
+    fprintf(stderr, "\t--threads N\n");
+    fprintf(stderr, "\t\tSet the number of threads to be N (default=1)\n");
+    exit(EXIT_FAILURE);
+}
+
+/*
+ * Parse options.
+ */
+static const char *parse_options(int argc, char **argv)
+{
+    int i;
+    size_t n;
+    const char *filter = NULL, *opt, *arg;
+
+    for (i = 1; i < argc; i++)
+    {
+        opt = argv[i];
+        if (opt[0] != '-' || opt[1] != '-')
+        {
+            if (filter != NULL)
+            {
+                usage(argv[0]);
+            }
+            filter = opt;
+            continue;
+        }
+        opt += 2;
+        arg = strchr(opt, '=');
+        if (arg == NULL)
+        {
+            i++;
+            if (i >= argc)
+            {
+                usage(argv[0]);
+            }
+            arg = argv[i];
+            n = strlen(opt);
+        }
+        else
+        {
+            n = arg - opt;
+            arg++;
+        }
+        if (strncmp(opt, "threads", n) == 0)
+        {
+            threads = atoi(arg);
+        }
+        else if (strncmp(opt, "batch", n) == 0)
+        {
+            batch = atoi(arg);
+        }
+        else if (strncmp(opt, "priority", n) == 0)
+        {
+            priority = atoi(arg);
+        }
+        else if (strncmp(opt, "size", n) == 0)
+        {
+            size = atoi(arg);
+        }
+        else if (strncmp(opt, "layer", n) == 0)
+        {
+            if (strcmp(arg, "ethernet") == 0)
+            {
+                layer = WINDIVERT_LAYER_ETHERNET;
+            }
+            else if (strcmp(arg, "network") == 0)
+            {
+                layer = WINDIVERT_LAYER_NETWORK;
+            }
+            else if (strcmp(arg, "forward") == 0)
+            {
+                layer = WINDIVERT_LAYER_NETWORK_FORWARD;
+            }
+            else
+            {
+                usage(argv[0]);
+            }
+        }
+        else
+        {
+            usage(argv[0]);
+        }
+    }
+    return (filter == NULL? "true": filter);
+}
 
 /*
  * Entry.
  */
 int __cdecl main(int argc, char **argv)
 {
-    const char *filter = "true";
-    int threads = 1, batch = 1, priority = 0;
+    const char *filter;
     int i;
     HANDLE handle, thread;
-    CONFIG config;
 
-    if (argc > 5)
+    filter = parse_options(argc, argv);
+
+    if (threads < 1 || threads > 64)
     {
-        fprintf(stderr, "usage: %s [filter] [num-threads] [batch-size] "
-            "[priority]\n", argv[0]);
+        fprintf(stderr, "error: number of threads must be within "
+            "the range 1..64, found %d\n", threads);
         exit(EXIT_FAILURE);
     }
-    if (argc >= 2)
+    if (batch < 1 || batch > WINDIVERT_BATCH_MAX)
     {
-        filter = argv[1];
+        fprintf(stderr, "error: batch size must be within the range 1..%u, "
+            "found %d\n", WINDIVERT_BATCH_MAX, batch);
+        exit(EXIT_FAILURE);
     }
-    if (argc >= 3)
+    if (priority < WINDIVERT_PRIORITY_LOWEST ||
+        priority > WINDIVERT_PRIORITY_HIGHEST)
     {
-        threads = atoi(argv[2]);
-        if (threads < 1 || threads > 64)
-        {
-            fprintf(stderr, "error: invalid number of threads\n");
-            exit(EXIT_FAILURE);
-        }
+        fprintf(stderr, "error: priority must be within the range %d..%d, "
+            "found %d\n", WINDIVERT_PRIORITY_LOWEST,
+            WINDIVERT_PRIORITY_HIGHEST, priority);
+        exit(EXIT_FAILURE);
     }
-    if (argc >= 4)
+    if (size < 1 || size >= WINDIVERT_BATCH_MAX * WINDIVERT_MTU_MAX)
     {
-        batch = atoi(argv[3]);
-        if (batch <= 0 || batch > WINDIVERT_BATCH_MAX)
-        {
-            fprintf(stderr, "error: invalid batch size\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-    if (argc >= 5)
-    {
-        priority = atoi(argv[4]);
-        if (priority < WINDIVERT_PRIORITY_LOWEST ||
-            priority > WINDIVERT_PRIORITY_HIGHEST)
-        {
-            fprintf(stderr, "error: invalid priority value\n");
-            exit(EXIT_FAILURE);
-        }
+        fprintf(stderr, "error: buffer size must be within the range 1..%d, "
+            "found %d\n", WINDIVERT_BATCH_MAX * WINDIVERT_MTU_MAX,
+            size);
+        exit(EXIT_FAILURE);
     }
 
     // Divert traffic matching the filter:
-    handle = WinDivertOpen(filter, WINDIVERT_LAYER_NETWORK, (INT16)priority,
-        0);
+    handle = WinDivertOpen(filter, layer, (INT16)priority, 0);
     if (handle == INVALID_HANDLE_VALUE)
     {
         if (GetLastError() == ERROR_INVALID_PARAMETER)
@@ -123,12 +217,10 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Start the threads
-    config.handle = handle;
-    config.batch = batch;
     for (i = 1; i < threads; i++)
     {
         thread = CreateThread(NULL, 1, (LPTHREAD_START_ROUTINE)passthru,
-            (LPVOID)&config, 0, NULL);
+            (LPVOID)handle, 0, NULL);
         if (thread == NULL)
         {
             fprintf(stderr, "error: failed to start passthru thread (%d)\n",
@@ -138,8 +230,8 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Main thread:
-    passthru((LPVOID)&config);
-
+    passthru((LPVOID)handle);
+    
     return 0;
 }
 
@@ -147,19 +239,11 @@ int __cdecl main(int argc, char **argv)
 static DWORD passthru(LPVOID arg)
 {
     UINT8 *packet;
-    UINT packet_len, recv_len, addr_len;
+    UINT packet_len, addr_len;
     WINDIVERT_ADDRESS *addr;
-    PCONFIG config = (PCONFIG)arg;
-    HANDLE handle;
-    int batch;
+    HANDLE handle = (HANDLE)arg;
 
-    handle = config->handle;
-    batch = config->batch;
-
-    packet_len = batch * MTU;
-    packet_len =
-        (packet_len < WINDIVERT_MTU_MAX? WINDIVERT_MTU_MAX: packet_len);
-    packet = (UINT8 *)malloc(packet_len);
+    packet = (UINT8 *)malloc(size);
     addr = (WINDIVERT_ADDRESS *)malloc(batch * sizeof(WINDIVERT_ADDRESS));
     if (packet == NULL || addr == NULL)
     {
@@ -173,7 +257,7 @@ static DWORD passthru(LPVOID arg)
     {
         // Read a matching packet.
         addr_len = batch * sizeof(WINDIVERT_ADDRESS);
-        if (!WinDivertRecvEx(handle, packet, packet_len, &recv_len, 0,
+        if (!WinDivertRecvEx(handle, packet, size, &packet_len, 0,
                 addr, &addr_len, NULL))
         {
             fprintf(stderr, "warning: failed to read packet (%d)\n",
@@ -182,7 +266,7 @@ static DWORD passthru(LPVOID arg)
         }
 
         // Re-inject the matching packet.
-        if (!WinDivertSendEx(handle, packet, recv_len, NULL, 0, addr,
+        if (!WinDivertSendEx(handle, packet, packet_len, NULL, 0, addr,
                 addr_len, NULL))
         {
             fprintf(stderr, "warning: failed to reinject packet (%d)\n",

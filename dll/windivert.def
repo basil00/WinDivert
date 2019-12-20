@@ -13,8 +13,10 @@ EXPORTS
     WinDivertHelperDecrementTTL
     WinDivertHelperHashPacket
     WinDivertHelperParsePacket
+    WinDivertHelperParseMACAddress
     WinDivertHelperParseIPv4Address
     WinDivertHelperParseIPv6Address
+    WinDivertHelperFormatMACAddress
     WinDivertHelperFormatIPv4Address
     WinDivertHelperFormatIPv6Address
     WinDivertHelperCompileFilter
@@ -26,6 +28,8 @@ EXPORTS
     WinDivertHelperHtonl
     WinDivertHelperNtohll
     WinDivertHelperHtonll
+    WinDivertHelperNtohMACAddress
+    WinDivertHelperHtonMACAddress
     WinDivertHelperNtohIPv6Address
     WinDivertHelperHtonIPv6Address
     WinDivertHelperNtohIpv6Address

@@ -479,6 +479,7 @@ HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer, INT16 priority,
     // Parameter checking:
     switch (layer)
     {
+        case WINDIVERT_LAYER_ETHERNET:
         case WINDIVERT_LAYER_NETWORK:
         case WINDIVERT_LAYER_NETWORK_FORWARD:
         case WINDIVERT_LAYER_FLOW:

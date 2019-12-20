@@ -45,6 +45,13 @@
 #define BYTESWAP32(x)                   \
     ((((x) >> 24) & 0x000000FFu) | (((x) >> 8) & 0x0000FF00u) | \
      (((x) << 8) & 0x00FF0000u) | (((x) << 24) & 0xFF000000u))
+#define BYTESWAP48(x)                   \
+    ((((x) >> 40) & 0x0000000000FF0000ull) | \
+     (((x) >> 24) & 0x00000000FF000000ull) | \
+     (((x) >> 8)  & 0x000000FF00000000ull) | \
+     (((x) << 8)  & 0x0000FF0000000000ull) | \
+     (((x) << 24) & 0x00FF000000000000ull) | \
+     (((x) << 40) & 0xFF00000000000000ull))
 #define BYTESWAP64(x)                   \
     ((((x) >> 56) & 0x00000000000000FFull) | \
      (((x) >> 40) & 0x000000000000FF00ull) | \
@@ -58,6 +65,11 @@
 #define htons(x)                        BYTESWAP16(x)
 #define ntohl(x)                        BYTESWAP32(x)
 #define htonl(x)                        BYTESWAP32(x)
+#define ntohl48(x)                      BYTESWAP48(x)
+#define htonl48(x)                      BYTESWAP48(x)
+
+#define ETHERTYPE_IP    0x0800
+#define ETHERTYPE_IPV6  0x86DD
 
 /*
  * Layer flags shorthand.
@@ -68,32 +80,46 @@
 #define WINDIVERT_LAYER_FLAG_FLOW               (1 << WINDIVERT_LAYER_FLOW)
 #define WINDIVERT_LAYER_FLAG_SOCKET             (1 << WINDIVERT_LAYER_SOCKET)
 #define WINDIVERT_LAYER_FLAG_REFLECT            (1 << WINDIVERT_LAYER_REFLECT)
-#define LNMFSR          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
+#define WINDIVERT_LAYER_FLAG_ETHERNET           (1 << WINDIVERT_LAYER_ETHERNET)
+#define LENMFSR         (WINDIVERT_LAYER_FLAG_ETHERNET |                    \
+                         WINDIVERT_LAYER_FLAG_NETWORK |                     \
                          WINDIVERT_LAYER_FLAG_NETWORK_FORWARD |             \
                          WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_SOCKET |                      \
                          WINDIVERT_LAYER_FLAG_REFLECT)
-#define LNMFS_          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
+#define LENMFS_         (WINDIVERT_LAYER_FLAG_ETHERNET |                    \
+                         WINDIVERT_LAYER_FLAG_NETWORK |                     \
                          WINDIVERT_LAYER_FLAG_NETWORK_FORWARD |             \
                          WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_SOCKET)
-#define L__F_R          (WINDIVERT_LAYER_FLAG_FLOW |                        \
+#define LEN_F__         (WINDIVERT_LAYER_FLAG_ETHERNET |                    \
+                         WINDIVERT_LAYER_FLAG_NETWORK |                     \
+                         WINDIVERT_LAYER_FLAG_FLOW)
+#define L___F_R         (WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_REFLECT)
-#define LN_FS_          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
+#define LEN_FS_         (WINDIVERT_LAYER_FLAG_ETHERNET |                    \
+                         WINDIVERT_LAYER_FLAG_NETWORK |                     \
                          WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_SOCKET)
-#define L__FS_          (WINDIVERT_LAYER_FLAG_FLOW |                        \
+#define L_N_FS_         (WINDIVERT_LAYER_FLAG_NETWORK |                     \
+                         WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_SOCKET)
-#define L___SR          (WINDIVERT_LAYER_FLAG_SOCKET |                      \
+#define L___FS_         (WINDIVERT_LAYER_FLAG_FLOW |                        \
+                         WINDIVERT_LAYER_FLAG_SOCKET)
+#define L____SR         (WINDIVERT_LAYER_FLAG_SOCKET |                      \
                          WINDIVERT_LAYER_FLAG_REFLECT)
-#define L__FSR          (WINDIVERT_LAYER_FLAG_FLOW |                        \
+#define L___FSR         (WINDIVERT_LAYER_FLAG_FLOW |                        \
                          WINDIVERT_LAYER_FLAG_SOCKET |                      \
                          WINDIVERT_LAYER_FLAG_REFLECT)
-#define LNM___          (WINDIVERT_LAYER_FLAG_NETWORK |                     \
+#define LENM___         (WINDIVERT_LAYER_FLAG_ETHERNET |                    \
+                         WINDIVERT_LAYER_FLAG_NETWORK |                     \
                          WINDIVERT_LAYER_FLAG_NETWORK_FORWARD)
-#define L__F__          WINDIVERT_LAYER_FLAG_FLOW
-#define L___S_          WINDIVERT_LAYER_FLAG_SOCKET
-#define L____R          WINDIVERT_LAYER_FLAG_REFLECT
+#define L_NM___         (WINDIVERT_LAYER_FLAG_NETWORK |                     \
+                         WINDIVERT_LAYER_FLAG_NETWORK_FORWARD)
+#define LE_____         WINDIVERT_LAYER_FLAG_ETHERNET
+#define L___F__         WINDIVERT_LAYER_FLAG_FLOW
+#define L____S_         WINDIVERT_LAYER_FLAG_SOCKET
+#define L_____R         WINDIVERT_LAYER_FLAG_REFLECT
 
 #if defined(WIN32) && defined(_MSC_VER)
 #pragma intrinsic(__emulu)
@@ -161,6 +187,7 @@ typedef struct
     UINT32 Truncated:1;
     UINT32 Extended:1;
     UINT32 Reserved1:6;
+    PWINDIVERT_ETHHDR EthHeader;
     PWINDIVERT_IPHDR IPHeader;
     PWINDIVERT_IPV6HDR IPv6Header;
     PWINDIVERT_ICMPHDR ICMPHeader;
@@ -360,9 +387,10 @@ static void WinDivertSerializeFilter(PWINDIVERT_STREAM stream,
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket, UINT packetLen,
-    PWINDIVERT_PACKET pInfo)
+static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket,
+    UINT packetLen, WINDIVERT_LAYER layer, PWINDIVERT_PACKET pInfo)
 {
+    PWINDIVERT_ETHHDR eth_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -370,109 +398,168 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_TCPHDR tcp_header = NULL;
     PWINDIVERT_UDPHDR udp_header = NULL;
     PWINDIVERT_IPV6FRAGHDR frag_header;
-    UINT8 protocol = 0;
+    UINT8 ip_protocol = 0;
     UINT8 *data = NULL;
-    UINT packet_len, total_len, header_len, data_len = 0, frag_off = 0;
-    BOOL MF = FALSE, fragment = FALSE, is_ext_header;
+    UINT ip_packet_len = 0, ip_total_len = 0, ip_header_len = 0,
+        trans_header_len, header_len = 0, data_len, frag_off = 0;
+    BOOL ipv4 = FALSE, MF = FALSE, fragment = FALSE, is_ext_header;
 
-    if (pPacket == NULL || packetLen < sizeof(WINDIVERT_IPHDR))
+    if (pPacket == NULL)
     {
         return FALSE;
     }
     data = (UINT8 *)pPacket;
     data_len = packetLen;
 
-    ip_header = (PWINDIVERT_IPHDR)data;
-    switch (ip_header->Version)
+    switch (layer)
     {
-        case 4:
-            if (packetLen < sizeof(WINDIVERT_IPHDR) ||
-                ip_header->HdrLength < 5)
+        case WINDIVERT_LAYER_ETHERNET:
+            if (data_len < sizeof(WINDIVERT_ETHHDR))
             {
                 return FALSE;
             }
-            total_len  = (UINT)ntohs(ip_header->Length);
-            protocol   = ip_header->Protocol;
-            header_len = ip_header->HdrLength * sizeof(UINT32);
-            if (total_len < header_len || packetLen < header_len)
+            eth_header = (PWINDIVERT_ETHHDR)data;
+            data       = (PVOID)(eth_header + 1);
+            data_len  -= sizeof(WINDIVERT_ETHHDR);
+            header_len = sizeof(WINDIVERT_ETHHDR);
+            switch (ntohs(eth_header->Type))
             {
-                return FALSE;
-            }
-            frag_off   = ntohs(WINDIVERT_IPHDR_GET_FRAGOFF(ip_header));
-            MF         = (WINDIVERT_IPHDR_GET_MF(ip_header) != 0);
-            fragment   = (MF || frag_off != 0);
-            packet_len = (total_len < packetLen? total_len: packetLen);
-            data      += header_len;
-            data_len   = packet_len - header_len;
-            break;
-
-        case 6:
-            ip_header   = NULL;
-            ipv6_header = (PWINDIVERT_IPV6HDR)data;
-            if (packetLen < sizeof(WINDIVERT_IPV6HDR))
-            {
-                return FALSE;
-            }
-            protocol   = ipv6_header->NextHdr;
-            total_len  = (UINT)ntohs(ipv6_header->Length) +
-                sizeof(WINDIVERT_IPV6HDR);
-            packet_len = (total_len < packetLen? total_len: packetLen);
-            data      += sizeof(WINDIVERT_IPV6HDR);
-            data_len   = packet_len - sizeof(WINDIVERT_IPV6HDR);
-
-            while (frag_off == 0 && data_len >= 2)
-            {
-                header_len = (UINT)data[1];
-                is_ext_header = TRUE;
-                switch (protocol)
-                {
-                    case IPPROTO_FRAGMENT:
-                        header_len = 8;
-                        if (fragment || data_len < header_len)
-                        {
-                            is_ext_header = FALSE;
-                            break;
-                        }
-                        frag_header = (PWINDIVERT_IPV6FRAGHDR)data;
-                        frag_off    = ntohs(
-                            WINDIVERT_IPV6FRAGHDR_GET_FRAGOFF(frag_header));
-                        MF          = WINDIVERT_IPV6FRAGHDR_GET_MF(frag_header);
-                        fragment    = TRUE;
-                        break;
-                    case IPPROTO_AH:
-                        header_len += 2;
-                        header_len *= 4;
-                        break;
-                    case IPPROTO_HOPOPTS:
-                    case IPPROTO_DSTOPTS:
-                    case IPPROTO_ROUTING:
-                    case IPPROTO_MH:
-                        header_len++;
-                        header_len *= 8;
-                        break;
-                    default:
-                        is_ext_header = FALSE;
-                        break;
-                }
-                if (!is_ext_header || data_len < header_len)
-                {
+                case ETHERTYPE_IP:
+                    if (data_len < sizeof(WINDIVERT_IPHDR))
+                    {
+                        goto WinDivertHelperParsePacketExit;
+                    }
+                    ipv4 = TRUE;
                     break;
-                }
-                protocol  = data[0];
-                data     += header_len;
-                data_len -= header_len;
+                case ETHERTYPE_IPV6:
+                    if (data_len < sizeof(WINDIVERT_IPV6HDR))
+                    {
+                        goto WinDivertHelperParsePacketExit;
+                    }
+                    break;
+                default:
+                    goto WinDivertHelperParsePacketExit;
             }
+            ip_packet_len = data_len;
+            break;
+    
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+            if (data_len < sizeof(WINDIVERT_IPHDR))
+            {
+                return FALSE;
+            }
+            switch (((PWINDIVERT_IPHDR)data)->Version)
+            {
+                case 4:
+                    ipv4 = TRUE;
+                    break;
+                case 6:
+                    break;
+                default:
+                    return FALSE;
+            }
+            ip_packet_len = packetLen;
             break;
 
         default:
             return FALSE;
     }
 
+    if (ipv4)
+    {
+        ip_header = (PWINDIVERT_IPHDR)data;
+        if (ip_header->HdrLength < 5)
+        {
+WinDivertHelperParsePacketIPError:
+            if (eth_header == NULL)
+            {
+                return FALSE;
+            }
+            goto WinDivertHelperParsePacketExit;
+        }
+        ip_total_len  = (UINT)ntohs(ip_header->Length);
+        ip_protocol   = ip_header->Protocol;
+        ip_header_len = ip_header->HdrLength * sizeof(UINT32);
+        if (ip_total_len < ip_header_len || ip_packet_len < ip_header_len)
+        {
+            goto WinDivertHelperParsePacketIPError;
+        }
+        frag_off      = ntohs(WINDIVERT_IPHDR_GET_FRAGOFF(ip_header));
+        MF            = (WINDIVERT_IPHDR_GET_MF(ip_header) != 0);
+        fragment      = (MF || frag_off != 0);
+        ip_packet_len =
+            (ip_total_len < ip_packet_len? ip_total_len: ip_packet_len);
+        data         += ip_header_len;
+        data_len      = ip_packet_len - ip_header_len;
+        header_len   += ip_header_len;
+    }
+    else
+    {
+        if (data_len < sizeof(WINDIVERT_IPV6HDR))
+        {
+            goto WinDivertHelperParsePacketIPError;
+        }
+        ipv6_header   = (PWINDIVERT_IPV6HDR)data;
+        ip_protocol   = ipv6_header->NextHdr;
+        ip_total_len  = (UINT)ntohs(ipv6_header->Length) +
+                sizeof(WINDIVERT_IPV6HDR);
+        ip_packet_len =
+            (ip_total_len < ip_packet_len? ip_total_len: ip_packet_len);
+        data         += sizeof(WINDIVERT_IPV6HDR);
+        data_len      = ip_packet_len - sizeof(WINDIVERT_IPV6HDR);
+        header_len   += ip_header_len;
+
+        while (frag_off == 0 && data_len >= 2)
+        {
+            ip_header_len = (UINT)data[1];
+            is_ext_header = TRUE;
+            switch (ip_protocol)
+            {
+                case IPPROTO_FRAGMENT:
+                    ip_header_len = 8;
+                    if (fragment || data_len < ip_header_len)
+                    {
+                        is_ext_header = FALSE;
+                        break;
+                    }
+                    frag_header = (PWINDIVERT_IPV6FRAGHDR)data;
+                    frag_off    = ntohs(
+                        WINDIVERT_IPV6FRAGHDR_GET_FRAGOFF(frag_header));
+                    MF          = WINDIVERT_IPV6FRAGHDR_GET_MF(frag_header);
+                    fragment    = TRUE;
+                    break;
+                case IPPROTO_AH:
+                    ip_header_len += 2;
+                    ip_header_len *= 4;
+                    break;
+                case IPPROTO_HOPOPTS:
+                case IPPROTO_DSTOPTS:
+                case IPPROTO_ROUTING:
+                case IPPROTO_MH:
+                    ip_header_len++;
+                    ip_header_len *= 8;
+                    break;
+                default:
+                    is_ext_header = FALSE;
+                    break;
+            }
+            if (!is_ext_header || data_len < ip_header_len)
+            {
+                break;
+            }
+            ip_protocol    = data[0];
+            data       += ip_header_len;
+            data_len   -= ip_header_len;
+            header_len += ip_header_len;
+        }
+    }
+
     if (frag_off != 0)
     {
         goto WinDivertHelperParsePacketExit;
     }
-    switch (protocol)
+    switch (ip_protocol)
     {
         case IPPROTO_TCP:
             tcp_header = (PWINDIVERT_TCPHDR)data;
@@ -482,8 +569,9 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket, UINT packetLen,
                 tcp_header = NULL;
                 goto WinDivertHelperParsePacketExit;
             }
-            header_len = tcp_header->HdrLength * sizeof(UINT32);
-            header_len = (header_len > data_len? data_len: header_len);
+            trans_header_len = tcp_header->HdrLength * sizeof(UINT32);
+            trans_header_len =
+                (trans_header_len > data_len? data_len: trans_header_len);
             break;
 
         case IPPROTO_UDP:
@@ -492,7 +580,7 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket, UINT packetLen,
                 goto WinDivertHelperParsePacketExit;
             }
             udp_header = (PWINDIVERT_UDPHDR)data;
-            header_len = sizeof(WINDIVERT_UDPHDR);
+            trans_header_len = sizeof(WINDIVERT_UDPHDR);
             break;
 
         case IPPROTO_ICMP:
@@ -502,7 +590,7 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket, UINT packetLen,
                 goto WinDivertHelperParsePacketExit;
             }
             icmp_header = (PWINDIVERT_ICMPHDR)data;
-            header_len  = sizeof(WINDIVERT_ICMPHDR);
+            trans_header_len  = sizeof(WINDIVERT_ICMPHDR);
             break;
 
         case IPPROTO_ICMPV6:
@@ -512,14 +600,15 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket, UINT packetLen,
                 goto WinDivertHelperParsePacketExit;
             }
             icmpv6_header = (PWINDIVERT_ICMPV6HDR)data;
-            header_len    = sizeof(WINDIVERT_ICMPV6HDR);
+            trans_header_len    = sizeof(WINDIVERT_ICMPV6HDR);
             break;
 
         default:
             goto WinDivertHelperParsePacketExit;
     }
-    data     += header_len;
-    data_len -= header_len;
+    data       += trans_header_len;
+    data_len   -= trans_header_len;
+    header_len += trans_header_len;
 
 WinDivertHelperParsePacketExit:
     if (pInfo == NULL)
@@ -527,13 +616,14 @@ WinDivertHelperParsePacketExit:
         return TRUE;
     }
     data                 = (data_len == 0? NULL: data);
-    pInfo->Protocol      = (UINT32)protocol;
+    pInfo->Protocol      = (UINT32)ip_protocol;
     pInfo->Fragment      = (fragment? 1: 0);
     pInfo->MF            = (MF? 1: 0);
     pInfo->FragOff       = (UINT32)frag_off;
-    pInfo->Truncated     = (total_len > packetLen? 1: 0);
-    pInfo->Extended      = (total_len < packetLen? 1: 0);
+    pInfo->Truncated     = (ip_total_len > ip_packet_len? 1: 0);
+    pInfo->Extended      = (ip_total_len < ip_packet_len? 1: 0);
     pInfo->Reserved1     = 0;
+    pInfo->EthHeader     = eth_header;
     pInfo->IPHeader      = ip_header;
     pInfo->IPv6Header    = ipv6_header;
     pInfo->ICMPHeader    = icmp_header;
@@ -541,7 +631,7 @@ WinDivertHelperParsePacketExit:
     pInfo->TCPHeader     = tcp_header;
     pInfo->UDPHeader     = udp_header;
     pInfo->Payload       = data;
-    pInfo->HeaderLength  = (UINT32)(packet_len - data_len);
+    pInfo->HeaderLength  = (UINT32)header_len;
     pInfo->PayloadLength = (UINT32)data_len;
     return TRUE;
 }
@@ -550,7 +640,7 @@ WinDivertHelperParsePacketExit:
  * Calculate IPv4/IPv6/ICMP/ICMPv6/TCP/UDP checksums.
  */
 BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
-    WINDIVERT_ADDRESS *pAddr, UINT64 flags)
+    WINDIVERT_LAYER layer, WINDIVERT_ADDRESS *pAddr, UINT64 flags)
 {
     UINT8 pseudo_header[
         MAX(sizeof(WINDIVERT_PSEUDOHDR), sizeof(WINDIVERT_PSEUDOV6HDR))];
@@ -565,7 +655,7 @@ BOOL WinDivertHelperCalcChecksums(PVOID pPacket, UINT packetLen,
     UINT payload_len, checksum_len;
     BOOL truncated;
 
-    if (!WinDivertHelperParsePacketEx(pPacket, packetLen, &info))
+    if (!WinDivertHelperParsePacketEx(pPacket, packetLen, layer, &info))
     {
         return FALSE;
     }
@@ -754,53 +844,104 @@ static UINT16 WinDivertCalcChecksum(PVOID pseudo_header,
 /*
  * Decrement the TTL.
  */
-BOOL WinDivertHelperDecrementTTL(VOID *packet, UINT packetLen)
+BOOL WinDivertHelperDecrementTTL(VOID *packet, UINT packetLen,
+    WINDIVERT_LAYER layer)
 {
+    PWINDIVERT_ETHHDR eth_header;
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_IPV6HDR ipv6_header;
+    BOOL is_ipv6 = FALSE;
 
-    if (packet == NULL || packetLen < sizeof(WINDIVERT_IPHDR))
+    if (packet == NULL)
     {
         return FALSE;
     }
 
-    ip_header = (PWINDIVERT_IPHDR)packet;
-    switch (ip_header->Version)
+    switch (layer)
     {
-        case 4:
-            if (ip_header->TTL <= 1)
+        case WINDIVERT_LAYER_ETHERNET:
+            if (packetLen < sizeof(WINDIVERT_ETHHDR))
             {
                 return FALSE;
             }
-            ip_header->TTL--;
-    
-            // Incremental checksum update:
-            if (ip_header->Checksum >= 0xFFFE)
+            eth_header = (PWINDIVERT_ETHHDR)packet;
+            switch (ntohs(eth_header->Type))
             {
-                ip_header->Checksum -= 0xFFFE;
+                case ETHERTYPE_IP:
+                    if (packetLen < sizeof(WINDIVERT_IPHDR))
+                    {
+                        return FALSE;
+                    }
+                    break;
+                case ETHERTYPE_IPV6:
+                    if (packetLen < sizeof(WINDIVERT_IPV6HDR))
+                    {
+                        return FALSE;
+                    }
+                    is_ipv6 = TRUE;
+                    break;
+                default:
+                    return FALSE;
             }
-            else
-            {
-                ip_header->Checksum += 1;
-            }
-            return TRUE;
+            packet = (VOID *)(eth_header + 1);
+            break;
 
-        case 6:
-            if (packetLen < sizeof(WINDIVERT_IPV6HDR))
+        case WINDIVERT_LAYER_NETWORK:
+        case WINDIVERT_LAYER_NETWORK_FORWARD:
+            if (packetLen < sizeof(WINDIVERT_IPHDR))
             {
                 return FALSE;
             }
-            ipv6_header = (PWINDIVERT_IPV6HDR)packet;
-            if (ipv6_header->HopLimit <= 1)
+            ip_header = (PWINDIVERT_IPHDR)packet;
+            switch (ip_header->Version)
             {
-                return FALSE;
+                case 4:
+                    break;
+                case 6:
+                    if (packetLen < sizeof(WINDIVERT_IPV6HDR))
+                    {
+                        return FALSE;
+                    }
+                    is_ipv6 = TRUE;
+                    break;
+                default:
+                    return FALSE;
             }
-            ipv6_header->HopLimit--;
-            return TRUE;
+            break;
 
         default:
             return FALSE;
     }
+
+    if (!is_ipv6)
+    {
+        ip_header = (PWINDIVERT_IPHDR)packet;
+        if (ip_header->TTL <= 1)
+        {
+            return FALSE;
+        }
+        ip_header->TTL--;
+    
+        // Incremental checksum update:
+        if (ip_header->Checksum >= 0xFFFE)
+        {
+            ip_header->Checksum -= 0xFFFE;
+        }
+        else
+        {
+            ip_header->Checksum += 1;
+        }
+    }
+    else
+    {
+        ipv6_header = (PWINDIVERT_IPV6HDR)packet;
+        if (ipv6_header->HopLimit <= 1)
+        {
+            return FALSE;
+        }
+        ipv6_header->HopLimit--;
+    }
+    return TRUE;
 }
 
 /*
@@ -810,92 +951,95 @@ static BOOL WinDivertValidateField(WINDIVERT_LAYER layer, UINT32 field)
 {
     static const UINT8 flags[] =
     {
-        LNMFSR,     /* WINDIVERT_FILTER_FIELD_ZERO */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_INBOUND */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_OUTBOUND */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IFIDX */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_SUBIFIDX */
-        LNMFS_,     /* WINDIVERT_FILTER_FIELD_IP */
-        LNMFS_,     /* WINDIVERT_FILTER_FIELD_IPV6 */
-        LNMFS_,     /* WINDIVERT_FILTER_FIELD_ICMP */
-        LNMFS_,     /* WINDIVERT_FILTER_FIELD_TCP */
-        LNMFS_,     /* WINDIVERT_FILTER_FIELD_UDP */
-        LNMFS_,     /* WINDIVERT_FILTER_FIELD_ICMPV6 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_HDRLENGTH */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_TOS */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_LENGTH */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_ID */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_DF */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_MF */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_FRAGOFF */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_TTL */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_PROTOCOL */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_CHECKSUM */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_SRCADDR */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IP_DSTADDR */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IPV6_LENGTH */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IPV6_SRCADDR */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IPV6_DSTADDR */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMP_TYPE */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMP_CODE */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMP_BODY */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMPV6_TYPE */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMPV6_CODE */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_ICMPV6_BODY */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_SRCPORT */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_DSTPORT */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_SEQNUM */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_ACKNUM */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_URG */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_ACK */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_PSH */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_RST */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_SYN */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_FIN */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_WINDOW */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_CHECKSUM */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_URGPTR */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_SRCPORT */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_DSTPORT */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_LENGTH */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_CHECKSUM */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_LOOPBACK */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_IMPOSTOR */
-        L__FSR,     /* WINDIVERT_FILTER_FIELD_PROCESSID */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_LOCALADDR */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_REMOTEADDR */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_LOCALPORT */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_REMOTEPORT */
-        LN_FS_,     /* WINDIVERT_FILTER_FIELD_PROTOCOL */
-        L__FS_,     /* WINDIVERT_FILTER_FIELD_ENDPOINTID */
-        L__FS_,     /* WINDIVERT_FILTER_FIELD_PARENTENDPOINTID */
-        L____R,     /* WINDIVERT_FILTER_FIELD_LAYER */
-        L____R,     /* WINDIVERT_FILTER_FIELD_PRIORITY */
-        LNMFSR,     /* WINDIVERT_FILTER_FIELD_EVENT */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_PACKET */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_PACKET16 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_PACKET32 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_PAYLOAD */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_PAYLOAD */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_LENGTH */
-        LNMFSR,     /* WINDIVERT_FILTER_FIELD_TIMESTAMP */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_RANDOM8 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_RANDOM16 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_RANDOM32 */
-        LNM___,     /* WINDIVERT_FILTER_FIELD_FRAGMENT */
+        LENMFSR,	/* WINDIVERT_FILTER_FIELD_ZERO */
+        LEN_FS_,    /* WINDIVERT_FILTER_FIELD_INBOUND */
+        LEN_FS_,    /* WINDIVERT_FILTER_FIELD_OUTBOUND */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IFIDX */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_SUBIFIDX */
+        LENMFS_,    /* WINDIVERT_FILTER_FIELD_IP */
+        LENMFS_,    /* WINDIVERT_FILTER_FIELD_IPV6 */
+        LENMFS_,    /* WINDIVERT_FILTER_FIELD_ICMP */
+        LENMFS_,    /* WINDIVERT_FILTER_FIELD_TCP */
+        LENMFS_,    /* WINDIVERT_FILTER_FIELD_UDP */
+        LENMFS_,    /* WINDIVERT_FILTER_FIELD_ICMPV6 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_HDRLENGTH */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_TOS */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_LENGTH */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_ID */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_DF */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_MF */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_FRAGOFF */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_TTL */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_PROTOCOL */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_CHECKSUM */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_SRCADDR */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IP_DSTADDR */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IPV6_TRAFFICCLASS */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IPV6_FLOWLABEL */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IPV6_LENGTH */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IPV6_NEXTHDR */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IPV6_HOPLIMIT */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IPV6_SRCADDR */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IPV6_DSTADDR */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMP_TYPE */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMP_CODE */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMP_CHECKSUM */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMP_BODY */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMPV6_TYPE */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMPV6_CODE */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMPV6_CHECKSUM */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_ICMPV6_BODY */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_SRCPORT */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_DSTPORT */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_SEQNUM */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_ACKNUM */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_URG */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_ACK */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_PSH */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_RST */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_SYN */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_FIN */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_WINDOW */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_CHECKSUM */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_URGPTR */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_PAYLOADLENGTH */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_SRCPORT */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_DSTPORT */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_LENGTH */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_CHECKSUM */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_PAYLOADLENGTH */
+        L_N_FS_,    /* WINDIVERT_FILTER_FIELD_LOOPBACK */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_IMPOSTOR */
+        L___FSR,    /* WINDIVERT_FILTER_FIELD_PROCESSID */
+        LEN_FS_,    /* WINDIVERT_FILTER_FIELD_LOCALADDR */
+        LEN_FS_,    /* WINDIVERT_FILTER_FIELD_REMOTEADDR */
+        LEN_FS_,    /* WINDIVERT_FILTER_FIELD_LOCALPORT */
+        LEN_FS_,    /* WINDIVERT_FILTER_FIELD_REMOTEPORT */
+        LEN_FS_,    /* WINDIVERT_FILTER_FIELD_PROTOCOL */
+        L___FS_,    /* WINDIVERT_FILTER_FIELD_ENDPOINTID */
+        L___FS_,    /* WINDIVERT_FILTER_FIELD_PARENTENDPOINTID */
+        L_____R,    /* WINDIVERT_FILTER_FIELD_LAYER */
+        L_____R,    /* WINDIVERT_FILTER_FIELD_PRIORITY */
+        LENMFSR,    /* WINDIVERT_FILTER_FIELD_EVENT */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_PACKET */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_PACKET16 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_PACKET32 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_PAYLOAD */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_PAYLOAD16 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_TCP_PAYLOAD32 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_PAYLOAD */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_PAYLOAD16 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_UDP_PAYLOAD32 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_LENGTH */
+        LENMFSR,    /* WINDIVERT_FILTER_FIELD_TIMESTAMP */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_RANDOM8 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_RANDOM16 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_RANDOM32 */
+        LENM___,    /* WINDIVERT_FILTER_FIELD_FRAGMENT */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ETH_DST_ADDR */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ETH_TYPE */
     };
 
     if (field > WINDIVERT_FILTER_FIELD_MAX)
@@ -972,10 +1116,12 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
     BOOL loopback,
     BOOL impostor,
     BOOL fragment,
+    const WINDIVERT_DATA_ETHERNET *ethernet_data,
     const WINDIVERT_DATA_NETWORK *network_data,
     const WINDIVERT_DATA_FLOW *flow_data,
     const WINDIVERT_DATA_SOCKET *socket_data,
     const WINDIVERT_DATA_REFLECT *reflect_data,
+    const WINDIVERT_ETHHDR *eth_header,
     const WINDIVERT_IPHDR *ip_header,
     const WINDIVERT_IPV6HDR *ipv6_header,
     const WINDIVERT_ICMPHDR *icmp_header,
@@ -994,6 +1140,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
     UINT16 data16;
     UINT32 data32;
     ULARGE_INTEGER val64;
+    const UINT8 *eth_addr;
 
     ip = 0;
     ttl = WINDIVERT_FILTER_MAXLEN+1;
@@ -1017,10 +1164,15 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 if (random64 == 0)
                 {
                     random64 = WinDivertHashPacket((UINT64)timestamp,
-                        ip_header, ipv6_header, icmp_header, icmpv6_header,
-                        tcp_header, udp_header);
+                        eth_header, ip_header, ipv6_header, icmp_header,
+                        icmpv6_header, tcp_header, udp_header);
                     random64 |= 0xFF00000000000000ull;  // Make non-zero.
                 }
+                break;
+            case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
+            case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
+            case WINDIVERT_FILTER_FIELD_ETH_TYPE:
+                result = (eth_header != NULL);
                 break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
             case WINDIVERT_FILTER_FIELD_IP_TOS:
@@ -1174,6 +1326,9 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_IFIDX:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
+                            val[0] = ethernet_data->IfIdx;
+                            break;
                         case WINDIVERT_LAYER_NETWORK:
                         case WINDIVERT_LAYER_NETWORK_FORWARD:
                             val[0] = network_data->IfIdx;
@@ -1183,7 +1338,17 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                     }
                     break;
                 case WINDIVERT_FILTER_FIELD_SUBIFIDX:
-                    val[0] = network_data->SubIfIdx;
+                    switch (layer)
+                    {
+                        case WINDIVERT_LAYER_ETHERNET:
+                            val[0] = ethernet_data->SubIfIdx;
+                            break;
+                        case WINDIVERT_LAYER_NETWORK:
+                            val[0] = network_data->SubIfIdx;
+                            break;
+                        default:
+                            return -1;
+                    }
                     break;
                 case WINDIVERT_FILTER_FIELD_LOOPBACK:
                     val[0] = (UINT32)loopback;
@@ -1200,6 +1365,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_ICMP:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                         case WINDIVERT_LAYER_NETWORK_FORWARD:
                             val[0] = (UINT32)(icmp_header != NULL);
@@ -1219,6 +1385,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_ICMPV6:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                         case WINDIVERT_LAYER_NETWORK_FORWARD:
                             val[0] = (UINT32)(icmpv6_header != NULL);
@@ -1238,6 +1405,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_TCP:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                         case WINDIVERT_LAYER_NETWORK_FORWARD:
                             val[0] = (UINT32)(tcp_header != NULL);
@@ -1257,6 +1425,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_UDP:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                         case WINDIVERT_LAYER_NETWORK_FORWARD:
                             val[0] = (UINT32)(udp_header != NULL);
@@ -1273,6 +1442,23 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                             return -1;
                     }
                     break;
+                 case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
+                 case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
+                     big = TRUE;
+                     eth_addr =
+                       (filter[ip].field == WINDIVERT_FILTER_FIELD_ETH_DST_ADDR?
+                         eth_header->DstAddr: eth_header->SrcAddr);
+                     val[0] = ((UINT32)eth_addr[2] << 24) |
+                              ((UINT32)eth_addr[3] << 16) |
+                              ((UINT32)eth_addr[4] << 8) |
+                              ((UINT32)eth_addr[5]);
+                     val[1] = ((UINT32)eth_addr[0] << 8) |
+                              ((UINT32)eth_addr[1]);
+                     val[2] = val[3] = 0;
+                     break;
+                case WINDIVERT_FILTER_FIELD_ETH_TYPE:
+                     val[0] = (UINT32)ntohs(eth_header->Type);
+                     break;
                 case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
                     val[0] = (UINT32)ip_header->HdrLength;
                     break;
@@ -1435,6 +1621,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                     big = TRUE;
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                             if (ip_header != NULL)
                             {
@@ -1483,6 +1670,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                     big = TRUE;
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                             if (ip_header != NULL)
                             {
@@ -1530,6 +1718,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_LOCALPORT:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                             if (tcp_header != NULL)
                             {
@@ -1571,6 +1760,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_REMOTEPORT:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                             if (tcp_header != NULL)
                             {
@@ -1612,6 +1802,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_PROTOCOL:
                     switch (layer)
                     {
+                        case WINDIVERT_LAYER_ETHERNET:
                         case WINDIVERT_LAYER_NETWORK:
                             val[0] = (UINT32)protocol;
                             break;

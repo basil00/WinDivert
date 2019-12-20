@@ -201,9 +201,9 @@ int __cdecl main(int argc, char **argv)
         }
        
         // Print info about the matching packet.
-        WinDivertHelperParsePacket(packet, packet_len, &ip_header, &ipv6_header,
-            NULL, &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
-            &payload_len, NULL, NULL);
+        WinDivertHelperParsePacket(packet, packet_len, recv_addr.Layer, NULL,
+            &ip_header, &ipv6_header, NULL, &icmp_header, &icmpv6_header,
+            &tcp_header, &udp_header, NULL, &payload_len);
         if (ip_header == NULL && ipv6_header == NULL)
         {
             continue;
@@ -290,7 +290,7 @@ int __cdecl main(int argc, char **argv)
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)reset, sizeof(TCPPACKET),
-                    &send_addr, 0);
+                    WINDIVERT_LAYER_NETWORK, &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)reset, sizeof(TCPPACKET),
                         NULL, &send_addr))
                 {
@@ -317,7 +317,8 @@ int __cdecl main(int argc, char **argv)
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)resetv6,
-                    sizeof(TCPV6PACKET), &send_addr, 0);
+                    sizeof(TCPV6PACKET), WINDIVERT_LAYER_NETWORK, &send_addr,
+                    0);
                 if (!WinDivertSend(handle, (PVOID)resetv6, sizeof(TCPV6PACKET),
                         NULL, &send_addr))
                 {
@@ -343,7 +344,7 @@ int __cdecl main(int argc, char **argv)
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)dnr, icmp_length,
-                    &send_addr, 0);
+                    WINDIVERT_LAYER_NETWORK, &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnr, icmp_length, NULL,
                         &send_addr))
                 {
@@ -366,7 +367,7 @@ int __cdecl main(int argc, char **argv)
                 memcpy(&send_addr, &recv_addr, sizeof(send_addr));
                 send_addr.Outbound = !recv_addr.Outbound;
                 WinDivertHelperCalcChecksums((PVOID)dnrv6, icmpv6_length,
-                    &send_addr, 0);
+                    WINDIVERT_LAYER_NETWORK, &send_addr, 0);
                 if (!WinDivertSend(handle, (PVOID)dnrv6, icmpv6_length,
                         NULL, &send_addr))
                 {

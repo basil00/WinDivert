@@ -37,7 +37,7 @@
  * This is a simple traffic monitor.  It uses a WinDivert handle in SNIFF mode.
  * The SNIFF mode copies packets and does not block the original.
  *
- * usage: netdump.exe windivert-filter [priority]
+ * usage: netdump.exe windivert-filter [priority] [layer]
  *
  */
 
@@ -60,17 +60,21 @@
 int __cdecl main(int argc, char **argv)
 {
     HANDLE handle, console;
+    DWORD err;
     UINT i;
+    WINDIVERT_LAYER layer = WINDIVERT_LAYER_NETWORK;
     INT16 priority = 0;
     unsigned char packet[MAXBUF];
     UINT packet_len;
     WINDIVERT_ADDRESS addr;
+    PWINDIVERT_ETHHDR eth_header;
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_IPV6HDR ipv6_header;
     PWINDIVERT_ICMPHDR icmp_header;
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
+    UINT8 src_mac[6], dst_mac[6];
     UINT32 src_addr[4], dst_addr[4];
     UINT64 hash;
     char src_str[INET6_ADDRSTRLEN+1], dst_str[INET6_ADDRSTRLEN+1];
@@ -81,19 +85,44 @@ int __cdecl main(int argc, char **argv)
     // Check arguments.
     switch (argc)
     {
-        case 2:
-            break;
+        case 4:
+            if (strcmp(argv[3], "network") == 0)
+            {
+                layer = WINDIVERT_LAYER_NETWORK;
+            }
+            else if (strcmp(argv[3], "forward") == 0)
+            {
+                layer = WINDIVERT_LAYER_NETWORK_FORWARD;
+            }
+            else if (strcmp(argv[3], "ethernet") == 0)
+            {
+                layer = WINDIVERT_LAYER_ETHERNET;
+            }
+            else
+            {
+                goto usage;
+            }
+            // Fallthrough
         case 3:
             priority = (INT16)atoi(argv[2]);
+            // Fallthrough
+        case 2:
             break;
         default:
-            fprintf(stderr, "usage: %s windivert-filter [priority]\n",
+        usage:
+            fprintf(stderr, "usage: %s windivert-filter [priority] [layer]\n\n",
                 argv[0]);
+            fprintf(stderr, "where:\n");
+            fprintf(stderr, "\t- priority is an integer between "
+                "-30000..30000 (default = %d)\n", (int)priority);
+            fprintf(stderr, "\t- layer is one of ethernet/network/forward "
+                "(default = network)\n\n");
             fprintf(stderr, "examples:\n");
             fprintf(stderr, "\t%s true\n", argv[0]);
-            fprintf(stderr, "\t%s \"outbound and tcp.DstPort == 80\" 1000\n",
+            fprintf(stderr, "\t%s \"outbound and tcp.DstPort == 80\" 1000 "
+                "network\n", argv[0]);
+            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -400 ethernet\n",
                 argv[0]);
-            fprintf(stderr, "\t%s \"inbound and tcp.Syn\" -400\n", argv[0]);
             exit(EXIT_FAILURE);
     }
 
@@ -101,11 +130,11 @@ int __cdecl main(int argc, char **argv)
     console = GetStdHandle(STD_OUTPUT_HANDLE);
 
     // Divert traffic matching the filter:
-    handle = WinDivertOpen(argv[1], WINDIVERT_LAYER_NETWORK, priority,
-        WINDIVERT_FLAG_SNIFF | WINDIVERT_FLAG_FRAGMENTS);
+    handle = WinDivertOpen(argv[1], layer, priority, WINDIVERT_FLAG_SNIFF);
     if (handle == INVALID_HANDLE_VALUE)
     {
-        if (GetLastError() == ERROR_INVALID_PARAMETER &&
+        err = GetLastError();
+        if (err == ERROR_INVALID_PARAMETER &&
             !WinDivertHelperCompileFilter(argv[1], WINDIVERT_LAYER_NETWORK,
                 NULL, 0, &err_str, NULL))
         {
@@ -113,7 +142,7 @@ int __cdecl main(int argc, char **argv)
             exit(EXIT_FAILURE);
         }
         fprintf(stderr, "error: failed to open the WinDivert device (%d)\n",
-            GetLastError());
+            err);
         exit(EXIT_FAILURE);
     }
 
@@ -156,24 +185,39 @@ int __cdecl main(int argc, char **argv)
         }
 
         // Print info about the matching packet.
-        WinDivertHelperParsePacket(packet, packet_len, &ip_header, &ipv6_header,
-            NULL, &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
-            NULL, NULL, NULL);
-        if (ip_header == NULL && ipv6_header == NULL)
-        {
-            fprintf(stderr, "warning: junk packet\n");
-        }
+        WinDivertHelperParsePacket(packet, packet_len, addr.Layer,
+            &eth_header, &ip_header, &ipv6_header, NULL, &icmp_header,
+            &icmpv6_header, &tcp_header, &udp_header, NULL, NULL);
 
         // Dump packet info: 
         putchar('\n');
         SetConsoleTextAttribute(console, FOREGROUND_RED);
         time_passed = (double)(addr.Timestamp - base.QuadPart) /
             (double)freq.QuadPart;
-        hash = WinDivertHelperHashPacket(packet, packet_len, 0);
-        printf("Packet [Timestamp=%.8g, Direction=%s IfIdx=%u SubIfIdx=%u "
-            "Loopback=%u Hash=0x%.16llX]\n",
-            time_passed, (addr.Outbound?  "outbound": "inbound"),
-            addr.Network.IfIdx, addr.Network.SubIfIdx, addr.Loopback, hash);
+        hash = WinDivertHelperHashPacket(packet, packet_len, addr.Layer, 0);
+        if (eth_header != NULL)
+        {
+            printf("Packet [Timestamp=%.8g Length=%u Direction=%s IfIdx=%u "
+                "SubIfIdx=%u Hash=0x%.16llX]\n",
+                time_passed, packet_len, (addr.Outbound? "outbound": "inbound"),
+                addr.Ethernet.IfIdx, addr.Ethernet.SubIfIdx, hash);
+            WinDivertHelperNtohMACAddress(eth_header->SrcAddr, src_mac);
+            WinDivertHelperNtohMACAddress(eth_header->DstAddr, dst_mac);
+            WinDivertHelperFormatMACAddress(src_mac, src_str, sizeof(src_str));
+            WinDivertHelperFormatMACAddress(dst_mac, dst_str, sizeof(dst_str));
+            SetConsoleTextAttribute(console,
+                FOREGROUND_GREEN | FOREGROUND_BLUE);
+            printf("Ethernet [SrcAddr=%s DstAddr=%s Type=0x%.4X]\n",
+                src_str, dst_str, ntohs(eth_header->Type));
+        }
+        else
+        {
+            printf("Packet [Timestamp=%.8g Length=%u Direction=%s IfIdx=%u "
+                "SubIfIdx=%u Loopback=%u Hash=0x%.16llX]\n",
+                time_passed, packet_len, (addr.Outbound? "outbound": "inbound"),
+                addr.Network.IfIdx, addr.Network.SubIfIdx, addr.Loopback,
+                hash);
+        }
         if (ip_header != NULL)
         {
             WinDivertHelperFormatIPv4Address(ntohl(ip_header->SrcAddr),

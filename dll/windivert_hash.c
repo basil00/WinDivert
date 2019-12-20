@@ -105,8 +105,8 @@ static UINT64 WinDivertXXH64Avalanche(UINT64 h64)
  * WinDivert packet hash function.
  */
 static UINT64 WinDivertHashPacket(UINT64 seed,
-    const WINDIVERT_IPHDR *ip_header, const WINDIVERT_IPV6HDR *ipv6_header,
-    const WINDIVERT_ICMPHDR *icmp_header,
+    const WINDIVERT_ETHHDR *eth_header, const WINDIVERT_IPHDR *ip_header,
+    const WINDIVERT_IPV6HDR *ipv6_header, const WINDIVERT_ICMPHDR *icmp_header,
     const WINDIVERT_ICMPV6HDR *icmpv6_header,
     const WINDIVERT_TCPHDR *tcp_header, const WINDIVERT_UDPHDR *udp_header)
 {
