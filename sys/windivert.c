@@ -962,6 +962,8 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         L"\\Device\\" WINDIVERT_DEVICE_NAME);
     DECLARE_CONST_UNICODE_STRING(dos_device_name,
         L"\\??\\" WINDIVERT_DEVICE_NAME);
+	DECLARE_CONST_UNICODE_STRING(sddl,
+        L"D:P(A;;GA;;;WD)");
 
     DEBUG("LOAD: loading WinDivert driver");
 
@@ -996,8 +998,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         DEBUG_ERROR("failed to create WDF driver", status);
         goto driver_entry_exit;
     }
-    device_init = WdfControlDeviceInitAllocate(driver,
-        &SDDL_DEVOBJ_SYS_ALL_ADM_ALL);
+    device_init = WdfControlDeviceInitAllocate(driver, &sddl);
     if (device_init == NULL)
     {
         status = STATUS_INSUFFICIENT_RESOURCES;
