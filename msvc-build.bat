@@ -46,6 +46,13 @@ msbuild sys\windivert.vcxproj ^
     /p:OutDir=..\install\MSVC\amd64\ ^
     /p:AssemblyName=WinDivert64
 
+msbuild sys\windivert.vcxproj ^
+    /p:Configuration=Release ^
+    /p:platform=ARM64 ^
+    /p:SignMode=Off ^
+    /p:OutDir=..\install\MSVC\ARM64\ ^
+    /p:AssemblyName=WinDivert64
+
 msbuild dll\windivert.vcxproj ^
     /p:Configuration=Release ^
     /p:platform=Win32 ^
@@ -58,6 +65,12 @@ msbuild dll\windivert.vcxproj ^
     /p:OutDir=..\install\MSVC\amd64\
 move dll\WinDivert.lib install\MSVC\amd64\.
 
+msbuild dll\windivert.vcxproj ^
+    /p:Configuration=Release ^
+    /p:platform=ARM64 ^
+    /p:OutDir=..\install\MSVC\ARM64\
+move dll\WinDivert.lib install\MSVC\ARM64\.
+
 msbuild examples\flowtrack\flowtrack.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=Win32 ^
@@ -67,6 +80,11 @@ msbuild examples\flowtrack\flowtrack.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
+
+msbuild examples\flowtrack\flowtrack.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
 
 msbuild examples\netdump\netdump.vcxproj ^
     /p:Configuration=Release ^
@@ -78,6 +96,11 @@ msbuild examples\netdump\netdump.vcxproj ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
 
+msbuild examples\netdump\netdump.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
+
 msbuild examples\netfilter\netfilter.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=Win32 ^
@@ -87,6 +110,11 @@ msbuild examples\netfilter\netfilter.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
+
+msbuild examples\netfilter\netfilter.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
 
 msbuild examples\passthru\passthru.vcxproj ^
     /p:Configuration=Release ^
@@ -98,6 +126,11 @@ msbuild examples\passthru\passthru.vcxproj ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
 
+msbuild examples\passthru\passthru.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
+
 msbuild examples\socketdump\socketdump.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=Win32 ^
@@ -107,6 +140,11 @@ msbuild examples\socketdump\socketdump.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
+
+msbuild examples\socketdump\socketdump.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
 
 msbuild examples\streamdump\streamdump.vcxproj ^
     /p:Configuration=Release ^
@@ -118,6 +156,11 @@ msbuild examples\streamdump\streamdump.vcxproj ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
 
+msbuild examples\streamdump\streamdump.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
+
 msbuild examples\webfilter\webfilter.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=Win32 ^
@@ -128,6 +171,11 @@ msbuild examples\webfilter\webfilter.vcxproj ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
 
+msbuild examples\webfilter\webfilter.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
+
 msbuild examples\windivertctl\windivertctl.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=Win32 ^
@@ -137,6 +185,11 @@ msbuild examples\windivertctl\windivertctl.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=x64 ^
     /p:OutDir=..\..\install\MSVC\amd64\
+
+msbuild examples\windivertctl\windivertctl.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\..\install\MSVC\arm64\
 
 msbuild test\test.vcxproj ^
     /p:Configuration=Release ^
@@ -147,4 +200,9 @@ msbuild test\test.vcxproj ^
     /p:Configuration=Release ^
     /p:Platform=x64 ^
     /p:OutDir=..\install\MSVC\amd64\
+
+msbuild test\test.vcxproj ^
+    /p:Configuration=Release ^
+    /p:Platform=arm64 ^
+    /p:OutDir=..\install\MSVC\arm64\
 

@@ -35,39 +35,45 @@
     
 -->
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
- <ItemGroup Label="ProjectConfigurations">
-  <ProjectConfiguration Include="Release|Win32">
-   <Configuration>Release</Configuration>
-   <Platform>Win32</Platform>
-  </ProjectConfiguration>
-  <ProjectConfiguration Include="Release|x64">
-   <Configuration>Release</Configuration>
-   <Platform>x64</Platform>
-  </ProjectConfiguration>
- </ItemGroup>
- <ItemGroup>
-  <ClCompile Include="passthru.c">
-   <TreatWarningAsError>false</TreatWarningAsError>
-   <Optimization>MinSpace</Optimization>
-   <BasicRuntimeChecks>Default</BasicRuntimeChecks>
-   <AdditionalIncludeDirectories>..\..\include</AdditionalIncludeDirectories>
-  </ClCompile>
- </ItemGroup>
- <PropertyGroup Label="Globals">
-  <RootNamespace>passthru</RootNamespace>
-  <ProjectName>passthru</ProjectName>
- </PropertyGroup>
- <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
- <PropertyGroup Label="Configuration">
-  <PlatformToolset>v140</PlatformToolset>
-  <ConfigurationType>Application</ConfigurationType>
- </PropertyGroup>
- <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
- <ItemDefinitionGroup>
-  <Link>
-   <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\install\MSVC\i386\WinDivert.lib;%(AdditionalDependencies)</AdditionalDependencies>
-   <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\install\MSVC\amd64\WinDivert.lib;%(AdditionalDependencies)</AdditionalDependencies>
-  </Link>
- </ItemDefinitionGroup>
- <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|ARM64">
+      <Configuration>Release</Configuration>
+      <Platform>ARM64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="passthru.c">
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <Optimization>MinSpace</Optimization>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <AdditionalIncludeDirectories>..\..\include</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <RootNamespace>passthru</RootNamespace>
+    <ProjectName>passthru</ProjectName>
+    <ProjectGuid>{50B17478-69D8-4C71-A24D-651F83CE6E07}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <PlatformToolset>v142</PlatformToolset>
+    <ConfigurationType>Application</ConfigurationType>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ItemDefinitionGroup>
+    <Link>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">..\..\install\MSVC\i386\WinDivert.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|x64'">..\..\install\MSVC\amd64\WinDivert.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies Condition="'$(Configuration)|$(Platform)'=='Release|ARM64'">..\..\install\MSVC\arm64\WinDivert.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
