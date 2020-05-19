@@ -31,6 +31,9 @@
  * with this program; if not, write to the Free Software Foundation, Inc., 51
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
+#ifdef _ARM64_
+#define NDIS630
+#endif
 
 #include <ntifs.h>
 #include <ntddk.h>
