@@ -504,10 +504,10 @@ static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
  * WinDivert provider GUIDs
  */
 DEFINE_GUID(WINDIVERT_PROVIDER_GUID,
-    0x397b8b8f, 0xb710, 0x4f4e,
-    0xa8, 0x58, 0x38, 0x20, 0x40, 0xb7, 0x93, 0x2d);
-#define WINDIVERT_PROVIDER_NAME L"WinDivert"
-#define WINDIVERT_PROVIDER_DESC L"WinDivert driver"
+    0x450EC398, 0x1EAF, 0x49F5,
+    0x85, 0xE0, 0x22, 0x8F, 0x0D, 0x29, 0x39, 0x21);
+#define WINDIVERT_PROVIDER_NAME WINDIVERT_DEVICE_NAME
+#define WINDIVERT_PROVIDER_DESC WINDIVERT_DEVICE_NAME L" provider"
 
 /*
  * WinDivert sublayer GUIDs
@@ -1424,10 +1424,9 @@ static NTSTATUS windivert_install_provider()
     NTSTATUS status;
 
     RtlZeroMemory(&provider, sizeof(provider));
-    provider.providerKey = WINDIVERT_PROVIDER_GUID;
-    provider.displayData.name = WINDIVERT_PROVIDER_NAME;
+    provider.providerKey             = WINDIVERT_PROVIDER_GUID;
+    provider.displayData.name        = WINDIVERT_PROVIDER_NAME;
     provider.displayData.description = WINDIVERT_PROVIDER_DESC;
-    provider.flags = FWPM_PROVIDER_FLAG_PERSISTENT;
 
     // We don't care about the install result as this provider
     // is only for passing HLK test.
