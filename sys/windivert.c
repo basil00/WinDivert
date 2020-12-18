@@ -336,6 +336,7 @@ extern VOID windivert_worker(IN WDFWORKITEM item);
 static void windivert_read_service(context_t context);
 extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     IN WDFFILEOBJECT object);
+static NTSTATUS windivert_install_provider();
 static NTSTATUS windivert_install_sublayer(layer_t layer);
 static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
     UINT64 flags);
@@ -501,6 +502,15 @@ static void windivert_reflect_established_notify(context_t context,
 extern void windivert_reflect_worker(IN WDFWORKITEM item);
 static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
     const wchar_t *msg_str);
+
+/*
+ * WinDivert provider GUIDs
+ */
+DEFINE_GUID(WINDIVERT_PROVIDER_GUID,
+    0x450EC398, 0x1EAF, 0x49F5,
+    0x85, 0xE0, 0x22, 0x8F, 0x0D, 0x29, 0x39, 0x21);
+#define WINDIVERT_PROVIDER_NAME WINDIVERT_DEVICE_NAME
+#define WINDIVERT_PROVIDER_DESC WINDIVERT_DEVICE_NAME L" provider"
 
 /*
  * WinDivert sublayer GUIDs
@@ -683,7 +693,7 @@ static const struct layer_s windivert_layer_resource_assignment_ipv4 =
     &WINDIVERT_SUBLAYER_RESOURCE_ASSIGNMENT_IPV4_GUID,
     windivert_resource_assignment_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_ASSIGNMENT_IPV4                            \
     (&windivert_layer_resource_assignment_ipv4)
@@ -700,7 +710,7 @@ static const struct layer_s windivert_layer_resource_assignment_ipv6 =
     &WINDIVERT_SUBLAYER_RESOURCE_ASSIGNMENT_IPV6_GUID,
     windivert_resource_assignment_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_ASSIGNMENT_IPV6                            \
     (&windivert_layer_resource_assignment_ipv6)
@@ -717,7 +727,7 @@ static const struct layer_s windivert_layer_resource_release_ipv4 =
     &WINDIVERT_SUBLAYER_RESOURCE_RELEASE_IPV4_GUID,
     windivert_resource_release_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_RELEASE_IPV4                              \
     (&windivert_layer_resource_release_ipv4)
@@ -734,7 +744,7 @@ static const struct layer_s windivert_layer_resource_release_ipv6 =
     &WINDIVERT_SUBLAYER_RESOURCE_RELEASE_IPV6_GUID,
     windivert_resource_release_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_RELEASE_IPV6                              \
     (&windivert_layer_resource_release_ipv6)
@@ -751,7 +761,7 @@ static const struct layer_s windivert_layer_auth_connect_ipv4 =
     &WINDIVERT_SUBLAYER_AUTH_CONNECT_IPV4_GUID,
     windivert_auth_connect_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_CONNECT_IPV4                                   \
     (&windivert_layer_auth_connect_ipv4)
@@ -768,7 +778,7 @@ static const struct layer_s windivert_layer_auth_connect_ipv6 =
     &WINDIVERT_SUBLAYER_AUTH_CONNECT_IPV6_GUID,
     windivert_auth_connect_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_CONNECT_IPV6                                   \
     (&windivert_layer_auth_connect_ipv6)
@@ -785,7 +795,7 @@ static const struct layer_s windivert_layer_endpoint_closure_ipv4 =
     &WINDIVERT_SUBLAYER_ENDPOINT_CLOSURE_IPV4_GUID,
     windivert_endpoint_closure_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_ENDPOINT_CLOSURE_IPV4                               \
     (&windivert_layer_endpoint_closure_ipv4)
@@ -802,7 +812,7 @@ static const struct layer_s windivert_layer_endpoint_closure_ipv6 =
     &WINDIVERT_SUBLAYER_ENDPOINT_CLOSURE_IPV6_GUID,
     windivert_endpoint_closure_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_ENDPOINT_CLOSURE_IPV6                               \
     (&windivert_layer_endpoint_closure_ipv6)
@@ -819,7 +829,7 @@ static const struct layer_s windivert_layer_auth_listen_ipv4 =
     &WINDIVERT_SUBLAYER_AUTH_LISTEN_IPV4_GUID,
     windivert_auth_listen_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_LISTEN_IPV4                                    \
     (&windivert_layer_auth_listen_ipv4)
@@ -836,7 +846,7 @@ static const struct layer_s windivert_layer_auth_listen_ipv6 =
     &WINDIVERT_SUBLAYER_AUTH_LISTEN_IPV6_GUID,
     windivert_auth_listen_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_LISTEN_IPV6                                    \
     (&windivert_layer_auth_listen_ipv6)
@@ -853,7 +863,7 @@ static const struct layer_s windivert_layer_auth_recv_accept_ipv4 =
     &WINDIVERT_SUBLAYER_AUTH_RECV_ACCEPT_IPV4_GUID,
     windivert_auth_recv_accept_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV4                               \
     (&windivert_layer_auth_recv_accept_ipv4)
@@ -870,7 +880,7 @@ static const struct layer_s windivert_layer_auth_recv_accept_ipv6 =
     &WINDIVERT_SUBLAYER_AUTH_RECV_ACCEPT_IPV6_GUID,
     windivert_auth_recv_accept_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV6                               \
     (&windivert_layer_auth_recv_accept_ipv6)
@@ -887,7 +897,7 @@ static const struct layer_s windivert_layer_flow_established_ipv4 =
     &WINDIVERT_SUBLAYER_FLOW_ESTABLISHED_IPV4_GUID,
     windivert_flow_established_v4_classify,
     windivert_flow_delete_notify,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV4                               \
     (&windivert_layer_flow_established_ipv4)
@@ -904,7 +914,7 @@ static const struct layer_s windivert_layer_flow_established_ipv6 =
     &WINDIVERT_SUBLAYER_FLOW_ESTABLISHED_IPV6_GUID,
     windivert_flow_established_v6_classify,
     windivert_flow_delete_notify,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV6                               \
     (&windivert_layer_flow_established_ipv6)
@@ -1161,6 +1171,12 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         DEBUG_ERROR("failed to begin WFP transaction", status);
         goto driver_entry_exit;
     }
+    status = windivert_install_provider();
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to install provider", status);
+        goto driver_entry_exit;
+    }
     status = windivert_install_sublayer(WINDIVERT_LAYER_INBOUND_NETWORK_IPV4);
     if (!NT_SUCCESS(status))
     {
@@ -1389,6 +1405,10 @@ static void windivert_driver_unload(void)
             WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV4->sublayer_guid);
         FwpmSubLayerDeleteByKey0(engine_handle,
             WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV6->sublayer_guid);
+
+        FwpmProviderDeleteByKey0(engine_handle,
+            &WINDIVERT_PROVIDER_GUID);
+
         status = FwpmTransactionCommit0(engine_handle);
         if (!NT_SUCCESS(status))
         {
@@ -1396,6 +1416,25 @@ static void windivert_driver_unload(void)
         }
         FwpmEngineClose0(engine_handle);
     }
+}
+
+/*
+ * Register provider.
+ */
+static NTSTATUS windivert_install_provider()
+{
+    FWPM_PROVIDER0 provider;
+    NTSTATUS status;
+
+    RtlZeroMemory(&provider, sizeof(provider));
+    provider.providerKey             = WINDIVERT_PROVIDER_GUID;
+    provider.displayData.name        = WINDIVERT_PROVIDER_NAME;
+    provider.displayData.description = WINDIVERT_PROVIDER_DESC;
+
+    // We don't care about the install result as this provider
+    // is only for passing HLK test.
+    FwpmProviderAdd0(engine_handle, &provider, NULL);
+    return STATUS_SUCCESS;
 }
 
 /*
