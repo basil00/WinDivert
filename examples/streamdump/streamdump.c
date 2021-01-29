@@ -54,7 +54,7 @@
 #define MAXBUF          WINDIVERT_MTU_MAX
 #define PROXY_PORT      34010
 #define ALT_PORT        43010
-#define MAX_LINE        65
+#define MAX_LINE        5000 //65
 
 /*
  * Proxy server configuration.
@@ -184,6 +184,21 @@ int __cdecl main(int argc, char **argv)
     }
     CloseHandle(thread);
 
+    config = (PPROXY_CONFIG)malloc(sizeof(PROXY_CONFIG));
+    if (config == NULL)
+    {
+        error("failed to allocate memory");
+    }
+    config->proxy_port = alt_port;
+    config->alt_port = proxy_port;
+    thread = CreateThread(NULL, 1, (LPTHREAD_START_ROUTINE)proxy,
+        (LPVOID)config, 0, NULL);
+    if (thread == NULL)
+    {
+        error("failed to create thread (%d)", GetLastError());
+    }
+    CloseHandle(thread);
+
     // Main loop:
     while (TRUE)
     {
@@ -226,6 +241,29 @@ int __cdecl main(int argc, char **argv)
                 // Redirect: ALT ---> PORT
                 tcp_header->DstPort = htons(port);
             }
+            else if (tcp_header->SrcPort == htons(port))
+            {
+                // Reflect: PORT ---> PROXY
+                UINT32 dst_addr = ip_header->DstAddr;
+                tcp_header->SrcPort = htons(proxy_port);
+                ip_header->DstAddr = ip_header->SrcAddr;
+                ip_header->SrcAddr = dst_addr;
+                addr.Outbound = FALSE;
+            }
+            else if (tcp_header->DstPort == htons(proxy_port))
+            {
+                // Reflect: PROXY ---> PORT
+                UINT32 dst_addr = ip_header->DstAddr;
+                tcp_header->DstPort = htons(port);
+                ip_header->DstAddr = ip_header->SrcAddr;
+                ip_header->SrcAddr = dst_addr;
+                addr.Outbound = FALSE;
+            }
+            else if (tcp_header->SrcPort == htons(alt_port))
+            {
+                // Redirect: ALT ---> PORT
+                tcp_header->SrcPort = htons(port);
+            }
         }
         else
         {
@@ -233,6 +271,11 @@ int __cdecl main(int argc, char **argv)
             {
                 // Redirect: PORT ---> ALT
                 tcp_header->SrcPort = htons(alt_port);
+            }
+            else if (tcp_header->DstPort == htons(port))
+            {
+                // Redirect: PORT ---> ALT
+                tcp_header->DstPort = htons(alt_port);
             }
         }
 
@@ -432,10 +475,19 @@ static DWORD proxy_transfer_handler(LPVOID arg)
         WaitForSingleObject(lock, INFINITE);
         printf("[%.4d] ", len);
         SetConsoleTextAttribute(console,
-            (inbound? FOREGROUND_RED: FOREGROUND_GREEN));
+            (inbound? FOREGROUND_RED | FOREGROUND_GREEN : FOREGROUND_GREEN));
         for (i = 0; i < len && i < MAX_LINE; i++)
         {
-            putchar((isprint(buf[i])? buf[i]: '.'));
+            if (isprint(buf[i])) {
+                putchar(buf[i]);
+            }
+            else if (buf[i] == '\n') {
+                putchar('.');
+                putchar('\r');
+                putchar('\n');
+            }
+            else
+                putchar('.');
         }
         SetConsoleTextAttribute(console,
             FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
