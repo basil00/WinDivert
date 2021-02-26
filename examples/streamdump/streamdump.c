@@ -48,6 +48,16 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <crtdbg.h>
+#ifdef _DEBUG
+#ifdef _UNICODE
+#define _RPT(...)  _RPT_BASE_W(_CRT_WARN, NULL, 0, NULL,  __VA_ARGS__)
+#else
+#define _RPT(...)   _RPT_BASE(_CRT_WARN, NULL, 0, NULL,  __VA_ARGS__)
+#endif
+#else
+#define _RPT(...)
+#endif
 
 #include "windivert.h"
 
@@ -115,7 +125,7 @@ static void message(const char *msg, ...)
 /*
  * Entry.
  */
-int __cdecl main(int argc, char **argv)
+int __cdecl main(int argc, char** argv)
 {
     HANDLE handle, thread;
     UINT16 port, proxy_port, alt_port;
@@ -142,8 +152,8 @@ int __cdecl main(int argc, char **argv)
         fprintf(stderr, "error: invalid port number (%d)\n", port);
         exit(EXIT_FAILURE);
     }
-    proxy_port = (port == PROXY_PORT? PROXY_PORT+1: PROXY_PORT);
-    alt_port = (port == ALT_PORT? ALT_PORT+1: ALT_PORT);
+    proxy_port = (port == PROXY_PORT ? PROXY_PORT + 1 : PROXY_PORT);
+    alt_port = (port == ALT_PORT ? ALT_PORT + 1 : ALT_PORT);
     lock = CreateMutex(NULL, FALSE, NULL);
     if (lock == NULL)
     {
@@ -156,7 +166,7 @@ int __cdecl main(int argc, char **argv)
     r = snprintf(filter, sizeof(filter),
         "tcp and "
         "(tcp.DstPort == %d or tcp.DstPort == %d or tcp.DstPort == %d or "
-         "tcp.SrcPort == %d or tcp.SrcPort == %d or tcp.SrcPort == %d)",
+        "tcp.SrcPort == %d or tcp.SrcPort == %d or tcp.SrcPort == %d)",
         port, proxy_port, alt_port, port, proxy_port, alt_port);
     if (r < 0 || r >= sizeof(filter))
     {
@@ -210,14 +220,50 @@ int __cdecl main(int argc, char **argv)
 
         WinDivertHelperParsePacket(packet, packet_len, &ip_header, NULL, NULL,
             NULL, NULL, &tcp_header, NULL, NULL, NULL, NULL, NULL);
-        if (ip_header == NULL || tcp_header == NULL)
+        if ( tcp_header == NULL)
         {
             warning("failed to parse packet (%d)", GetLastError());
             continue;
         }
 
-        if (addr.Outbound)
-        {
+        _RPT("%x %x \n", tcp_header->SrcPort, tcp_header->DstPort);
+        if (ip_header == NULL || ip_header->SrcAddr == ip_header->DstAddr) {
+            if (tcp_header->DstPort == htons(port))
+            {
+                // Reflect: PORT ---> PROXY
+                //UINT32 dst_addr = ip_header->DstAddr;
+                tcp_header->DstPort = htons(proxy_port);
+                //p_header->DstAddr = ip_header->SrcAddr;
+                //ip_header->SrcAddr = dst_addr;
+                //addr.Outbound = FALSE;
+            }
+            else if (tcp_header->SrcPort == htons(proxy_port))
+            {
+                // Reflect: PROXY ---> PORT
+                //UINT32 dst_addr = ip_header->DstAddr;
+                tcp_header->SrcPort = htons(port);
+                //ip_header->DstAddr = ip_header->SrcAddr;
+                //ip_header->SrcAddr = dst_addr;
+                //addr.Outbound = FALSE;
+            }
+            else if (tcp_header->DstPort == htons(alt_port))
+            {
+                // Redirect: ALT ---> PORT
+                tcp_header->DstPort = htons(port);
+            }
+            else if (tcp_header->SrcPort == htons(port))
+            {
+                // Redirect: PORT ---> ALT
+                tcp_header->SrcPort = htons(alt_port);
+            }
+            //else if (tcp_header->DstPort == htons(proxy_port))
+            //    ;
+            //else {
+            //    //_ASSERT(FALSE);
+            //}
+            //continue;
+        } 
+        else if (addr.Outbound)  {
             if (tcp_header->DstPort == htons(port))
             {
                 // Reflect: PORT ---> PROXY
@@ -349,6 +395,7 @@ static DWORD proxy(LPVOID arg)
             continue;
         }
 
+        _RPT("+++++++++++++accept\n");
         // Spawn proxy connection handler thread.
         config = (PPROXY_CONNECTION_CONFIG)
             malloc(sizeof(PROXY_CONNECTION_CONFIG));
