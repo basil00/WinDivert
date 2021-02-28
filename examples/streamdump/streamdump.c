@@ -233,7 +233,7 @@ int __cdecl main(int argc, char** argv)
                 // Reflect: PORT ---> PROXY
                 //UINT32 dst_addr = ip_header->DstAddr;
                 tcp_header->DstPort = htons(proxy_port);
-                //p_header->DstAddr = ip_header->SrcAddr;
+                //ip_header->DstAddr = ip_header->SrcAddr;
                 //ip_header->SrcAddr = dst_addr;
                 //addr.Outbound = FALSE;
             }
@@ -256,12 +256,6 @@ int __cdecl main(int argc, char** argv)
                 // Redirect: PORT ---> ALT
                 tcp_header->SrcPort = htons(alt_port);
             }
-            //else if (tcp_header->DstPort == htons(proxy_port))
-            //    ;
-            //else {
-            //    //_ASSERT(FALSE);
-            //}
-            //continue;
         } 
         else if (addr.Outbound)  {
             if (tcp_header->DstPort == htons(port))
