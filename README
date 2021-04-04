@@ -1,6 +1,16 @@
 WinDivert 2.2: Windows Packet Divert
 ====================================
 
+install Refreshed SDK, Refreshed WDK, not EWDK
+https://docs.microsoft.com/en-us/windows-hardware/drivers/download-the-wdk
+
+disable secure boot(Microsof only->None), driver signature verification, restart
+https://www.howtogeek.com/167723/how-to-disable-driver-signature-verification-on-64-bit-windows-8.1-so-that-you-can-install-unsigned-drivers/
+
+https://support.microsoft.com/en-us/windows/finding-your-bitlocker-recovery-key-in-windows-10-6b71ad27-0b89-ea08-f143-056f5ab347d6
+
+Computer\HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\WinDivert
+
 1. Introduction
 ---------------
 
