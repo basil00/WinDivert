@@ -4061,7 +4061,7 @@ static void windivert_flow_established_v6_classify(
     UNREFERENCED_PARAMETER(data);
     UNREFERENCED_PARAMETER(flow_context);
 
-    flow_data.ProcessId = (UINT32)meta_vals->processId;
+    flow_data.EndpointId = meta_vals->transportEndpointHandle;
     flow_data.ParentEndpointId = meta_vals->parentEndpointHandle;
     flow_data.ProcessId = (UINT32)meta_vals->processId;
     windivert_get_ipv6_addr(fixed_vals,
