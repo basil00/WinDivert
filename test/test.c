@@ -1,6 +1,6 @@
 /*
  * test.c
- * (C) 2019, all rights reserved,
+ * (C) 2021, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -632,6 +632,7 @@ static const struct test tests[] =
     {"localAddr == 10.0.0.1 && remoteAddr == 8.8.4.4 && "
      "localPort == 57413 && remotePort == 53 && protocol == 17",
                                                &pkt_dns_request, TRUE},
+    {"ipv6.DstAddr >= ::",                     &pkt_dns_request, FALSE},
     {"ipv6",                                   &pkt_ipv6_tcp_syn, TRUE},
     {"ip",                                     &pkt_ipv6_tcp_syn, FALSE},
     {"tcp.Syn",                                &pkt_ipv6_tcp_syn, TRUE},
@@ -815,6 +816,7 @@ static const struct test tests[] =
     {"ipv6.SrcAddr != abcd::1",                &pkt_ipv6_exthdrs_udp, TRUE},
     {"ipv6.SrcAddr >= abcd::1",                &pkt_ipv6_exthdrs_udp, FALSE},
     {"ipv6.SrcAddr > abcd::1",                 &pkt_ipv6_exthdrs_udp, FALSE},
+    {"ipv6.DstAddr >= ::",                     &pkt_ipv6_exthdrs_udp, TRUE},
     {"timestamp > -1",                         &pkt_ipv6_exthdrs_udp, TRUE},
     {"udp.SrcPort == 4660 and udp.DstPort == 43690",
                                                &pkt_ipv6_exthdrs_udp, TRUE},

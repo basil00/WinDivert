@@ -1,6 +1,6 @@
 /*
  * windivert_helper.c
- * (C) 2019, all rights reserved,
+ * (C) 2021, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -1061,7 +1061,10 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
         }
         return (PEXPR)(vars + mid);
     }
-    *error = MAKE_ERROR(WINDIVERT_ERROR_ASSERTION_FAILED, 0);
+    if (error != NULL)
+    {
+        *error = MAKE_ERROR(WINDIVERT_ERROR_ASSERTION_FAILED, 0);
+    }
     return NULL;
 }
 
@@ -1089,6 +1092,15 @@ static PEXPR WinDivertMakeZero(void)
 {
     static const EXPR zero = {{{0, 0, 0, 0}}, TOKEN_NUMBER};
     return (PEXPR)&zero;
+}
+
+/*
+ * Construct one.
+ */
+static PEXPR WinDivertMakeOne(void)
+{
+    static const EXPR one = {{{1, 0, 0, 0}}, TOKEN_NUMBER};
+    return (PEXPR)&one;
 }
 
 /*
@@ -1480,16 +1492,17 @@ static PEXPR WinDivertParseFilter(HANDLE pool, TOKEN *toks, UINT *i, INT depth,
 }
 
 /*
- * Statically evaluate a test if possible.
+ * Simplify a test if possible.
  */
-static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
+static void WinDivertSimplifyTest(PEXPR test)
 {
     PEXPR var = test->arg[0];
     PEXPR val = test->arg[1];
     BOOL neg_lb = FALSE, neg_ub = FALSE, neg;
     UINT32 lb[4] = {0}, ub[4] = {0};
     int result_lb, result_ub;
-    BOOL eq = FALSE;
+    BOOL eq = FALSE, result = FALSE;
+    KIND type = TOKEN_TRUE;
 
     switch (var->kind)
     {
@@ -1512,6 +1525,20 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_EVENT:
             lb[0] = 0; ub[0] = WINDIVERT_EVENT_MAX;
             break;
+        case TOKEN_IP_DF:
+        case TOKEN_IP_MF:
+            type = TOKEN_IP;
+            lb[0] = 0; ub[0] = 1;
+            break;
+        case TOKEN_TCP_URG:
+        case TOKEN_TCP_ACK:
+        case TOKEN_TCP_PSH:
+        case TOKEN_TCP_RST:
+        case TOKEN_TCP_SYN:
+        case TOKEN_TCP_FIN:
+            type = TOKEN_TCP;
+            lb[0] = 0; ub[0] = 1;
+            break;
         case TOKEN_INBOUND:
         case TOKEN_OUTBOUND:
         case TOKEN_FRAGMENT:
@@ -1521,62 +1548,95 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_ICMPV6:
         case TOKEN_TCP:
         case TOKEN_UDP:
-        case TOKEN_IP_DF:
-        case TOKEN_IP_MF:
-        case TOKEN_TCP_URG:
-        case TOKEN_TCP_ACK:
-        case TOKEN_TCP_PSH:
-        case TOKEN_TCP_RST:
-        case TOKEN_TCP_SYN:
-        case TOKEN_TCP_FIN:
             lb[0] = 0; ub[0] = 1;
             break;
         case TOKEN_IP_HDR_LENGTH:
+            type = TOKEN_IP;
+            lb[0] = 0; ub[0] = 0x0F;
+            break;
         case TOKEN_TCP_HDR_LENGTH:
+            type = TOKEN_TCP;
             lb[0] = 0; ub[0] = 0x0F;
             break;
         case TOKEN_IP_TTL:
         case TOKEN_IP_PROTOCOL:
+            type = TOKEN_IP;
+            lb[0] = 0; ub[0] = 0xFF;
+            break;
         case TOKEN_IPV6_TRAFFIC_CLASS:
         case TOKEN_IPV6_NEXT_HDR:
         case TOKEN_IPV6_HOP_LIMIT:
+            type = TOKEN_IPV6;
+            lb[0] = 0; ub[0] = 0xFF;
+            break;
         case TOKEN_ICMP_TYPE:
         case TOKEN_ICMP_CODE:
+            type = TOKEN_ICMP;
+            lb[0] = 0; ub[0] = 0xFF;
+            break;
         case TOKEN_ICMPV6_TYPE:
         case TOKEN_ICMPV6_CODE:
+            type = TOKEN_ICMPV6;
+            lb[0] = 0; ub[0] = 0xFF;
+            break;
+        case TOKEN_TCP_PAYLOAD:
+            type = TOKEN_TCP;
+            lb[0] = 0; ub[0] = 0xFF;
+            break;
+        case TOKEN_UDP_PAYLOAD:
+            type = TOKEN_UDP;
+            lb[0] = 0; ub[0] = 0xFF;
+            break;
         case TOKEN_PROTOCOL:
         case TOKEN_PACKET:
-        case TOKEN_TCP_PAYLOAD:
-        case TOKEN_UDP_PAYLOAD:
         case TOKEN_RANDOM8:
             lb[0] = 0; ub[0] = 0xFF;
             break;
         case TOKEN_IP_FRAG_OFF:
+            type = TOKEN_IP;
             lb[0] = 0; ub[0] = 0x1FFF;
             break;
         case TOKEN_IP_TOS:
         case TOKEN_IP_LENGTH:
         case TOKEN_IP_ID:
         case TOKEN_IP_CHECKSUM:
+            type = TOKEN_IP;
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
         case TOKEN_IPV6_LENGTH:
+            type = TOKEN_IPV6;
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
         case TOKEN_ICMP_CHECKSUM:
+            type = TOKEN_ICMP;
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
         case TOKEN_ICMPV6_CHECKSUM:
+            type = TOKEN_ICMPV6;
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
         case TOKEN_TCP_SRC_PORT:
         case TOKEN_TCP_DST_PORT:
         case TOKEN_TCP_WINDOW:
         case TOKEN_TCP_CHECKSUM:
         case TOKEN_TCP_URG_PTR:
         case TOKEN_TCP_PAYLOAD_LENGTH:
+        case TOKEN_TCP_PAYLOAD16:
+            type = TOKEN_TCP;
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
         case TOKEN_UDP_SRC_PORT:
         case TOKEN_UDP_DST_PORT:
         case TOKEN_UDP_LENGTH:
         case TOKEN_UDP_CHECKSUM:
         case TOKEN_UDP_PAYLOAD_LENGTH:
+        case TOKEN_UDP_PAYLOAD16:
+            type = TOKEN_UDP;
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
         case TOKEN_LOCAL_PORT:
         case TOKEN_REMOTE_PORT:
         case TOKEN_PACKET16:
-        case TOKEN_TCP_PAYLOAD16:
-        case TOKEN_UDP_PAYLOAD16:
         case TOKEN_RANDOM16:
             lb[0] = 0; ub[0] = 0xFFFF;
             break;
@@ -1584,10 +1644,12 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
             lb[0] = sizeof(WINDIVERT_IPHDR); ub[0] = WINDIVERT_MTU_MAX;
             break;
         case TOKEN_IPV6_FLOW_LABEL:
+            type = TOKEN_IPV6;
             lb[0] = 0; ub[0] = 0x000FFFFF;
             break;
         case TOKEN_IP_SRC_ADDR:
         case TOKEN_IP_DST_ADDR:
+            type = TOKEN_IP;
             lb[0] = 0;
             lb[1] = 0xFFFF;
             ub[0] = 0xFFFFFFFF;
@@ -1595,6 +1657,8 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
             break;
         case TOKEN_IPV6_SRC_ADDR:
         case TOKEN_IPV6_DST_ADDR:
+            type = TOKEN_IPV6;
+            // Fallthrough
         case TOKEN_LOCAL_ADDR:
         case TOKEN_REMOTE_ADDR:
             lb[0] = lb[1] = lb[2] = lb[3] = 0;
@@ -1607,14 +1671,27 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
             ub[1] = 0x7FFFFFFF;
             neg_lb = TRUE;
             break;
+        case TOKEN_TCP_PAYLOAD32:
+            type = TOKEN_TCP;
+            lb[0] = 0; ub[0] = 0xFFFFFFFF;
+            break;
+        case TOKEN_UDP_PAYLOAD32:
+            type = TOKEN_UDP;
+            lb[0] = 0; ub[0] = 0xFFFFFFFF;
+            break;
+        case TOKEN_IF_IDX:
+        case TOKEN_SUB_IF_IDX:
+        case TOKEN_RANDOM32:
+        case TOKEN_PROCESS_ID:
+            lb[0] = 0; ub[0] = 0xFFFFFFFF;
+            break;
         case TOKEN_ENDPOINT_ID:
         case TOKEN_PARENT_ENDPOINT_ID:
             lb[0] = lb[1] = 0;
             ub[0] = ub[1] = 0xFFFFFFFF;
             break;
         default:
-            lb[0] = 0; ub[0] = 0xFFFFFFFF;
-            break;
+            return;
     }
     neg = (val->neg? TRUE: FALSE);
     result_lb = WinDivertCompare128(neg, val->val, neg_lb, lb, /*big=*/TRUE);
@@ -1624,78 +1701,81 @@ static BOOL WinDivertEvalTest(PEXPR test, BOOL *res)
         case TOKEN_EQ:
             if (result_lb < 0 || result_ub > 0)
             {
-                *res = FALSE;
-                return TRUE;
+                result = FALSE;
+                break;
             }
             if (eq && result_lb == 0)
             {
-                *res = TRUE;
-                return TRUE;
+                result = TRUE;
+                break;
             }
-            return FALSE;
+            return;
         case TOKEN_NEQ:
             if (result_lb < 0 || result_ub > 0)
             {
-                *res = TRUE;
-                return TRUE;
+                result = TRUE;
+                break;
             }
             if (eq && result_lb == 0)
             {
-                *res = FALSE;
-                return TRUE;
+                result = FALSE;
+                break;
             }
-            return FALSE;
+            return;
         case TOKEN_LT:
             if (result_ub > 0)
             {
-                *res = TRUE;
-                return TRUE;
+                result = TRUE;
+                break;
             }
             if (result_lb <= 0)
             {
-                *res = FALSE;
-                return TRUE;
+                result = FALSE;
+                break;
             }
-            return FALSE;
+            return;
         case TOKEN_LEQ:
             if (result_ub >= 0)
             {
-                *res = TRUE;
-                return TRUE;
+                result = TRUE;
+                break;
             }
             if (result_lb < 0)
             {
-                *res = FALSE;
-                return TRUE;
+                result = FALSE;
+                break;
             }
-            return FALSE;
+            return;
         case TOKEN_GT:
             if (result_ub >= 0)
             {
-                *res = FALSE;
-                return TRUE;
+                result = FALSE;
+                break;
             }
             if (result_lb < 0)
             {
-                *res = TRUE;
-                return TRUE;
+                result = TRUE;
+                break;
             }
-            return FALSE;
+            return;
         case TOKEN_GEQ:
             if (result_ub > 0)
             {
-                *res = FALSE;
-                return TRUE;
+                result = FALSE;
+                break;
             }
             if (result_lb <= 0)
             {
-                *res = TRUE;
-                return TRUE;
+                result = TRUE;
+                break;
             }
-            return FALSE;
+            return;
         default:
-            return FALSE;
+            return;
     }
+    test->arg[0] = WinDivertMakeVar(type, NULL);
+    test->arg[1] = (result? WinDivertMakeOne(): WinDivertMakeZero());
+    test->kind   = TOKEN_EQ;
 }
 
 /*
@@ -1705,7 +1785,6 @@ static INT16 WinDivertFlattenExpr(PEXPR expr, INT16 *label, INT16 succ,
     INT16 fail, PEXPR *stack)
 {
     INT16 succ1, fail1;
-    BOOL res;
     if (succ < 0 || fail < 0)
     {
         return -1;
@@ -1729,9 +1808,11 @@ static INT16 WinDivertFlattenExpr(PEXPR expr, INT16 *label, INT16 succ,
                 stack);
             return succ;
         default:
-            if (WinDivertEvalTest(expr, &res))
+            WinDivertSimplifyTest(expr);
+            if (expr->kind == TOKEN_EQ &&
+                expr->arg[0]->kind == TOKEN_TRUE)
             {
-                return (res? succ: fail);
+                return (expr->arg[1]->val[0] != 0? succ: fail);
             }
             if (*label >= WINDIVERT_FILTER_MAXLEN)
             {
