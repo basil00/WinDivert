@@ -1,11 +1,4 @@
 <h1 align="center">WinDivert 2.2: Windows Packet Divert</h1>
-<div align="center">
-
-![](https://img.shields.io/github/stars/basil00/Divert)
-![](https://img.shields.io/github/issues/basil00/Divert)
-![](https://img.shields.io/github/forks/basil00/Divert)
-
-</div>
 
 ## Introduction
 
@@ -35,7 +28,7 @@ WinDivert supports the following features:
 - filter priorities
 - freely available under the terms of the GNU Lesser General Public License (LGPLv3)
 
-For more information see doc/windivert.html
+For more information see [doc/windivert.html](https://www.reqrypt.org/windivert-doc.html)
 
 ## Architecture
 
@@ -96,3 +89,10 @@ The source code for WinDivert is hosted by GitHub at:
 
 https://github.com/basil00/Divert
 
+
+## Link
+
+- IPv4 encapsulation (IPv4) https://www.rfc-editor.org/rfc/rfc2003.html
+- IPv6 encapsulation (IPv6) https://www.rfc-editor.org/rfc/rfc2473.html
+- Transmission Control Protocol (TCP Protocol) https://www.rfc-editor.org/rfc/rfc793.html
+- User Datagram Protocol (UDP)  https://www.rfc-editor.org/rfc/rfc768.html
