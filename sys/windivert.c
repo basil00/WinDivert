@@ -1,6 +1,6 @@
 /*
  * windivert.c
- * (C) 2019, all rights reserved,
+ * (C) 2022, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -122,7 +122,7 @@ typedef enum
     WINDIVERT_CONTEXT_STATE_OPENING = 0xA0,     // Context is opening.
     WINDIVERT_CONTEXT_STATE_OPEN    = 0xB1,     // Context is open.
     WINDIVERT_CONTEXT_STATE_CLOSING = 0xC2,     // Context is closing.
-    WINDIVERT_CONTEXT_STATE_CLOSED  = 0xD3      // Context is closed.
+    WINDIVERT_CONTEXT_STATE_CLOSED  = 0xD3,     // Context is closed.
 } context_state_t;
 struct context_s
 {
@@ -332,7 +332,7 @@ extern VOID windivert_worker(IN WDFWORKITEM item);
 static void windivert_read_service(context_t context);
 extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     IN WDFFILEOBJECT object);
-static NTSTATUS windivert_install_provider();
+static NTSTATUS windivert_install_provider(void);
 static NTSTATUS windivert_install_sublayer(layer_t layer);
 static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
     UINT64 flags);
@@ -1165,12 +1165,14 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to begin WFP transaction", status);
+        FwpmTransactionAbort0(engine_handle);
         goto driver_entry_exit;
     }
     status = windivert_install_provider();
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to install provider", status);
+        FwpmTransactionAbort0(engine_handle);
         goto driver_entry_exit;
     }
     status = windivert_install_sublayer(WINDIVERT_LAYER_INBOUND_NETWORK_IPV4);
@@ -1282,6 +1284,7 @@ driver_entry_sublayer_error:
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
+        FwpmTransactionAbort0(engine_handle);
         goto driver_entry_exit;
     }
 
@@ -1358,6 +1361,7 @@ static void windivert_driver_unload(void)
         if (!NT_SUCCESS(status))
         {
             DEBUG_ERROR("failed to begin WFP transaction", status);
+            FwpmTransactionAbort0(engine_handle);
             FwpmEngineClose0(engine_handle);
             return;
         }
@@ -1408,6 +1412,7 @@ static void windivert_driver_unload(void)
         status = FwpmTransactionCommit0(engine_handle);
         if (!NT_SUCCESS(status))
         {
+            FwpmTransactionAbort0(engine_handle);
             DEBUG_ERROR("failed to commit WFP transaction", status);
         }
         FwpmEngineClose0(engine_handle);
@@ -1567,7 +1572,7 @@ windivert_create_exit:
     // Clean-up on error:
     if (!NT_SUCCESS(status))
     {
-        context->state = WINDIVERT_CONTEXT_STATE_INVALID;
+        context->state = WINDIVERT_CONTEXT_STATE_CLOSED;
         if (context->read_queue != NULL)
         {
             WdfObjectDelete(context->read_queue);
@@ -1576,14 +1581,7 @@ windivert_create_exit:
         {
             WdfObjectDelete(context->worker);
         }
-        if (context->process != NULL)
-        {
-            ObDereferenceObject(context->process);
-        }
-        if (context->engine_handle != NULL)
-        {
-            FwpmEngineClose0(context->engine_handle);
-        }
+        // process/engine_handle handled by windivert_destroy()
     }
 
     WdfRequestComplete(request, status);
@@ -1602,15 +1600,15 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
         accept, close;
     NTSTATUS status = STATUS_SUCCESS;
 
-    inbound    = ((flags & WINDIVERT_FILTER_FLAG_INBOUND) != 0);
-    outbound   = ((flags & WINDIVERT_FILTER_FLAG_OUTBOUND) != 0);
-    ipv4       = ((flags & WINDIVERT_FILTER_FLAG_IP) != 0);
-    ipv6       = ((flags & WINDIVERT_FILTER_FLAG_IPV6) != 0);
-    bind       = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_BIND) != 0);
-    connect    = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_CONNECT) != 0);
-    listen     = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_LISTEN) != 0);
-    accept     = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_ACCEPT) != 0);
-    close      = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_CLOSE) != 0);
+    inbound  = ((flags & WINDIVERT_FILTER_FLAG_INBOUND) != 0);
+    outbound = ((flags & WINDIVERT_FILTER_FLAG_OUTBOUND) != 0);
+    ipv4     = ((flags & WINDIVERT_FILTER_FLAG_IP) != 0);
+    ipv6     = ((flags & WINDIVERT_FILTER_FLAG_IPV6) != 0);
+    bind     = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_BIND) != 0);
+    connect  = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_CONNECT) != 0);
+    listen   = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_LISTEN) != 0);
+    accept   = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_ACCEPT) != 0);
+    close    = ((flags & WINDIVERT_FILTER_FLAG_EVENT_SOCKET_CLOSE) != 0);
 
     i = 0;
     switch (layer)
@@ -1802,8 +1800,7 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to begin WFP transaction", status);
-        FwpsCalloutUnregisterByKey0(&callout_guid);
-        return status;
+        goto windivert_install_callout_error;
     }
     status = FwpmCalloutAdd0(engine, &mcallout, NULL, NULL);
     if (!NT_SUCCESS(status))
@@ -1821,8 +1818,7 @@ static NTSTATUS windivert_install_callout(context_t context, UINT idx,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
-        FwpsCalloutUnregisterByKey0(&callout_guid);
-        return status;
+        goto windivert_install_callout_error;
     }
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -1877,6 +1873,7 @@ windivert_uninstall_callouts_error:
         // RPC handle was closed first. So, this path is "normal" if
         // the user's app crashed or never closed the WinDivert handle.
         DEBUG_ERROR("failed to begin WFP transaction", status);
+        FwpmTransactionAbort0(engine);
         goto windivert_uninstall_callouts_unregister;
     }
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
@@ -1921,6 +1918,7 @@ windivert_uninstall_callouts_error:
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
+        FwpmTransactionAbort0(engine);
         // continue
     }
 
@@ -2103,9 +2101,15 @@ extern VOID windivert_destroy(IN WDFOBJECT object)
     filter = context->filter;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
     windivert_uninstall_callouts(context, WINDIVERT_CONTEXT_STATE_CLOSED);
-    FwpmEngineClose0(context->engine_handle);
+    if (context->engine_handle != NULL)
+    {
+        FwpmEngineClose0(context->engine_handle);
+    }
     windivert_free((PVOID)filter);
-    ObDereferenceObject(context->process);
+    if (context->process != NULL)
+    {
+        ObDereferenceObject(context->process);
+    }
 }
 
 /*
