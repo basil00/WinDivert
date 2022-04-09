@@ -122,8 +122,7 @@ typedef enum
     WINDIVERT_CONTEXT_STATE_OPENING = 0xA0,     // Context is opening.
     WINDIVERT_CONTEXT_STATE_OPEN    = 0xB1,     // Context is open.
     WINDIVERT_CONTEXT_STATE_CLOSING = 0xC2,     // Context is closing.
-    WINDIVERT_CONTEXT_STATE_CLOSED  = 0xD3,     // Context is closed.
-    WINDIVERT_CONTEXT_STATE_INVALID = 0xE4      // Context is invalid.
+    WINDIVERT_CONTEXT_STATE_CLOSED  = 0xD3      // Context is closed.
 } context_state_t;
 struct context_s
 {
