@@ -1425,7 +1425,6 @@ static void windivert_driver_unload(void)
 static NTSTATUS windivert_install_provider()
 {
     FWPM_PROVIDER0 provider;
-    NTSTATUS status;
 
     RtlZeroMemory(&provider, sizeof(provider));
     provider.providerKey             = WINDIVERT_PROVIDER_GUID;
@@ -5721,7 +5720,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     PWINDIVERT_UDPHDR udp_header = NULL;
     BOOL fragment = FALSE;
     UINT8 protocol = 0;
-    UINT header_len = 0, payload_len = 0, total_len = 0;
+    UINT header_len = 0, payload_len = 0;
     PWINDIVERT_DATA_NETWORK network_data = NULL;
     PWINDIVERT_DATA_FLOW flow_data = NULL;
     PWINDIVERT_DATA_SOCKET socket_data = NULL;
@@ -6428,7 +6427,7 @@ static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
     const wchar_t windivert_str[] = WINDIVERT_DEVICE_NAME
         WINDIVERT_VERSION_LSTR;
     wchar_t pid_str[16];
-    size_t windivert_size = sizeof(windivert_str), msg_size, pid_size, size;
+    size_t windivert_size = sizeof(windivert_str), msg_size, pid_size = 0, size;
     UNICODE_STRING string;
     UINT8 *str;
     PIO_ERROR_LOG_PACKET packet;
