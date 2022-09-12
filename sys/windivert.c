@@ -273,8 +273,6 @@ struct flow_s
     UINT64 flow_id;                         // WFP flow ID.
     UINT32 callout_id;                      // WFP callout ID.
     UINT16 layer_id;                        // WFP layout ID.
-    BOOL inserted:1;                        // Flow inserted into context?
-    BOOL deleted:1;                         // Flow deleted from context?
     BOOL outbound:1;                        // Flow is outound?
     BOOL loopback:1;                        // Flow is loopback?
     BOOL ipv6:1;                            // Flow is ipv6?
@@ -1981,17 +1979,20 @@ windivert_cleanup_error:
     context->state = WINDIVERT_CONTEXT_STATE_CLOSING;
     sniff_mode = ((context->flags & WINDIVERT_FLAG_SNIFF) != 0);
     forward = (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-    while (!IsListEmpty(&context->flow_set))
+    entry = context->flow_set.Flink;
+    if (entry != &context->flow_set)
     {
-        entry = RemoveHeadList(&context->flow_set);
-        flow = CONTAINING_RECORD(entry, struct flow_s, entry);
-        flow->deleted = TRUE;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
-        status = FwpsFlowRemoveContext0(flow->flow_id, flow->layer_id,
-            flow->callout_id);
-        if (!NT_SUCCESS(status))
+        for (; entry != &context->flow_set; entry = entry->Flink)
         {
-            windivert_free(flow);
+            flow = CONTAINING_RECORD(entry, struct flow_s, entry);
+            status = FwpsFlowRemoveContext0(flow->flow_id, flow->layer_id,
+                flow->callout_id);
+            if (!NT_SUCCESS(status) && status != STATUS_UNSUCCESSFUL)
+            {
+                // For STATUS_UNSUCCESSFUL, flow_delete() is still called.
+                WdfObjectDereference((WDFOBJECT)object);
+            }
         }
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
@@ -2086,6 +2087,8 @@ extern VOID windivert_destroy(IN WDFOBJECT object)
     KLOCK_QUEUE_HANDLE lock_handle;
     context_t context = windivert_context_get((WDFFILEOBJECT)object);
     const WINDIVERT_FILTER *filter;
+    PLIST_ENTRY entry;
+    flow_t flow;
     NTSTATUS status;
 
     DEBUG("DESTROY: destroying WinDivert context (context=%p)", context);
@@ -2106,6 +2109,12 @@ extern VOID windivert_destroy(IN WDFOBJECT object)
         FwpmEngineClose0(context->engine_handle);
     }
     windivert_free((PVOID)filter);
+    while (!IsListEmpty(&context->flow_set))
+    {
+        entry = RemoveHeadList(&context->flow_set);
+        flow = CONTAINING_RECORD(entry, struct flow_s, entry);
+        windivert_free(flow);
+    }
     if (context->process != NULL)
     {
         ObDereferenceObject(context->process);
@@ -4179,21 +4188,10 @@ static void windivert_flow_established_classify(context_t context,
     flow->flow_id = flow_id;
     flow->callout_id = callout_id;
     flow->layer_id = layer_id;
-    flow->inserted = FALSE;
-    flow->deleted = FALSE;
     flow->outbound = outbound;
     flow->loopback = loopback;
     flow->ipv6 = !ipv4;
     RtlCopyMemory(&flow->data, flow_data, sizeof(flow->data));
-
-    status = FwpsFlowAssociateContext0(flow_id, layer_id, callout_id,
-        (UINT64)flow);
-    if (!NT_SUCCESS(status))
-    {
-        windivert_free(flow);
-        WdfObjectDereference(object);
-        return;
-    }
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
@@ -4204,19 +4202,16 @@ static void windivert_flow_established_classify(context_t context,
         WdfObjectDereference(object);
         return;
     }
-    if (!flow->deleted)
+    status = FwpsFlowAssociateContext0(flow_id, layer_id, callout_id,
+        (UINT64)flow);
+    if (!NT_SUCCESS(status))
     {
-        InsertTailList(&context->flow_set, &flow->entry);
-        flow->inserted = TRUE;
-    }
-    else
-    {
-        // Flow was deleted before insertion; we are responsible for cleanup.
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         windivert_free(flow);
         WdfObjectDereference(object);
         return;
     }
+    InsertTailList(&context->flow_set, &flow->entry);
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 }
 
@@ -4243,18 +4238,16 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     {
         return;
     }
-
     timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     context = flow->context;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     object = (WDFOBJECT)context->object; // referenced in flow_established.
-    if (flow->inserted && !flow->deleted)
+    cleanup = (context->state == WINDIVERT_CONTEXT_STATE_OPEN);
+    if (cleanup)
     {
         RemoveEntryList(&flow->entry);
     }
-    flow->deleted = TRUE;
-    cleanup = flow->inserted;
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
         context->shutdown_recv)
     {
@@ -4279,12 +4272,12 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     }
 
 windivert_flow_delete_notify_exit:
-
     if (cleanup)
     {
+        // If context->state != OPEN, then destroy() will free the flow.
         windivert_free(flow);
-        WdfObjectDereference(object);
     }
+    WdfObjectDereference(object);
 }
 
 /*
