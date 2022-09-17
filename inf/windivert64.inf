@@ -4,7 +4,7 @@ Class = WFPCALLOUTS
 ClassGuid = {57465043-616C-6C6F-7574-5F636C617373}
 Provider = %Basil%
 CatalogFile = WinDivert64.Cat
-DriverVer = 01/08/2022,2.2.1
+DriverVer = 01/09/2022,2.2.2
 
 [SourceDisksNames]
 1 = %DiskName%
