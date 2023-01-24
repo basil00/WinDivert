@@ -339,6 +339,8 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
 static NTSTATUS windivert_install_sublayer(layer_t layer);
 static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
     UINT64 flags);
+static NTSTATUS windivert_install_callout(context_t context, UINT idx,
+    layer_t layer, UINT32 *callout_id_ptr);
 static void windivert_uninstall_callouts(context_t context,
     context_state_t state);
 extern VOID windivert_cleanup(IN WDFFILEOBJECT object);
@@ -1224,6 +1226,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to begin WFP transaction", status);
+        FwpmTransactionAbort0(engine_handle);
         goto driver_entry_exit;
     }
     status = windivert_install_sublayer(
@@ -1347,6 +1350,7 @@ driver_entry_sublayer_error:
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
+        FwpmTransactionAbort0(engine_handle);
         goto driver_entry_exit;
     }
 
@@ -1482,6 +1486,7 @@ static void windivert_driver_unload(void)
         if (!NT_SUCCESS(status))
         {
             DEBUG_ERROR("failed to commit WFP transaction", status);
+            FwpmTransactionAbort0(engine_handle);
         }
         FwpmEngineClose0(engine_handle);
     }
@@ -1653,17 +1658,10 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
     KLOCK_QUEUE_HANDLE lock_handle;
     UINT8 i, j;
     layer_t layers[WINDIVERT_CONTEXT_MAXLAYERS];
-    UINT32 callout_ids[WINDIVERT_CONTEXT_MAXLAYERS] = {0};
+    UINT32 *callout_ids[WINDIVERT_CONTEXT_MAXLAYERS] = {NULL};
     BOOL inbound, outbound, ipv4, ipv6, bind, connect, listen,
         accept, close;
     HANDLE engine = NULL;
-    FWPS_CALLOUT0 scallout;
-    FWPM_CALLOUT0 mcallout;
-    FWPM_FILTER0 filter;
-    UINT64 weight;
-    UINT32 priority;
-    GUID callout_guid, filter_guid;
-    WDFDEVICE device;
     NTSTATUS status = STATUS_SUCCESS;
 
     inbound  = ((flags & WINDIVERT_FILTER_FLAG_INBOUND) != 0);
@@ -1723,10 +1721,12 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
         case WINDIVERT_LAYER_FLOW:
             if (ipv4)
             {
+                callout_ids[i] = &context->flow_v4_callout_id;
                 layers[i++] = WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV4;
             }
             if (ipv6)
             {
+                callout_ids[i] = &context->flow_v6_callout_id;
                 layers[i++] = WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV6;
             }
             break;
@@ -1769,7 +1769,6 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
             {
                 layers[i++] = WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV6;
             }
-
             if (ipv6 && close)
             {
                 layers[i++] = WINDIVERT_LAYER_RESOURCE_RELEASE_IPV6;
@@ -1778,7 +1777,7 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
             break;
 
         case WINDIVERT_LAYER_REFLECT:
-            return STATUS_SUCCESS;
+            break;
 
         default:
             return STATUS_INVALID_PARAMETER;
@@ -1786,56 +1785,15 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
 
     if (i == 0)
     {
-        // Nothing to do...
         return STATUS_SUCCESS;
     }
 
-    // Register the callouts:
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-    for (j = 0; j < i; j++)
-    {
-        if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
-        {
-            KeReleaseInStackQueuedSpinLock(&lock_handle);
-            status = STATUS_INVALID_DEVICE_STATE;
-            goto windivert_install_callouts_error;
-        }
-        device = context->device;
-        RtlCopyMemory(&callout_guid, &context->callout_guid[j],
-            sizeof(callout_guid));
-        KeReleaseInStackQueuedSpinLock(&lock_handle);
-
-        RtlZeroMemory(&scallout, sizeof(scallout));
-        scallout.calloutKey   = callout_guid;
-        scallout.classifyFn   = layers[j]->classify;
-        scallout.notifyFn     = windivert_notify;
-        scallout.flowDeleteFn = layers[j]->flow_delete;
-
-        status = FwpsCalloutRegister0(WdfDeviceWdmGetDeviceObject(device),
-            &scallout, callout_ids + j);
-        if (!NT_SUCCESS(status))
-        {
-            goto windivert_install_callouts_error;
-        }
-
-        DEBUG("REGISTER: callout %ls", layers[j]->callout_name);
-
-        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-        context->installed[j] = TRUE;
-        if (layers[j] == WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV4)
-        {
-            context->flow_v4_callout_id = callout_ids[j];
-        }
-        else if (layers[j] == WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV6)
-        {
-            context->flow_v6_callout_id = callout_ids[j];
-        }
-    }
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
     {
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         status = STATUS_INVALID_DEVICE_STATE;
-        goto windivert_install_callouts_error;
+        return status;
     }
     engine = context->engine_handle;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
@@ -1849,82 +1807,136 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to begin WFP transaction", status);
-        goto windivert_install_callouts_error;
+        engine = NULL;
+        goto windivert_install_callouts_exit;
     }
     for (j = 0; j < i; j++)
     {
-        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
-        if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
-        {
-            KeReleaseInStackQueuedSpinLock(&lock_handle);
-            status = STATUS_INVALID_DEVICE_STATE;
-            goto windivert_install_callouts_error;
-        }
-        priority = context->priority;
-        RtlCopyMemory(&callout_guid, &context->callout_guid[j],
-            sizeof(callout_guid));
-        RtlCopyMemory(&filter_guid, &context->filter_guid[j],
-            sizeof(filter_guid));
-        KeReleaseInStackQueuedSpinLock(&lock_handle);
-
-        weight = (UINT64)priority;
-
-        RtlZeroMemory(&mcallout, sizeof(mcallout));
-        mcallout.calloutKey              = callout_guid;
-        mcallout.displayData.name        = layers[j]->callout_name;
-        mcallout.displayData.description = layers[j]->callout_desc;
-        mcallout.applicableLayer         = *(layers[j]->layer_guid);
-        RtlZeroMemory(&filter, sizeof(filter));
-        filter.filterKey                 = filter_guid;
-        filter.layerKey                  = *(layers[j]->layer_guid);
-        filter.displayData.name          = layers[j]->filter_name;
-        filter.displayData.description   = layers[j]->filter_desc;
-        filter.action.type               = FWP_ACTION_CALLOUT_UNKNOWN;
-        filter.action.calloutKey         = callout_guid;
-        filter.subLayerKey               = *(layers[j]->sublayer_guid);
-        filter.weight.type               = FWP_UINT64;
-        filter.weight.uint64             = &weight;
-        filter.rawContext                = (UINT64)context;
-
-        status = FwpmCalloutAdd0(engine, &mcallout, NULL, NULL);
+        status = windivert_install_callout(context, j, layers[j],
+            callout_ids[j]);
         if (!NT_SUCCESS(status))
         {
-            DEBUG_ERROR("failed to add WFP callout", status);
-            goto windivert_install_callouts_error;
+            goto windivert_install_callouts_exit;
         }
-        status = FwpmFilterAdd0(engine, &filter, NULL, NULL);
-        if (!NT_SUCCESS(status))
-        {
-            DEBUG_ERROR("failed to add WFP filter", status);
-            goto windivert_install_callouts_error;
-        }
-
-        DEBUG("INSTALL: callout %ls", layers[j]->callout_name);
     }
     status = FwpmTransactionCommit0(engine);
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
-        goto windivert_install_callouts_error;
+        goto windivert_install_callouts_exit;
     }
+    engine = NULL;
 
-    return status;
-
-windivert_install_callouts_error:
+windivert_install_callouts_exit:
 
     if (engine != NULL)
     {
         FwpmTransactionAbort0(engine);
     }
-    for (j = 0; j < i; j++)
+    if (!NT_SUCCESS(status))
     {
-        if (callout_ids[j] == 0)
-        {
-            continue;
-        }
-        FwpsCalloutUnregisterById0(callout_ids[j]);
+        windivert_uninstall_callouts(context, WINDIVERT_CONTEXT_STATE_OPEN);
     }
 
+    return status;
+}
+
+/*
+ * Register a WFP callout.
+ */
+static NTSTATUS windivert_install_callout(context_t context, UINT idx,
+    layer_t layer, UINT32 *callout_id_ptr)
+{
+    KLOCK_QUEUE_HANDLE lock_handle;
+    FWPS_CALLOUT0 scallout;
+    FWPM_CALLOUT0 mcallout;
+    FWPM_FILTER0 filter;
+    UINT64 weight;
+    UINT32 priority;
+    GUID callout_guid, filter_guid;
+    UINT32 callout_id;
+    WDFDEVICE device;
+    HANDLE engine;
+    NTSTATUS status;
+
+    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        status = STATUS_INVALID_DEVICE_STATE;
+        return status;
+    }
+    priority = context->priority;
+    callout_guid = context->callout_guid[idx];
+    filter_guid = context->filter_guid[idx];
+    device = context->device;
+    engine = context->engine_handle;
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+    weight = (UINT64)priority;
+
+    RtlZeroMemory(&scallout, sizeof(scallout));
+    scallout.calloutKey              = callout_guid;
+    scallout.classifyFn              = layer->classify;
+    scallout.notifyFn                = windivert_notify;
+    scallout.flowDeleteFn            = layer->flow_delete;
+    RtlZeroMemory(&mcallout, sizeof(mcallout));
+    mcallout.calloutKey              = callout_guid;
+    mcallout.displayData.name        = layer->callout_name;
+    mcallout.displayData.description = layer->callout_desc;
+    mcallout.applicableLayer         = *(layer->layer_guid);
+    RtlZeroMemory(&filter, sizeof(filter));
+    filter.filterKey                 = filter_guid;
+    filter.layerKey                  = *(layer->layer_guid);
+    filter.displayData.name          = layer->filter_name;
+    filter.displayData.description   = layer->filter_desc;
+    filter.action.type               = FWP_ACTION_CALLOUT_UNKNOWN;
+    filter.action.calloutKey         = callout_guid;
+    filter.subLayerKey               = *(layer->sublayer_guid);
+    filter.weight.type               = FWP_UINT64;
+    filter.weight.uint64             = &weight;
+    filter.rawContext                = (UINT64)context;
+    status = FwpsCalloutRegister0(WdfDeviceWdmGetDeviceObject(device),
+        &scallout, &callout_id);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to install WFP callout", status);
+        return status;
+    }
+    if (callout_id_ptr != NULL)
+    {
+        KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+        *callout_id_ptr = callout_id;
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+    }
+    status = FwpmCalloutAdd0(engine, &mcallout, NULL, NULL);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to add WFP callout", status);
+        goto windivert_install_callout_error;
+    }
+    status = FwpmFilterAdd0(engine, &filter, NULL, NULL);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to add WFP filter", status);
+        goto windivert_install_callout_error;
+    }
+
+    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        FwpsCalloutUnregisterByKey0(&callout_guid);
+        status = STATUS_INVALID_DEVICE_STATE;
+        return status;
+    }
+    context->installed[idx] = TRUE;
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+    return STATUS_SUCCESS;
+
+windivert_install_callout_error:
+    FwpsCalloutUnregisterByKey0(&callout_guid);
     return status;
 }
 
@@ -2939,7 +2951,7 @@ windivert_write_too_big:
         {
             case WINDIVERT_LAYER_ETHERNET:
 
-                // Ethernet inject requires the WFP filters to remain valid.
+                // Ethernet inject requires the WFP filters to be valid.
                 // Thus, we increment the ref count for the context object
                 // until the inject is completed.  This prevents the filter
                 // from being removed until the injection has completed.
@@ -2969,6 +2981,7 @@ windivert_write_too_big:
                         addr[i].Ethernet.IfIdx, addr[i].Ethernet.SubIfIdx,
                         buffers, windivert_inject_complete, object);
                 }
+
                 if (!NT_SUCCESS(status))
                 {
                     WdfObjectDereference(object);
