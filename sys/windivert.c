@@ -1,6 +1,6 @@
 /*
  * windivert.c
- * (C) 2019, all rights reserved,
+ * (C) 2022, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -123,7 +123,6 @@ typedef enum
     WINDIVERT_CONTEXT_STATE_OPEN    = 0xB1,     // Context is open.
     WINDIVERT_CONTEXT_STATE_CLOSING = 0xC2,     // Context is closing.
     WINDIVERT_CONTEXT_STATE_CLOSED  = 0xD3,     // Context is closed.
-    WINDIVERT_CONTEXT_STATE_INVALID = 0xE4      // Context is invalid.
 } context_state_t;
 struct context_s
 {
@@ -275,8 +274,6 @@ struct flow_s
     UINT64 flow_id;                         // WFP flow ID.
     UINT32 callout_id;                      // WFP callout ID.
     UINT16 layer_id;                        // WFP layout ID.
-    BOOL inserted:1;                        // Flow inserted into context?
-    BOOL deleted:1;                         // Flow deleted from context?
     BOOL outbound:1;                        // Flow is outound?
     BOOL loopback:1;                        // Flow is loopback?
     BOOL ipv6:1;                            // Flow is ipv6?
@@ -336,6 +333,7 @@ extern VOID windivert_worker(IN WDFWORKITEM item);
 static void windivert_read_service(context_t context);
 extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
     IN WDFFILEOBJECT object);
+static NTSTATUS windivert_install_provider(void);
 static NTSTATUS windivert_install_sublayer(layer_t layer);
 static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
     UINT64 flags);
@@ -514,6 +512,15 @@ static void windivert_reflect_established_notify(context_t context,
 extern void windivert_reflect_worker(IN WDFWORKITEM item);
 static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
     const wchar_t *msg_str);
+
+/*
+ * WinDivert provider GUIDs
+ */
+DEFINE_GUID(WINDIVERT_PROVIDER_GUID,
+    0x450EC398, 0x1EAF, 0x49F5,
+    0x85, 0xE0, 0x22, 0x8F, 0x0D, 0x29, 0x39, 0x21);
+#define WINDIVERT_PROVIDER_NAME WINDIVERT_DEVICE_NAME
+#define WINDIVERT_PROVIDER_DESC WINDIVERT_DEVICE_NAME L" provider"
 
 /*
  * WinDivert sublayer GUIDs
@@ -736,7 +743,7 @@ static const struct layer_s windivert_layer_resource_assignment_ipv4 =
     &WINDIVERT_SUBLAYER_RESOURCE_ASSIGNMENT_IPV4_GUID,
     windivert_resource_assignment_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_ASSIGNMENT_IPV4                            \
     (&windivert_layer_resource_assignment_ipv4)
@@ -753,7 +760,7 @@ static const struct layer_s windivert_layer_resource_assignment_ipv6 =
     &WINDIVERT_SUBLAYER_RESOURCE_ASSIGNMENT_IPV6_GUID,
     windivert_resource_assignment_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_ASSIGNMENT_IPV6                            \
     (&windivert_layer_resource_assignment_ipv6)
@@ -770,7 +777,7 @@ static const struct layer_s windivert_layer_resource_release_ipv4 =
     &WINDIVERT_SUBLAYER_RESOURCE_RELEASE_IPV4_GUID,
     windivert_resource_release_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_RELEASE_IPV4                              \
     (&windivert_layer_resource_release_ipv4)
@@ -787,7 +794,7 @@ static const struct layer_s windivert_layer_resource_release_ipv6 =
     &WINDIVERT_SUBLAYER_RESOURCE_RELEASE_IPV6_GUID,
     windivert_resource_release_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_RESOURCE_RELEASE_IPV6                              \
     (&windivert_layer_resource_release_ipv6)
@@ -804,7 +811,7 @@ static const struct layer_s windivert_layer_auth_connect_ipv4 =
     &WINDIVERT_SUBLAYER_AUTH_CONNECT_IPV4_GUID,
     windivert_auth_connect_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_CONNECT_IPV4                                   \
     (&windivert_layer_auth_connect_ipv4)
@@ -821,7 +828,7 @@ static const struct layer_s windivert_layer_auth_connect_ipv6 =
     &WINDIVERT_SUBLAYER_AUTH_CONNECT_IPV6_GUID,
     windivert_auth_connect_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_CONNECT_IPV6                                   \
     (&windivert_layer_auth_connect_ipv6)
@@ -838,7 +845,7 @@ static const struct layer_s windivert_layer_endpoint_closure_ipv4 =
     &WINDIVERT_SUBLAYER_ENDPOINT_CLOSURE_IPV4_GUID,
     windivert_endpoint_closure_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_ENDPOINT_CLOSURE_IPV4                               \
     (&windivert_layer_endpoint_closure_ipv4)
@@ -855,7 +862,7 @@ static const struct layer_s windivert_layer_endpoint_closure_ipv6 =
     &WINDIVERT_SUBLAYER_ENDPOINT_CLOSURE_IPV6_GUID,
     windivert_endpoint_closure_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_ENDPOINT_CLOSURE_IPV6                               \
     (&windivert_layer_endpoint_closure_ipv6)
@@ -872,7 +879,7 @@ static const struct layer_s windivert_layer_auth_listen_ipv4 =
     &WINDIVERT_SUBLAYER_AUTH_LISTEN_IPV4_GUID,
     windivert_auth_listen_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_LISTEN_IPV4                                    \
     (&windivert_layer_auth_listen_ipv4)
@@ -889,7 +896,7 @@ static const struct layer_s windivert_layer_auth_listen_ipv6 =
     &WINDIVERT_SUBLAYER_AUTH_LISTEN_IPV6_GUID,
     windivert_auth_listen_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_LISTEN_IPV6                                    \
     (&windivert_layer_auth_listen_ipv6)
@@ -906,7 +913,7 @@ static const struct layer_s windivert_layer_auth_recv_accept_ipv4 =
     &WINDIVERT_SUBLAYER_AUTH_RECV_ACCEPT_IPV4_GUID,
     windivert_auth_recv_accept_v4_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV4                               \
     (&windivert_layer_auth_recv_accept_ipv4)
@@ -923,7 +930,7 @@ static const struct layer_s windivert_layer_auth_recv_accept_ipv6 =
     &WINDIVERT_SUBLAYER_AUTH_RECV_ACCEPT_IPV6_GUID,
     windivert_auth_recv_accept_v6_classify,
     NULL,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV6                               \
     (&windivert_layer_auth_recv_accept_ipv6)
@@ -940,7 +947,7 @@ static const struct layer_s windivert_layer_flow_established_ipv4 =
     &WINDIVERT_SUBLAYER_FLOW_ESTABLISHED_IPV4_GUID,
     windivert_flow_established_v4_classify,
     windivert_flow_delete_notify,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV4                               \
     (&windivert_layer_flow_established_ipv4)
@@ -957,7 +964,7 @@ static const struct layer_s windivert_layer_flow_established_ipv6 =
     &WINDIVERT_SUBLAYER_FLOW_ESTABLISHED_IPV6_GUID,
     windivert_flow_established_v6_classify,
     windivert_flow_delete_notify,
-    0
+    UINT16_MAX
 };
 #define WINDIVERT_LAYER_FLOW_ESTABLISHED_IPV6                               \
     (&windivert_layer_flow_established_ipv6)
@@ -1229,6 +1236,13 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         FwpmTransactionAbort0(engine_handle);
         goto driver_entry_exit;
     }
+    status = windivert_install_provider();
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("failed to install provider", status);
+        FwpmTransactionAbort0(engine_handle);
+        goto driver_entry_exit;
+    }
     status = windivert_install_sublayer(
         WINDIVERT_LAYER_INBOUND_MAC_FRAME_ETHERNET);
     if (!NT_SUCCESS(status))
@@ -1435,6 +1449,7 @@ static void windivert_driver_unload(void)
         if (!NT_SUCCESS(status))
         {
             DEBUG_ERROR("failed to begin WFP transaction", status);
+            FwpmTransactionAbort0(engine_handle);
             FwpmEngineClose0(engine_handle);
             return;
         }
@@ -1482,6 +1497,10 @@ static void windivert_driver_unload(void)
             WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV4->sublayer_guid);
         FwpmSubLayerDeleteByKey0(engine_handle,
             WINDIVERT_LAYER_AUTH_RECV_ACCEPT_IPV6->sublayer_guid);
+
+        FwpmProviderDeleteByKey0(engine_handle,
+            &WINDIVERT_PROVIDER_GUID);
+
         status = FwpmTransactionCommit0(engine_handle);
         if (!NT_SUCCESS(status))
         {
@@ -1490,6 +1509,25 @@ static void windivert_driver_unload(void)
         }
         FwpmEngineClose0(engine_handle);
     }
+}
+
+/*
+ * Register provider.
+ */
+static NTSTATUS windivert_install_provider()
+{
+    FWPM_PROVIDER0 provider;
+    NTSTATUS status;
+
+    RtlZeroMemory(&provider, sizeof(provider));
+    provider.providerKey             = WINDIVERT_PROVIDER_GUID;
+    provider.displayData.name        = WINDIVERT_PROVIDER_NAME;
+    provider.displayData.description = WINDIVERT_PROVIDER_DESC;
+
+    // We don't care about the install result as this provider
+    // is only for passing HLK test.
+    FwpmProviderAdd0(engine_handle, &provider, NULL);
+    return STATUS_SUCCESS;
 }
 
 /*
@@ -1627,7 +1665,7 @@ windivert_create_exit:
     // Clean-up on error:
     if (!NT_SUCCESS(status))
     {
-        context->state = WINDIVERT_CONTEXT_STATE_INVALID;
+        context->state = WINDIVERT_CONTEXT_STATE_CLOSED;
         if (context->read_queue != NULL)
         {
             WdfObjectDelete(context->read_queue);
@@ -1636,14 +1674,7 @@ windivert_create_exit:
         {
             WdfObjectDelete(context->worker);
         }
-        if (context->process != NULL)
-        {
-            ObDereferenceObject(context->process);
-        }
-        if (context->engine_handle != NULL)
-        {
-            FwpmEngineClose0(context->engine_handle);
-        }
+        // process/engine_handle handled by windivert_destroy()
     }
 
     WdfRequestComplete(request, status);
@@ -1973,6 +2004,7 @@ windivert_uninstall_callouts_error:
         // RPC handle was closed first. So, this path is "normal" if
         // the user's app crashed or never closed the WinDivert handle.
         DEBUG_ERROR("failed to begin WFP transaction", status);
+        FwpmTransactionAbort0(engine);
         goto windivert_uninstall_callouts_unregister;
     }
     for (i = 0; i < WINDIVERT_CONTEXT_MAXLAYERS; i++)
@@ -2017,6 +2049,7 @@ windivert_uninstall_callouts_error:
     if (!NT_SUCCESS(status))
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
+        FwpmTransactionAbort0(engine);
         // continue
     }
 
@@ -2079,17 +2112,20 @@ windivert_cleanup_error:
     context->state = WINDIVERT_CONTEXT_STATE_CLOSING;
     sniff_mode = ((context->flags & WINDIVERT_FLAG_SNIFF) != 0);
     forward = (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD);
-    while (!IsListEmpty(&context->flow_set))
+    entry = context->flow_set.Flink;
+    if (entry != &context->flow_set)
     {
-        entry = RemoveHeadList(&context->flow_set);
-        flow = CONTAINING_RECORD(entry, struct flow_s, entry);
-        flow->deleted = TRUE;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
-        status = FwpsFlowRemoveContext0(flow->flow_id, flow->layer_id,
-            flow->callout_id);
-        if (!NT_SUCCESS(status))
+        for (; entry != &context->flow_set; entry = entry->Flink)
         {
-            windivert_free(flow);
+            flow = CONTAINING_RECORD(entry, struct flow_s, entry);
+            status = FwpsFlowRemoveContext0(flow->flow_id, flow->layer_id,
+                flow->callout_id);
+            if (!NT_SUCCESS(status) && status != STATUS_UNSUCCESSFUL)
+            {
+                // For STATUS_UNSUCCESSFUL, flow_delete() is still called.
+                WdfObjectDereference((WDFOBJECT)object);
+            }
         }
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     }
@@ -2184,6 +2220,8 @@ extern VOID windivert_destroy(IN WDFOBJECT object)
     KLOCK_QUEUE_HANDLE lock_handle;
     context_t context = windivert_context_get((WDFFILEOBJECT)object);
     const WINDIVERT_FILTER *filter;
+    PLIST_ENTRY entry;
+    flow_t flow;
     NTSTATUS status;
 
     DEBUG("DESTROY: destroying WinDivert context (context=%p)", context);
@@ -2199,9 +2237,21 @@ extern VOID windivert_destroy(IN WDFOBJECT object)
     filter = context->filter;
     KeReleaseInStackQueuedSpinLock(&lock_handle);
     windivert_uninstall_callouts(context, WINDIVERT_CONTEXT_STATE_CLOSED);
-    FwpmEngineClose0(context->engine_handle);
+    if (context->engine_handle != NULL)
+    {
+        FwpmEngineClose0(context->engine_handle);
+    }
     windivert_free((PVOID)filter);
-    ObDereferenceObject(context->process);
+    while (!IsListEmpty(&context->flow_set))
+    {
+        entry = RemoveHeadList(&context->flow_set);
+        flow = CONTAINING_RECORD(entry, struct flow_s, entry);
+        windivert_free(flow);
+    }
+    if (context->process != NULL)
+    {
+        ObDereferenceObject(context->process);
+    }
 }
 
 /*
@@ -4355,7 +4405,7 @@ static void windivert_flow_established_v6_classify(
     UNREFERENCED_PARAMETER(data);
     UNREFERENCED_PARAMETER(flow_context);
 
-    flow_data.ProcessId = (UINT32)meta_vals->processId;
+    flow_data.EndpointId = meta_vals->transportEndpointHandle;
     flow_data.ParentEndpointId = meta_vals->parentEndpointHandle;
     flow_data.ProcessId = (UINT32)meta_vals->processId;
     windivert_get_ipv6_addr(fixed_vals,
@@ -4470,21 +4520,10 @@ static void windivert_flow_established_classify(context_t context,
     flow->flow_id = flow_id;
     flow->callout_id = callout_id;
     flow->layer_id = layer_id;
-    flow->inserted = FALSE;
-    flow->deleted = FALSE;
     flow->outbound = outbound;
     flow->loopback = loopback;
     flow->ipv6 = !ipv4;
     RtlCopyMemory(&flow->data, flow_data, sizeof(flow->data));
-
-    status = FwpsFlowAssociateContext0(flow_id, layer_id, callout_id,
-        (UINT64)flow);
-    if (!NT_SUCCESS(status))
-    {
-        windivert_free(flow);
-        WdfObjectDereference(object);
-        return;
-    }
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
@@ -4495,19 +4534,16 @@ static void windivert_flow_established_classify(context_t context,
         WdfObjectDereference(object);
         return;
     }
-    if (!flow->deleted)
+    status = FwpsFlowAssociateContext0(flow_id, layer_id, callout_id,
+        (UINT64)flow);
+    if (!NT_SUCCESS(status))
     {
-        InsertTailList(&context->flow_set, &flow->entry);
-        flow->inserted = TRUE;
-    }
-    else
-    {
-        // Flow was deleted before insertion; we are responsible for cleanup.
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         windivert_free(flow);
         WdfObjectDereference(object);
         return;
     }
+    InsertTailList(&context->flow_set, &flow->entry);
     KeReleaseInStackQueuedSpinLock(&lock_handle);
 }
 
@@ -4534,18 +4570,16 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     {
         return;
     }
-
     timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
     context = flow->context;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
     object = (WDFOBJECT)context->object; // referenced in flow_established.
-    if (flow->inserted && !flow->deleted)
+    cleanup = (context->state == WINDIVERT_CONTEXT_STATE_OPEN);
+    if (cleanup)
     {
         RemoveEntryList(&flow->entry);
     }
-    flow->deleted = TRUE;
-    cleanup = flow->inserted;
     if (context->state != WINDIVERT_CONTEXT_STATE_OPEN ||
         context->shutdown_recv)
     {
@@ -4570,12 +4604,12 @@ static void windivert_flow_delete_notify(UINT16 layer_id, UINT32 callout_id,
     }
 
 windivert_flow_delete_notify_exit:
-
     if (cleanup)
     {
+        // If context->state != OPEN, then destroy() will free the flow.
         windivert_free(flow);
-        WdfObjectDereference(object);
     }
+    WdfObjectDereference(object);
 }
 
 /*
