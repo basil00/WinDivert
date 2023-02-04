@@ -1,6 +1,6 @@
 /*
  * windivert_hash.c
- * (C) 2019, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -66,6 +66,7 @@
  *   "seed" value.
  * - The input sized is fixed to 32bytes (excluding the seed), so there is
  *   only ever a single round.  As such, the algorithm has been specialized.
+ * - [ETHERNET] uses an additional "pseudo-round" for the ethernet header.
  */
 
 #define WINDIVERT_ROTL64(x, r)  (((x) << (r)) | ((x) >> (64 - (r))))
@@ -142,8 +143,17 @@ static UINT64 WinDivertHashPacket(UINT64 seed,
         v[1] = data64[4] ^ padding64[5];
         i = 2;
     }
+    else if (eth_header != NULL)
+    {
+        v2 = padding64[1];
+        v3 = padding64[2];
+        v4 = padding64[3];
+        i = 0;
+    }
     else
+    {
         return 0;
+    }
 
     if (tcp_header != NULL)
     {
@@ -189,6 +199,16 @@ static UINT64 WinDivertHashPacket(UINT64 seed,
     v2 = WinDivertXXH64Round(v[1], v2);
     v3 = WinDivertXXH64Round(v[2], v3);
     v4 = WinDivertXXH64Round(v[3], v4);
+
+    // Ethernet-layer pseudo-round:
+    if (eth_header != NULL)
+    {
+        data64 = (const UINT64 *)eth_header->DstAddr;
+        v1 = WinDivertXXH64Round(v1, data64[0] & 0xFFFFFFFFFFFFull);
+        data64 = (const UINT64 *)eth_header->SrcAddr;
+        v2 = WinDivertXXH64Round(v2, data64[0]);
+    }
+
     h64 = WINDIVERT_ROTL64(v1, 1) + WINDIVERT_ROTL64(v2, 7) +
           WINDIVERT_ROTL64(v3, 12) + WINDIVERT_ROTL64(v4, 18);
     h64 = WinDivertXXH64MergeRound(h64, v1);

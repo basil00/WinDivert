@@ -1,6 +1,6 @@
 /*
  * windivert_helper.c
- * (C) 2021, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -1672,6 +1672,8 @@ static void WinDivertSimplifyTest(PEXPR test)
             lb[0] = 0; ub[0] = 0x1FFF;
             break;
         case TOKEN_ETH_TYPE:
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
         case TOKEN_IP_TOS:
         case TOKEN_IP_LENGTH:
         case TOKEN_IP_ID:
@@ -1752,6 +1754,7 @@ static void WinDivertSimplifyTest(PEXPR test)
             lb[0] = lb[1] = 0;
             ub[0] = 0xFFFFFFFF;
             ub[1] = 0xFFFF;
+            break;
         case TOKEN_TCP_PAYLOAD32:
             type = TOKEN_TCP;
             lb[0] = 0; ub[0] = 0xFFFFFFFF;
