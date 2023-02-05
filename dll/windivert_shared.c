@@ -345,6 +345,8 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
         case WINDIVERT_FILTER_FIELD_ENDPOINTID:
         case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
         case WINDIVERT_FILTER_FIELD_TIMESTAMP:
+        case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
+        case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
             WinDivertSerializeNumber(stream, filter->arg[1]);
             break;
         case WINDIVERT_FILTER_FIELD_PACKET:
