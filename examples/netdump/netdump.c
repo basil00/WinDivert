@@ -1,6 +1,6 @@
 /*
  * netdump.c
- * (C) 2019, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -68,6 +68,7 @@ int __cdecl main(int argc, char **argv)
     UINT packet_len;
     WINDIVERT_ADDRESS addr;
     PWINDIVERT_ETHHDR eth_header;
+    PWINDIVERT_ARPHDR arp_header;
     PWINDIVERT_IPHDR ip_header;
     PWINDIVERT_IPV6HDR ipv6_header;
     PWINDIVERT_ICMPHDR icmp_header;
@@ -186,8 +187,9 @@ int __cdecl main(int argc, char **argv)
 
         // Print info about the matching packet.
         WinDivertHelperParsePacket(packet, packet_len, addr.Layer,
-            &eth_header, &ip_header, &ipv6_header, NULL, &icmp_header,
-            &icmpv6_header, &tcp_header, &udp_header, NULL, NULL);
+            &eth_header, &arp_header, &ip_header, &ipv6_header, NULL,
+            &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
+            NULL);
 
         // Dump packet info: 
         putchar('\n');
@@ -209,6 +211,16 @@ int __cdecl main(int argc, char **argv)
                 FOREGROUND_GREEN | FOREGROUND_BLUE);
             printf("Ethernet [SrcAddr=%s DstAddr=%s Type=0x%.4X]\n",
                 src_str, dst_str, ntohs(eth_header->Type));
+            if (arp_header != NULL)
+            {
+                SetConsoleTextAttribute(console,
+                    FOREGROUND_GREEN);
+                printf("ARP [Hardware=%u Protocol=%u HardLength=%u "
+                    "ProtLength=%u Opcode=%u]\n",
+                    ntohs(arp_header->Hardware), ntohs(arp_header->Protocol),
+                    arp_header->HardLength, arp_header->ProtLength,
+                    ntohs(arp_header->Opcode));
+            }
         }
         else
         {

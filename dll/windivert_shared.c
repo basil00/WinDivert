@@ -1,6 +1,6 @@
 /*
  * windivert_shared.c
- * (C) 2019, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -68,6 +68,7 @@
 #define ntohl48(x)                      BYTESWAP48(x)
 #define htonl48(x)                      BYTESWAP48(x)
 
+#define ETHERTYPE_ARP   0x0806
 #define ETHERTYPE_IP    0x0800
 #define ETHERTYPE_IPV6  0x86DD
 
@@ -188,6 +189,7 @@ typedef struct
     UINT32 Extended:1;
     UINT32 Reserved1:6;
     PWINDIVERT_ETHHDR EthHeader;
+    PWINDIVERT_ARPHDR ArpHeader;
     PWINDIVERT_IPHDR IPHeader;
     PWINDIVERT_IPV6HDR IPv6Header;
     PWINDIVERT_ICMPHDR ICMPHeader;
@@ -393,6 +395,7 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket,
     UINT packetLen, WINDIVERT_LAYER layer, PWINDIVERT_PACKET pInfo)
 {
     PWINDIVERT_ETHHDR eth_header = NULL;
+    PWINDIVERT_ARPHDR arp_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -439,6 +442,16 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket,
                         goto WinDivertHelperParsePacketExit;
                     }
                     break;
+                case ETHERTYPE_ARP:
+                    if (data_len < sizeof(WINDIVERT_ARPHDR))
+                    {
+                        goto WinDivertHelperParsePacketExit;
+                    }
+                    arp_header  = (PWINDIVERT_ARPHDR)data;
+                    data        = (PVOID)(arp_header + 1);
+                    data_len   -= sizeof(WINDIVERT_ARPHDR);
+                    header_len += sizeof(WINDIVERT_ARPHDR);
+                    goto WinDivertHelperParsePacketExit;
                 default:
                     goto WinDivertHelperParsePacketExit;
             }
@@ -626,6 +639,7 @@ WinDivertHelperParsePacketExit:
     pInfo->Extended      = (ip_total_len < ip_packet_len? 1: 0);
     pInfo->Reserved1     = 0;
     pInfo->EthHeader     = eth_header;
+    pInfo->ArpHeader     = arp_header;
     pInfo->IPHeader      = ip_header;
     pInfo->IPv6Header    = ipv6_header;
     pInfo->ICMPHeader    = icmp_header;
@@ -1042,6 +1056,12 @@ static BOOL WinDivertValidateField(WINDIVERT_LAYER layer, UINT32 field)
         LE_____,    /* WINDIVERT_FILTER_FIELD_ETH_DST_ADDR */
         LE_____,    /* WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR */
         LE_____,    /* WINDIVERT_FILTER_FIELD_ETH_TYPE */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_HARDWARE */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_PROTOCOL */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_OPCODE */
     };
 
     if (field > WINDIVERT_FILTER_FIELD_MAX)
@@ -1124,6 +1144,7 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
     const WINDIVERT_DATA_SOCKET *socket_data,
     const WINDIVERT_DATA_REFLECT *reflect_data,
     const WINDIVERT_ETHHDR *eth_header,
+    const WINDIVERT_ARPHDR *arp_header,
     const WINDIVERT_IPHDR *ip_header,
     const WINDIVERT_IPV6HDR *ipv6_header,
     const WINDIVERT_ICMPHDR *icmp_header,
@@ -1166,8 +1187,8 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 if (random64 == 0)
                 {
                     random64 = WinDivertHashPacket((UINT64)timestamp,
-                        eth_header, ip_header, ipv6_header, icmp_header,
-                        icmpv6_header, tcp_header, udp_header);
+                        eth_header, arp_header, ip_header, ipv6_header,
+                        icmp_header, icmpv6_header, tcp_header, udp_header);
                     random64 |= 0xFF00000000000000ull;  // Make non-zero.
                 }
                 break;
@@ -1175,6 +1196,13 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
             case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
             case WINDIVERT_FILTER_FIELD_ETH_TYPE:
                 result = (eth_header != NULL);
+                break;
+            case WINDIVERT_FILTER_FIELD_ARP_HARDWARE:
+            case WINDIVERT_FILTER_FIELD_ARP_PROTOCOL:
+            case WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH:
+            case WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH:
+            case WINDIVERT_FILTER_FIELD_ARP_OPCODE:
+                result = (arp_header != NULL);
                 break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
             case WINDIVERT_FILTER_FIELD_IP_TOS:
@@ -1358,6 +1386,9 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                 case WINDIVERT_FILTER_FIELD_IMPOSTOR:
                     val[0] = (UINT32)impostor;
                     break;
+                case WINDIVERT_FILTER_FIELD_ARP:
+                    val[0] = (UINT32)(arp_header != NULL);
+                    break;
                 case WINDIVERT_FILTER_FIELD_IP:
                     val[0] = (UINT32)(ip_header != NULL);
                     break;
@@ -1446,21 +1477,36 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                     break;
                  case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
                  case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
-                     big = TRUE;
-                     eth_addr =
-                       (filter[ip].field == WINDIVERT_FILTER_FIELD_ETH_DST_ADDR?
-                         eth_header->DstAddr: eth_header->SrcAddr);
-                     val[0] = ((UINT32)eth_addr[2] << 24) |
-                              ((UINT32)eth_addr[3] << 16) |
-                              ((UINT32)eth_addr[4] << 8) |
-                              ((UINT32)eth_addr[5]);
-                     val[1] = ((UINT32)eth_addr[0] << 8) |
-                              ((UINT32)eth_addr[1]);
-                     val[2] = val[3] = 0;
-                     break;
+                    big = TRUE;
+                    eth_addr =
+                      (filter[ip].field == WINDIVERT_FILTER_FIELD_ETH_DST_ADDR?
+                        eth_header->DstAddr: eth_header->SrcAddr);
+                    val[0] = ((UINT32)eth_addr[2] << 24) |
+                             ((UINT32)eth_addr[3] << 16) |
+                             ((UINT32)eth_addr[4] << 8) |
+                             ((UINT32)eth_addr[5]);
+                    val[1] = ((UINT32)eth_addr[0] << 8) |
+                             ((UINT32)eth_addr[1]);
+                    val[2] = val[3] = 0;
+                    break;
                 case WINDIVERT_FILTER_FIELD_ETH_TYPE:
-                     val[0] = (UINT32)ntohs(eth_header->Type);
-                     break;
+                    val[0] = (UINT32)ntohs(eth_header->Type);
+                    break;
+                case WINDIVERT_FILTER_FIELD_ARP_HARDWARE:
+                    val[0] = (UINT32)ntohs(arp_header->Hardware);
+                    break;
+                case WINDIVERT_FILTER_FIELD_ARP_PROTOCOL:
+                    val[0] = (UINT32)ntohs(arp_header->Protocol);
+                    break;
+                case WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH:
+                    val[0] = (UINT32)arp_header->HardLength;
+                    break;
+                case WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH:
+                    val[0] = (UINT32)arp_header->ProtLength;
+                    break;
+                case WINDIVERT_FILTER_FIELD_ARP_OPCODE:
+                    val[0] = (UINT32)ntohs(arp_header->Opcode);
+                    break;
                 case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
                     val[0] = (UINT32)ip_header->HdrLength;
                     break;

@@ -1,6 +1,6 @@
 /*
  * windivert.h
- * (C) 2019, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -350,7 +350,7 @@ WINDIVERTEXPORT BOOL WinDivertGetParam(
 #endif
 
 /*
- * Ethernet/IPv4/IPv6/ICMP/ICMPv6/TCP/UDP header definitions.
+ * Ethernet/ARP/IPv4/IPv6/ICMP/ICMPv6/TCP/UDP header definitions.
  */
 typedef struct
 {
@@ -358,6 +358,15 @@ typedef struct
     UINT8 SrcAddr[6];
     UINT16 Type;
 } WINDIVERT_ETHHDR, *PWINDIVERT_ETHHDR;
+
+typedef struct
+{
+    UINT16 Hardware;
+    UINT16 Protocol;
+    UINT8 HardLength;
+    UINT8 ProtLength;
+    UINT16 Opcode;
+} WINDIVERT_ARPHDR, *PWINDIVERT_ARPHDR;
 
 typedef struct
 {
@@ -526,6 +535,7 @@ WINDIVERTEXPORT BOOL WinDivertHelperParsePacket(
     __in        UINT packetLen,
     __in        WINDIVERT_LAYER layer,
     __out_opt   PWINDIVERT_ETHHDR *ppEthHdr,
+    __out_opt   PWINDIVERT_ARPHDR *ppArpHdr,
     __out_opt   PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt   PWINDIVERT_IPV6HDR *ppIpv6Hdr,
     __out_opt   UINT8 *pProtocol,

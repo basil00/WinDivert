@@ -1,6 +1,6 @@
 /*
  * windivert_device.h
- * (C) 2019, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -153,8 +153,14 @@
 #define WINDIVERT_FILTER_FIELD_ETH_DST_ADDR         86
 #define WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR         87
 #define WINDIVERT_FILTER_FIELD_ETH_TYPE             88
+#define WINDIVERT_FILTER_FIELD_ARP                  89
+#define WINDIVERT_FILTER_FIELD_ARP_HARDWARE         90
+#define WINDIVERT_FILTER_FIELD_ARP_PROTOCOL         91
+#define WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH      92
+#define WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH      93
+#define WINDIVERT_FILTER_FIELD_ARP_OPCODE           94
 #define WINDIVERT_FILTER_FIELD_MAX                  \
-    WINDIVERT_FILTER_FIELD_ETH_TYPE
+    WINDIVERT_FILTER_FIELD_ARP_OPCODE
 
 #define WINDIVERT_FILTER_TEST_EQ                    0
 #define WINDIVERT_FILTER_TEST_NEQ                   1

@@ -489,8 +489,8 @@ static BOOL windivert_get_data(PNET_BUFFER buffer, UINT length, INT min,
     INT max, INT idx, PVOID data, UINT size);
 static BOOL windivert_parse_headers(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     BOOL ipv4, BOOL *fragment_ptr, PWINDIVERT_ETHHDR *eth_header_ptr,
-    PWINDIVERT_IPHDR *ip_header_ptr, PWINDIVERT_IPV6HDR *ipv6_header_ptr,
-    PWINDIVERT_ICMPHDR *icmp_header_ptr,
+    PWINDIVERT_ARPHDR *arp_header, PWINDIVERT_IPHDR *ip_header_ptr,
+    PWINDIVERT_IPV6HDR *ipv6_header_ptr, PWINDIVERT_ICMPHDR *icmp_header_ptr,
     PWINDIVERT_ICMPV6HDR *icmpv6_header_ptr, PWINDIVERT_TCPHDR *tcp_header_ptr,
     PWINDIVERT_UDPHDR *udp_header_ptr, UINT8 *proto_ptr, UINT *header_len_ptr,
     UINT *payload_len_ptr);
@@ -1517,7 +1517,6 @@ static void windivert_driver_unload(void)
 static NTSTATUS windivert_install_provider()
 {
     FWPM_PROVIDER0 provider;
-    NTSTATUS status;
 
     RtlZeroMemory(&provider, sizeof(provider));
     provider.providerKey             = WINDIVERT_PROVIDER_GUID;
@@ -5811,15 +5810,20 @@ static BOOL windivert_get_data(PNET_BUFFER buffer, UINT length, INT min,
  */
 static WINDIVERT_INLINE BOOL windivert_parse_headers(PNET_BUFFER buffer,
     WINDIVERT_LAYER layer, BOOL ipv4, BOOL *fragment_ptr,
-    PWINDIVERT_ETHHDR *eth_header_ptr, PWINDIVERT_IPHDR *ip_header_ptr,
-    PWINDIVERT_IPV6HDR *ipv6_header_ptr, PWINDIVERT_ICMPHDR *icmp_header_ptr,
-    PWINDIVERT_ICMPV6HDR *icmpv6_header_ptr, PWINDIVERT_TCPHDR *tcp_header_ptr,
-    PWINDIVERT_UDPHDR *udp_header_ptr, UINT8 *proto_ptr, UINT *header_len_ptr,
-    UINT *payload_len_ptr)
+    PWINDIVERT_ETHHDR *eth_header_ptr,
+    PWINDIVERT_ARPHDR *arp_header_ptr,
+    PWINDIVERT_IPHDR *ip_header_ptr,
+    PWINDIVERT_IPV6HDR *ipv6_header_ptr,
+    PWINDIVERT_ICMPHDR *icmp_header_ptr,
+    PWINDIVERT_ICMPV6HDR *icmpv6_header_ptr,
+    PWINDIVERT_TCPHDR *tcp_header_ptr,
+    PWINDIVERT_UDPHDR *udp_header_ptr,
+    UINT8 *proto_ptr, UINT *header_len_ptr, UINT *payload_len_ptr)
 {
     UINT min_len, total_len, ip_header_len, header_len, packet_len,
         payload_len, advance_len;
     PWINDIVERT_ETHHDR eth_header = NULL;
+    PWINDIVERT_ARPHDR arp_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -5856,6 +5860,9 @@ static WINDIVERT_INLINE BOOL windivert_parse_headers(PNET_BUFFER buffer,
         min_len = 64 - sizeof(UINT32);
         min_len = (total_len < min_len? total_len: min_len);
         min_len -= sizeof(WINDIVERT_ETHHDR);
+        NdisAdvanceNetBufferDataStart(buffer, sizeof(WINDIVERT_ETHHDR),
+            FALSE, NULL);
+        advance_len += sizeof(WINDIVERT_ETHHDR);
         switch (RtlUshortByteSwap(eth_header->Type))
         {
             case ETHERTYPE_IP:
@@ -5864,12 +5871,20 @@ static WINDIVERT_INLINE BOOL windivert_parse_headers(PNET_BUFFER buffer,
             case ETHERTYPE_IPV6:
                 ipv4 = FALSE;
                 break;
+            case ETHERTYPE_ARP:
+                arp_header = (PWINDIVERT_ARPHDR)NdisGetDataBuffer(buffer,
+                    sizeof(WINDIVERT_ARPHDR), NULL, 1, 0);
+                if (arp_header == NULL)
+                {
+                    DEBUG("FILTER: REJECT (failed to get ARP header)");
+                    return FALSE;
+                }
+                header_len += sizeof(WINDIVERT_ARPHDR);
+                payload_len -= sizeof(WINDIVERT_ARPHDR);
+                goto windivert_parse_headers_exit;
             default:
                 goto windivert_parse_headers_exit;
         }
-        NdisAdvanceNetBufferDataStart(buffer, sizeof(WINDIVERT_ETHHDR),
-            FALSE, NULL);
-        advance_len += sizeof(WINDIVERT_ETHHDR);
     }
 
     // Get the IP header.
@@ -6073,6 +6088,7 @@ windivert_parse_headers_exit:
 
     *fragment_ptr      = fragment;
     *eth_header_ptr    = eth_header;
+    *arp_header_ptr    = arp_header;
     *ip_header_ptr     = ip_header;
     *ipv6_header_ptr   = ipv6_header;
     *icmp_header_ptr   = icmp_header;
@@ -6103,6 +6119,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
     const WINDIVERT_FILTER *filter)
 {
     PWINDIVERT_ETHHDR eth_header = NULL;
+    PWINDIVERT_ARPHDR arp_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -6125,9 +6142,9 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
         case WINDIVERT_LAYER_NETWORK:
         case WINDIVERT_LAYER_NETWORK_FORWARD:
             if (!windivert_parse_headers(buffer, layer, ipv4, &fragment,
-                    &eth_header, &ip_header, &ipv6_header, &icmp_header,
-                    &icmpv6_header, &tcp_header, &udp_header, &protocol,
-                    &header_len, &payload_len))
+                    &eth_header, &arp_header, &ip_header, &ipv6_header,
+                    &icmp_header, &icmpv6_header, &tcp_header, &udp_header,
+                    &protocol, &header_len, &payload_len))
             {
                 return FALSE;
             }
@@ -6174,6 +6191,7 @@ static BOOL windivert_filter(PNET_BUFFER buffer, WINDIVERT_LAYER layer,
         socket_data,
         reflect_data,
         eth_header,
+        arp_header,
         ip_header,
         ipv6_header,
         icmp_header,
@@ -6365,6 +6383,8 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_TCP_HDRLENGTH:
                 ub[0] = 0x0F;
                 break;
+            case WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH:
+            case WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH:
             case WINDIVERT_FILTER_FIELD_IP_TOS:
             case WINDIVERT_FILTER_FIELD_IP_TTL:
             case WINDIVERT_FILTER_FIELD_IP_PROTOCOL:
@@ -6386,6 +6406,9 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
                 ub[0] = 0x1FFF;
                 break;
             case WINDIVERT_FILTER_FIELD_ETH_TYPE:
+            case WINDIVERT_FILTER_FIELD_ARP_HARDWARE:
+            case WINDIVERT_FILTER_FIELD_ARP_PROTOCOL:
+            case WINDIVERT_FILTER_FIELD_ARP_OPCODE:
             case WINDIVERT_FILTER_FIELD_IP_LENGTH:
             case WINDIVERT_FILTER_FIELD_IP_ID:
             case WINDIVERT_FILTER_FIELD_IP_CHECKSUM:

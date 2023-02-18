@@ -35,27 +35,28 @@
 <li><a href="#helper_programming_api">6. Helper Programming API</a>
 <ul>
 <li><a href="#divert_ethhdr">6.1 WINDIVERT_ETHHDR</a></li>
-<li><a href="#divert_iphdr">6.2 WINDIVERT_IPHDR</a></li>
-<li><a href="#divert_ipv6hdr">6.3 WINDIVERT_IPV6HDR</a></li>
-<li><a href="#divert_icmphdr">6.4 WINDIVERT_ICMPHDR</a></li>
-<li><a href="#divert_icmpv6hdr">6.5 WINDIVERT_ICMPV6HDR</a></li>
-<li><a href="#divert_tcphdr">6.6 WINDIVERT_TCPHDR</a></li>
-<li><a href="#divert_udphdr">6.7 WINDIVERT_UDPHDR</a></li>
-<li><a href="#divert_helper_parse_packet">6.8 WinDivertHelperParsePacket</a></li>
-<li><a href="#divert_helper_hash_packet">6.9 WinDivertHelperHashPacket</a></li>
-<li><a href="#divert_helper_parse_mac_address">6.10 WinDivertHelperParseMACAddress</a></li>
-<li><a href="#divert_helper_parse_ipv4_address">6.11 WinDivertHelperParseIPv4Address</a></li>
-<li><a href="#divert_helper_parse_ipv6_address">6.12 WinDivertHelperParseIPv6Address</a></li>
-<li><a href="#divert_helper_format_mac_address">6.13 WinDivertHelperFormatMacAddress</a></li>
-<li><a href="#divert_helper_format_ipv4_address">6.14 WinDivertHelperFormatIPv4Address</a></li>
-<li><a href="#divert_helper_format_ipv6_address">6.15 WinDivertHelperFormatIPv6Address</a></li>
-<li><a href="#divert_helper_calc_checksums">6.16 WinDivertHelperCalcChecksums</a></li>
-<li><a href="#divert_helper_dec_ttl">6.17 WinDivertHelperDecrementTTL</a></li>
-<li><a href="#divert_helper_compile_filter">6.18 WinDivertHelperCompileFilter</a></li>
-<li><a href="#divert_helper_eval_filter">6.19 WinDivertHelperEvalFilter</a></li>
-<li><a href="#divert_helper_format_filter">6.20 WinDivertHelperFormatFilter</a></li>
-<li><a href="#divert_helper_ntoh">6.21 WinDivertHelperNtoh*</a></li>
-<li><a href="#divert_helper_hton">6.22 WinDivertHelperHton*</a></li>
+<li><a href="#divert_arphdr">6.2 WINDIVERT_ARPHDR</a></li>
+<li><a href="#divert_iphdr">6.3 WINDIVERT_IPHDR</a></li>
+<li><a href="#divert_ipv6hdr">6.4 WINDIVERT_IPV6HDR</a></li>
+<li><a href="#divert_icmphdr">6.5 WINDIVERT_ICMPHDR</a></li>
+<li><a href="#divert_icmpv6hdr">6.6 WINDIVERT_ICMPV6HDR</a></li>
+<li><a href="#divert_tcphdr">6.7 WINDIVERT_TCPHDR</a></li>
+<li><a href="#divert_udphdr">6.8 WINDIVERT_UDPHDR</a></li>
+<li><a href="#divert_helper_parse_packet">6.9 WinDivertHelperParsePacket</a></li>
+<li><a href="#divert_helper_hash_packet">6.10 WinDivertHelperHashPacket</a></li>
+<li><a href="#divert_helper_parse_mac_address">6.11 WinDivertHelperParseMACAddress</a></li>
+<li><a href="#divert_helper_parse_ipv4_address">6.12 WinDivertHelperParseIPv4Address</a></li>
+<li><a href="#divert_helper_parse_ipv6_address">6.13 WinDivertHelperParseIPv6Address</a></li>
+<li><a href="#divert_helper_format_mac_address">6.14 WinDivertHelperFormatMACAddress</a></li>
+<li><a href="#divert_helper_format_ipv4_address">6.15 WinDivertHelperFormatIPv4Address</a></li>
+<li><a href="#divert_helper_format_ipv6_address">6.16 WinDivertHelperFormatIPv6Address</a></li>
+<li><a href="#divert_helper_calc_checksums">6.17 WinDivertHelperCalcChecksums</a></li>
+<li><a href="#divert_helper_dec_ttl">6.18 WinDivertHelperDecrementTTL</a></li>
+<li><a href="#divert_helper_compile_filter">6.19 WinDivertHelperCompileFilter</a></li>
+<li><a href="#divert_helper_eval_filter">6.20 WinDivertHelperEvalFilter</a></li>
+<li><a href="#divert_helper_format_filter">6.21 WinDivertHelperFormatFilter</a></li>
+<li><a href="#divert_helper_ntoh">6.22 WinDivertHelperNtoh*</a></li>
+<li><a href="#divert_helper_hton">6.23 WinDivertHelperHton*</a></li>
 </ul>
 </li>
 <li><a href="#filter_language">7. Filter Language</a>
@@ -2084,7 +2085,31 @@ Ethernet frame header definition.
 </p>
 </dl></dd>
 
-<a name="divert_iphdr"><h3>6.2 WINDIVERT_IPHDR</h3></a>
+<a name="divert_arphdr"><h3>6.2 WINDIVERT_ARPHDR</h3></a>
+<table border="1" cellpadding="5"><tr><td>
+<pre>
+typedef struct
+{
+    UINT16 Hardware;
+    UINT16 Protocol;
+    UINT8 HardLength;
+    UINT8 ProtLength;
+    UINT16 Opcode;
+} <b>WINDIVERT_ARPHDR</b>, *<b>PWINDIVERT_ARPHDR</b>;
+</pre>
+</td></tr></table>
+<dl><dd>
+<p>
+<b>Fields</b><br>
+See <a href="https://en.wikipedia.org/wiki/Address_Resolution_Protocol#Packet_structure">here</a>
+for more information.
+</p><p>
+<b>Remarks</b><br>
+ARP header definition.
+</p>
+</dl></dd>
+
+<a name="divert_iphdr"><h3>6.3 WINDIVERT_IPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2127,7 +2152,7 @@ definitions:
 </ul>
 </dl></dd>
 
-<a name="divert_ipv6hdr"><h3>6.3 WINDIVERT_IPV6HDR</h3></a>
+<a name="divert_ipv6hdr"><h3>6.4 WINDIVERT_IPV6HDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2163,7 +2188,7 @@ definitions:
 </ul>
 </dl></dd>
 
-<a name="divert_icmphdr"><h3>6.4 WINDIVERT_ICMPHDR</h3></a>
+<a name="divert_icmphdr"><h3>6.5 WINDIVERT_ICMPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2186,7 +2211,7 @@ ICMP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_icmpv6hdr"><h3>6.5 WINDIVERT_ICMPV6HDR</h3></a>
+<a name="divert_icmpv6hdr"><h3>6.6 WINDIVERT_ICMPV6HDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2209,7 +2234,7 @@ ICMPv6 header definition.
 </p>
 </dl></dd>
 
-<a name="divert_tcphdr"><h3>6.6 WINDIVERT_TCPHDR</h3></a>
+<a name="divert_tcphdr"><h3>6.7 WINDIVERT_TCPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2244,7 +2269,7 @@ TCP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_udphdr"><h3>6.7 WINDIVERT_UDPHDR</h3></a>
+<a name="divert_udphdr"><h3>6.8 WINDIVERT_UDPHDR</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 typedef struct
@@ -2267,7 +2292,7 @@ UDP header definition.
 </p>
 </dl></dd>
 
-<a name="divert_helper_parse_packet"><h3>6.8 WinDivertHelperParsePacket</h3></a>
+<a name="divert_helper_parse_packet"><h3>6.9 WinDivertHelperParsePacket</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParsePacket</b>(
@@ -2275,6 +2300,7 @@ BOOL <b>WinDivertHelperParsePacket</b>(
     __in UINT packetLen,
     __in WINDIVERT_LAYER layer,
     __out_opt PWINDIVERT_ETHHDR *ppEthHdr,
+    __out_opt PWINDIVERT_ARPHDR *ppArpHdr,
     __out_opt PWINDIVERT_IPHDR *ppIpHdr,
     __out_opt PWINDIVERT_IPV6HDR *ppIpv6Hdr,
     __out_opt UINT8 *pProtocol,
@@ -2294,6 +2320,7 @@ BOOL <b>WinDivertHelperParsePacket</b>(
 <li> <code>packetLen</code>: The total length of the packet(s) <code>pPacket</code>.</li>
 <li> <code>layer</code>: The layer.</li>
 <li> <code>ppEthHdr</code>: Output pointer to a <code>WINDIVERT_ETHHDR</code>.</li>
+<li> <code>ppArpHdr</code>: Output pointer to an <code>WINDIVERT_ARPHDR</code>.</li>
 <li> <code>ppIpHdr</code>: Output pointer to a <code>WINDIVERT_IPHDR</code>.</li>
 <li> <code>ppIpv6Hdr</code>: Output pointer to a <code>WINDIVERT_IPV6HDR</code>.</li>
 <li> <code>pProtocol</code>: Output transport protocol.</li>
@@ -2333,7 +2360,7 @@ for parsing.
 This function will succeed if at least one header can be parsed.
 </p>
 
-<a name="divert_helper_hash_packet"><h3>6.9 WinDivertHelperHashPacket</h3></a>
+<a name="divert_helper_hash_packet"><h3>6.10 WinDivertHelperHashPacket</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT64 <b>WinDivertHelperHashPacket</b>(
@@ -2370,7 +2397,7 @@ The optional <code>seed</code> value is also incorporated into the hash.
 <p>
 </dd></dl>
 
-<a name="divert_helper_parse_mac_address"><h3>6.10 WinDivertHelperParseMACAddress</h3></a>
+<a name="divert_helper_parse_mac_address"><h3>6.11 WinDivertHelperParseMACAddress</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParseMACAddress</b>(
@@ -2400,7 +2427,7 @@ to convert the result into network-byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_parse_ipv4_address"><h3>6.11 WinDivertHelperParseIPv4Address</h3></a>
+<a name="divert_helper_parse_ipv4_address"><h3>6.12 WinDivertHelperParseIPv4Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParseIPv4Address</b>(
@@ -2429,7 +2456,7 @@ to convert the result into network-byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_parse_ipv6_address"><h3>6.12 WinDivertHelperParseIPv6Address</h3></a>
+<a name="divert_helper_parse_ipv6_address"><h3>6.13 WinDivertHelperParseIPv6Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParseIPv6Address</b>(
@@ -2459,10 +2486,10 @@ to convert the result into network-byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_format_mac_address"><h3>6.13 WinDivertHelperParseMacAddress</h3></a>
+<a name="divert_helper_format_mac_address"><h3>6.14 WinDivertHelperParseMACAddress</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
-BOOL <b>WinDivertHelperFormatMacAddress</b>(
+BOOL <b>WinDivertHelperFormatMACAddress</b>(
     __in const UINT8 *addr,
     __out char *buffer,
     __in UINT bufLen
@@ -2472,7 +2499,7 @@ BOOL <b>WinDivertHelperFormatMacAddress</b>(
 <dl><dd>
 <p><b>Parameters</b></p>
 <ul>
-<li> <code>addr</code>: The Mac address in host-byte order.</li>
+<li> <code>addr</code>: The MAC address in host-byte order.</li>
 <li> <code>buffer</code>: The buffer to store the formatted string.</li>
 <li> <code>bufLen</code>: The length of <code>buffer</code>.
 </ul>
@@ -2482,11 +2509,11 @@ BOOL <b>WinDivertHelperFormatMacAddress</b>(
 Use <code>GetLastError()</code> to get the reason for the error.
 </p><p>
 <b>Remarks</b><br>
-Convert a Mac address into a string.
+Convert a MAC address into a string.
 </p>
 </dd></dl>
 
-<a name="divert_helper_format_ipv4_address"><h3>6.14 WinDivertHelperParseIPv4Address</h3></a>
+<a name="divert_helper_format_ipv4_address"><h3>6.15 WinDivertHelperParseIPv4Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperFormatIPv4Address</b>(
@@ -2513,7 +2540,7 @@ Convert an IPv4 address into a string.
 </p>
 </dd></dl>
 
-<a name="divert_helper_format_ipv6_address"><h3>6.15 WinDivertHelperParseIPv6Address</h3></a>
+<a name="divert_helper_format_ipv6_address"><h3>6.16 WinDivertHelperParseIPv6Address</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperFormatIPv6Address</b>(
@@ -2540,7 +2567,7 @@ Convert an IPv6 address into a string.
 </p>
 </dd></dl>
 
-<a name="divert_helper_calc_checksums"><h3>6.16 WinDivertHelperCalcChecksums</h3></a>
+<a name="divert_helper_calc_checksums"><h3>6.17 WinDivertHelperCalcChecksums</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCalcChecksums</b>(
@@ -2600,7 +2627,7 @@ packet injection.
 </p>
 </dd></dl>
 
-<a name="divert_helper_dec_ttl"><h3>6.17 WinDivertHelperDecrementTTL</h3></a>
+<a name="divert_helper_dec_ttl"><h3>6.18 WinDivertHelperDecrementTTL</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperDecrementTTL</b>(
@@ -2636,7 +2663,7 @@ This function updates the checksum field incrementally.
 </p>
 </dd></dl>
 
-<a name="divert_helper_compile_filter"><h3>6.18 WinDivertHelperCompileFilter</h3></a>
+<a name="divert_helper_compile_filter"><h3>6.19 WinDivertHelperCompileFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperCompileFilter</b>(
@@ -2687,7 +2714,7 @@ objects, and therefore do not need to be deallocated.
 <p>
 </dd></dl>
 
-<a name="divert_helper_eval_filter"><h3>6.19 WinDivertHelperEvalFilter</h3></a>
+<a name="divert_helper_eval_filter"><h3>6.20 WinDivertHelperEvalFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperEvalFilter</b>(
@@ -2733,7 +2760,7 @@ function.
 <p>
 </dd></dl>
 
-<a name="divert_helper_format_filter"><h3>6.20 WinDivertHelperFormatFilter</h3></a>
+<a name="divert_helper_format_filter"><h3>6.21 WinDivertHelperFormatFilter</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperFormatFilter</b>(
@@ -2767,7 +2794,7 @@ returned by <a href="#divert_recv"><code>WinDivertRecv()</code></a>.
 </p>
 </dd></dl>
 
-<a name="divert_helper_ntoh"><h3>6.21 WinDivertHelperNtoh*</h3></a>
+<a name="divert_helper_ntoh"><h3>6.22 WinDivertHelperNtoh*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperNtohs</b>(
@@ -2801,11 +2828,11 @@ void <b>WinDivertHelperNtohIPv6Address</b>(
 The output value in host byte order.
 </p><p>
 <b>Remarks</b><br>
-Converts a value/IPv6-address from network to host byte-order.
+Converts a value/MAC-address/IPv6-address from network to host byte-order.
 </p>
 </dd></dl>
 
-<a name="divert_helper_hton"><h3>6.22 WinDivertHelperHton*</h3></a>
+<a name="divert_helper_hton"><h3>6.23 WinDivertHelperHton*</h3></a>
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 UINT16 <b>WinDivertHelperHtons</b>(
@@ -2839,7 +2866,7 @@ void <b>WinDivertHelperHtonIPv6Address</b>(
 The output value in network byte order.
 </p><p>
 <b>Remarks</b><br>
-Converts a value/IPv6-address from host to network byte-order.
+Converts a value/MAC-address/IPv6-address from host to network byte-order.
 </p>
 </dd></dl>
 
@@ -2945,6 +2972,7 @@ The possible fields are:
 <tr><td><code>packet16[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 16-bit word of the packet</td></tr>
 <tr><td><code>packet32[i]</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The <code>i</code><sup>th</sup> 32-bit word of the packet</td></tr>
 <tr><td><code>length</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>The packet length</td></tr>
+<tr><td><code>arp</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td>Is ARP?</td></tr>
 <tr><td><code>ip</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv4?</td></tr>
 <tr><td><code>ipv6</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is IPv6?</td></tr>
 <tr><td><code>icmp</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td>Is ICMP?</td></tr>
@@ -2957,6 +2985,7 @@ The possible fields are:
 <tr><td><code>remoteAddr</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote address</td></tr>
 <tr><td><code>remotePort</code></td><td>&#10004;</td><td>&#10004;</td><td></td><td>&#10004;</td><td>&#10004;</td><td></td><td>The remote port</td></tr>
 <tr><td><code>eth.*</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td>Ethernet fields (see <code>WINDIVERT_ETHHDR</code>)</td></tr>
+<tr><td><code>arp.*</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td>ARP fields (see <code>WINDIVERT_ARPHDR</code>)</td></tr>
 <tr><td><code>ip.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv4 fields (see <code>WINDIVERT_IPHDR</code>)</td></tr>
 <tr><td><code>ipv6.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>IPv6 fields (see <code>WINDIVERT_IPV6HDR</code>)</td></tr>
 <tr><td><code>icmp.*</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td></td><td></td><td></td><td>ICMP fields (see <code>WINDIVERT_ICMPHDR</code>)</td></tr>
@@ -3030,6 +3059,9 @@ The possible macros are:
 <tr><th></th><th><code>ETHERNET</code></th><th><code>NETWORK</code></th><th><code>FORWARD</code></th><th><code>FLOW&nbsp;&nbsp;&nbsp;</code></th><th><code>SOCKET&nbsp;</code></th><th><code>REFLECT</code></th><th></th></tr>
 <tr><td><code>TRUE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>1</code></td></tr>
 <tr><td><code>FALSE</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>0</code></td></tr>
+<tr><td><code>IP</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td><code>ETHERTYPE_IP</code> (<code>0x0800</code>)</td></tr>
+<tr><td><code>IPV6</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td><code>ETHERTYPE_IPV6</code> (<code>0x86dd</code>)</td></tr>
+<tr><td><code>ARP</code></td><td>&#10004;</td><td></td><td></td><td></td><td></td><td></td><td><code>ETHERTYPE_ARP</code> (<code>0x0806</code>)</td></tr>
 <tr><td><code>TCP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_TCP</code> (<code>6</code>)</td></tr>
 <tr><td><code>UDP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_UDP</code> (<code>17</code>)</td></tr>
 <tr><td><code>ICMP</code></td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td>&#10004;</td><td><code>IPPROTO_ICMP</code> (<code>1</code>)</td></tr>

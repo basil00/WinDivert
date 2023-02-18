@@ -105,11 +105,16 @@ static UINT64 WinDivertXXH64Avalanche(UINT64 h64)
 /*
  * WinDivert packet hash function.
  */
-static UINT64 WinDivertHashPacket(UINT64 seed,
-    const WINDIVERT_ETHHDR *eth_header, const WINDIVERT_IPHDR *ip_header,
-    const WINDIVERT_IPV6HDR *ipv6_header, const WINDIVERT_ICMPHDR *icmp_header,
+static UINT64 WinDivertHashPacket(
+    UINT64 seed,
+    const WINDIVERT_ETHHDR *eth_header,
+    const WINDIVERT_ARPHDR *arp_header,
+    const WINDIVERT_IPHDR *ip_header,
+    const WINDIVERT_IPV6HDR *ipv6_header,
+    const WINDIVERT_ICMPHDR *icmp_header,
     const WINDIVERT_ICMPV6HDR *icmpv6_header,
-    const WINDIVERT_TCPHDR *tcp_header, const WINDIVERT_UDPHDR *udp_header)
+    const WINDIVERT_TCPHDR *tcp_header,
+    const WINDIVERT_UDPHDR *udp_header)
 {
     UINT64 h64, v1, v2, v3, v4, v[4];
     const UINT64 *data64;
@@ -207,6 +212,11 @@ static UINT64 WinDivertHashPacket(UINT64 seed,
         v1 = WinDivertXXH64Round(v1, data64[0] & 0xFFFFFFFFFFFFull);
         data64 = (const UINT64 *)eth_header->SrcAddr;
         v2 = WinDivertXXH64Round(v2, data64[0]);
+        if (arp_header != NULL)
+        {
+            data64 = (const UINT64 *)arp_header;
+            v3 = WinDivertXXH64Round(v3, data64[0]);
+        }
     }
 
     h64 = WINDIVERT_ROTL64(v1, 1) + WINDIVERT_ROTL64(v2, 7) +

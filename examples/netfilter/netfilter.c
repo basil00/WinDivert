@@ -1,6 +1,6 @@
 /*
  * netfilter.c
- * (C) 2019, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -202,7 +202,7 @@ int __cdecl main(int argc, char **argv)
        
         // Print info about the matching packet.
         WinDivertHelperParsePacket(packet, packet_len, recv_addr.Layer, NULL,
-            &ip_header, &ipv6_header, NULL, &icmp_header, &icmpv6_header,
+            NULL, &ip_header, &ipv6_header, NULL, &icmp_header, &icmpv6_header,
             &tcp_header, &udp_header, NULL, &payload_len);
         if (ip_header == NULL && ipv6_header == NULL)
         {

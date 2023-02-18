@@ -49,6 +49,9 @@
 #define IPPROTO_ICMPV6      58
 #define IPPROTO_NONE        59
 #define IPPROTO_DSTOPTS     60
+#define ETHERTYPE_ARP       0x0806
+#define ETHERTYPE_IP        0x0800
+#define ETHERTYPE_IPV6      0x86dd
 
 /*
  * Filter tokens.
@@ -146,6 +149,12 @@ typedef enum
     TOKEN_ETH_DST_ADDR,
     TOKEN_ETH_SRC_ADDR,
     TOKEN_ETH_TYPE,
+    TOKEN_ARP,
+    TOKEN_ARP_HARDWARE,
+    TOKEN_ARP_PROTOCOL,
+    TOKEN_ARP_HARD_LENGTH,
+    TOKEN_ARP_PROT_LENGTH,
+    TOKEN_ARP_OPCODE,
     TOKEN_LAYER_FLOW,
     TOKEN_LAYER_SOCKET,
     TOKEN_LAYER_NETWORK,
@@ -168,6 +177,9 @@ typedef enum
     TOKEN_MACRO_UDP,
     TOKEN_MACRO_ICMP,
     TOKEN_MACRO_ICMPV6,
+    TOKEN_MACRO_ARP,
+    TOKEN_MACRO_IP,
+    TOKEN_MACRO_IPV6,
     TOKEN_OPEN,
     TOKEN_CLOSE,
     TOKEN_SQUARE_OPEN,
@@ -515,12 +527,20 @@ static PTOKEN_INFO WinDivertTokenLookup(PTOKEN_INFO token_info,
 /*
  * Parse IPv4/IPv6/ICMP/ICMPv6/TCP/UDP headers from a raw packet.
  */
-BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
-    WINDIVERT_LAYER layer, PWINDIVERT_ETHHDR *ppEthHeader,
-    PWINDIVERT_IPHDR *ppIPHeader, PWINDIVERT_IPV6HDR *ppIPv6Header,
-    UINT8 *pProtocol, PWINDIVERT_ICMPHDR *ppICMPHeader,
-    PWINDIVERT_ICMPV6HDR *ppICMPv6Header, PWINDIVERT_TCPHDR *ppTCPHeader,
-    PWINDIVERT_UDPHDR *ppUDPHeader, PVOID *ppData, UINT *pDataLen)
+BOOL WinDivertHelperParsePacket(
+    const VOID *pPacket,
+    UINT packetLen,
+    WINDIVERT_LAYER layer,
+    PWINDIVERT_ETHHDR *ppEthHeader,
+    PWINDIVERT_ARPHDR *ppArpHeader,
+    PWINDIVERT_IPHDR *ppIPHeader,
+    PWINDIVERT_IPV6HDR *ppIPv6Header,
+    UINT8 *pProtocol,
+    PWINDIVERT_ICMPHDR *ppICMPHeader,
+    PWINDIVERT_ICMPV6HDR *ppICMPv6Header,
+    PWINDIVERT_TCPHDR *ppTCPHeader,
+    PWINDIVERT_UDPHDR *ppUDPHeader,
+    PVOID *ppData, UINT *pDataLen)
 {
     WINDIVERT_PACKET info;
     if (!WinDivertHelperParsePacketEx(pPacket, packetLen, layer, &info))
@@ -539,6 +559,10 @@ BOOL WinDivertHelperParsePacket(const VOID *pPacket, UINT packetLen,
     if (ppEthHeader != NULL)
     {
         *ppEthHeader = info.EthHeader;
+    }
+    if (ppArpHeader != NULL)
+    {
+        *ppArpHeader = info.ArpHeader;
     }
     if (ppIPHeader != NULL)
     {
@@ -659,6 +683,15 @@ static BOOL WinDivertExpandMacro(KIND kind, WINDIVERT_LAYER layer, UINT32 *val)
         case TOKEN_MACRO_ICMPV6:
             *val = IPPROTO_ICMPV6;
             return TRUE;
+        case TOKEN_MACRO_ARP:
+            *val = ETHERTYPE_ARP;
+            return (layer == WINDIVERT_LAYER_ETHERNET);
+        case TOKEN_MACRO_IP:
+            *val = ETHERTYPE_IP;
+            return (layer == WINDIVERT_LAYER_ETHERNET);
+        case TOKEN_MACRO_IPV6:
+            *val = ETHERTYPE_IPV6;
+            return (layer == WINDIVERT_LAYER_ETHERNET);
         default:
             return FALSE;
     }
@@ -673,6 +706,7 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
     static const TOKEN_INFO token_info[] =
     {
         {"ACCEPT",              TOKEN_EVENT_ACCEPT         },
+        {"ARP",                 TOKEN_MACRO_ARP            },
         {"BIND",                TOKEN_EVENT_BIND           },
         {"CLOSE",               TOKEN_EVENT_CLOSE          },
         {"CONNECT",             TOKEN_EVENT_CONNECT        },
@@ -684,6 +718,8 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"FLOW",                TOKEN_LAYER_FLOW           },
         {"ICMP",                TOKEN_MACRO_ICMP           },
         {"ICMPV6",              TOKEN_MACRO_ICMPV6         },
+        {"IP",                  TOKEN_MACRO_IP             },
+        {"IPV6",                TOKEN_MACRO_IPV6           },
         {"LISTEN",              TOKEN_EVENT_LISTEN         },
         {"NETWORK",             TOKEN_LAYER_NETWORK        },
         {"NETWORK_FORWARD",     TOKEN_LAYER_NETWORK_FORWARD},
@@ -695,6 +731,12 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"TRUE",                TOKEN_MACRO_TRUE           },
         {"UDP",                 TOKEN_MACRO_UDP            },
         {"and",                 TOKEN_AND                  },
+        {"arp",                 TOKEN_ARP                  },
+        {"arp.HardLength",      TOKEN_ARP_HARD_LENGTH      },
+        {"arp.Hardware",        TOKEN_ARP_HARDWARE         },
+        {"arp.ProtLength",      TOKEN_ARP_PROT_LENGTH      },
+        {"arp.Protocol",        TOKEN_ARP_PROTOCOL         },
+        {"arp.Opcode",          TOKEN_ARP_OPCODE           },
         {"b",                   TOKEN_BYTES                },
         {"endpointId",          TOKEN_ENDPOINT_ID          },
         {"eth.DstAddr",         TOKEN_ETH_DST_ADDR         },
@@ -1114,6 +1156,12 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
         {{{0}}, TOKEN_ETH_DST_ADDR},
         {{{0}}, TOKEN_ETH_SRC_ADDR},
         {{{0}}, TOKEN_ETH_TYPE},
+        {{{0}}, TOKEN_ARP},
+        {{{0}}, TOKEN_ARP_HARDWARE},
+        {{{0}}, TOKEN_ARP_PROTOCOL},
+        {{{0}}, TOKEN_ARP_HARD_LENGTH},
+        {{{0}}, TOKEN_ARP_PROT_LENGTH},
+        {{{0}}, TOKEN_ARP_OPCODE},
     };
 
     // Binary search:
@@ -1268,6 +1316,7 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
         case TOKEN_SUB_IF_IDX:
         case TOKEN_LOOPBACK:
         case TOKEN_IMPOSTOR:
+        case TOKEN_ARP:
         case TOKEN_IP:
         case TOKEN_IPV6:
         case TOKEN_ICMP:
@@ -1287,6 +1336,11 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
         case TOKEN_ETH_DST_ADDR:
         case TOKEN_ETH_SRC_ADDR:
         case TOKEN_ETH_TYPE:
+        case TOKEN_ARP_HARDWARE:
+        case TOKEN_ARP_PROTOCOL:
+        case TOKEN_ARP_HARD_LENGTH:
+        case TOKEN_ARP_PROT_LENGTH:
+        case TOKEN_ARP_OPCODE:
         case TOKEN_IP_HDR_LENGTH:
         case TOKEN_IP_TOS:
         case TOKEN_IP_LENGTH:
@@ -1617,6 +1671,7 @@ static void WinDivertSimplifyTest(PEXPR test)
         case TOKEN_INBOUND:
         case TOKEN_OUTBOUND:
         case TOKEN_FRAGMENT:
+        case TOKEN_ARP:
         case TOKEN_IP:
         case TOKEN_IPV6:
         case TOKEN_ICMP:
@@ -1632,6 +1687,11 @@ static void WinDivertSimplifyTest(PEXPR test)
         case TOKEN_TCP_HDR_LENGTH:
             type = TOKEN_TCP;
             lb[0] = 0; ub[0] = 0x0F;
+            break;
+        case TOKEN_ARP_HARD_LENGTH:
+        case TOKEN_ARP_PROT_LENGTH:
+            type = TOKEN_ARP;
+            lb[0] = 0; ub[0] = 0xFF;
             break;
         case TOKEN_IP_TTL:
         case TOKEN_IP_PROTOCOL:
@@ -1672,6 +1732,12 @@ static void WinDivertSimplifyTest(PEXPR test)
             lb[0] = 0; ub[0] = 0x1FFF;
             break;
         case TOKEN_ETH_TYPE:
+            lb[0] = 0; ub[0] = 0xFFFF;
+            break;
+        case TOKEN_ARP_HARDWARE:
+        case TOKEN_ARP_PROTOCOL:
+        case TOKEN_ARP_OPCODE:
+            type = TOKEN_ARP;
             lb[0] = 0; ub[0] = 0xFFFF;
             break;
         case TOKEN_IP_TOS:
@@ -1984,6 +2050,8 @@ static UINT32 WinDivertKindToField(KIND kind)
             return WINDIVERT_FILTER_FIELD_LAYER;
         case TOKEN_PRIORITY:
             return WINDIVERT_FILTER_FIELD_PRIORITY;
+        case TOKEN_ARP:
+            return WINDIVERT_FILTER_FIELD_ARP;
         case TOKEN_IP:
             return WINDIVERT_FILTER_FIELD_IP;
         case TOKEN_IPV6:
@@ -2002,6 +2070,16 @@ static UINT32 WinDivertKindToField(KIND kind)
             return WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR;
         case TOKEN_ETH_TYPE:
             return WINDIVERT_FILTER_FIELD_ETH_TYPE;
+        case TOKEN_ARP_HARDWARE:
+            return WINDIVERT_FILTER_FIELD_ARP_HARDWARE;
+        case TOKEN_ARP_PROTOCOL:
+            return WINDIVERT_FILTER_FIELD_ARP_PROTOCOL;
+        case TOKEN_ARP_HARD_LENGTH:
+            return WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH;
+        case TOKEN_ARP_PROT_LENGTH:
+            return WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH;
+        case TOKEN_ARP_OPCODE:
+            return WINDIVERT_FILTER_FIELD_ARP_OPCODE;
         case TOKEN_IP_HDR_LENGTH:
             return WINDIVERT_FILTER_FIELD_IP_HDRLENGTH;
         case TOKEN_IP_TOS:
@@ -2613,6 +2691,7 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
     DWORD error;
     WINDIVERT_PACKET info;
     PWINDIVERT_ETHHDR eth_header = NULL;
+    PWINDIVERT_ARPHDR arp_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -2655,6 +2734,7 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
             }
             protocol      = info.Protocol;
             eth_header    = info.EthHeader;
+            arp_header    = info.ArpHeader;
             ip_header     = info.IPHeader;
             ipv6_header   = info.IPv6Header;
             icmp_header   = info.ICMPHeader;
@@ -2743,6 +2823,7 @@ BOOL WinDivertHelperEvalFilter(const char *filter, const VOID *packet,
         socket_data,
         reflect_data,
         eth_header,
+        arp_header,
         ip_header,
         ipv6_header,
         icmp_header,
@@ -3140,6 +3221,8 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             kind = TOKEN_IF_IDX; break;
         case WINDIVERT_FILTER_FIELD_SUBIFIDX:
             kind = TOKEN_SUB_IF_IDX; break;
+        case WINDIVERT_FILTER_FIELD_ARP:
+            kind = TOKEN_ARP; break;
         case WINDIVERT_FILTER_FIELD_IP:
             kind = TOKEN_IP; break;
         case WINDIVERT_FILTER_FIELD_IPV6:
@@ -3158,6 +3241,16 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             kind = TOKEN_ETH_SRC_ADDR; break;
         case WINDIVERT_FILTER_FIELD_ETH_TYPE:
             kind = TOKEN_ETH_TYPE; break;
+        case WINDIVERT_FILTER_FIELD_ARP_HARDWARE:
+            kind = TOKEN_ARP_HARDWARE; break;
+        case WINDIVERT_FILTER_FIELD_ARP_PROTOCOL:
+            kind = TOKEN_ARP_PROTOCOL; break;
+        case WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH:
+            kind = TOKEN_ARP_HARD_LENGTH; break;
+        case WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH:
+            kind = TOKEN_ARP_PROT_LENGTH; break;
+        case WINDIVERT_FILTER_FIELD_ARP_OPCODE:
+            kind = TOKEN_ARP_OPCODE; break;
         case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
             kind = TOKEN_IP_HDR_LENGTH; break;
         case WINDIVERT_FILTER_FIELD_IP_TOS:
@@ -3847,6 +3940,7 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         case TOKEN_INBOUND:
         case TOKEN_OUTBOUND:
         case TOKEN_FRAGMENT:
+        case TOKEN_ARP:
         case TOKEN_IP:
         case TOKEN_IPV6:
         case TOKEN_ICMP:
@@ -3928,6 +4022,9 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         case TOKEN_ICMP_CHECKSUM:
         case TOKEN_ICMPV6_CHECKSUM:
         case TOKEN_ETH_TYPE:
+        case TOKEN_ARP_HARDWARE:
+        case TOKEN_ARP_PROTOCOL:
+        case TOKEN_ARP_OPCODE:
             is_hex = TRUE;
             break;
         default:
@@ -4186,6 +4283,8 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             WinDivertPutString(stream, "ifIdx"); return;
         case TOKEN_SUB_IF_IDX:
             WinDivertPutString(stream, "subIfIdx"); return;
+        case TOKEN_ARP:
+            WinDivertPutString(stream, "arp"); return;
         case TOKEN_IP:
             WinDivertPutString(stream, "ip"); return;
         case TOKEN_IPV6:
@@ -4204,6 +4303,16 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             WinDivertPutString(stream, "eth.SrcAddr"); return;
         case TOKEN_ETH_TYPE:
             WinDivertPutString(stream, "eth.Type"); return;
+        case TOKEN_ARP_HARDWARE:
+            WinDivertPutString(stream, "arp.Hardware"); return;
+        case TOKEN_ARP_PROTOCOL:
+            WinDivertPutString(stream, "arp.Protocol"); return;
+        case TOKEN_ARP_HARD_LENGTH:
+            WinDivertPutString(stream, "arp.HardLength"); return;
+        case TOKEN_ARP_PROT_LENGTH:
+            WinDivertPutString(stream, "arp.ProtLength"); return;
+        case TOKEN_ARP_OPCODE:
+            WinDivertPutString(stream, "arp.Opcode"); return;
         case TOKEN_IP_HDR_LENGTH:
             WinDivertPutString(stream, "ip.HdrLength"); return;
         case TOKEN_IP_TOS:
@@ -4458,6 +4567,7 @@ UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     WINDIVERT_LAYER layer, UINT64 seed)
 {
     PWINDIVERT_ETHHDR eth_header = NULL;
+    PWINDIVERT_ARPHDR arp_header = NULL;
     PWINDIVERT_IPHDR ip_header = NULL;
     PWINDIVERT_IPV6HDR ipv6_header = NULL;
     PWINDIVERT_ICMPHDR icmp_header = NULL;
@@ -4466,13 +4576,14 @@ UINT64 WinDivertHelperHashPacket(const VOID *pPacket, UINT packetLen,
     PWINDIVERT_UDPHDR udp_header = NULL;
 
     if (!WinDivertHelperParsePacket((PVOID)pPacket, packetLen, layer,
-            &eth_header, &ip_header, &ipv6_header, NULL, &icmp_header,
-            &icmpv6_header, &tcp_header, &udp_header, NULL, NULL))
+            &eth_header, &arp_header, &ip_header, &ipv6_header, NULL,
+            &icmp_header, &icmpv6_header, &tcp_header, &udp_header, NULL,
+            NULL))
     {
         return 0;
     }
-    return WinDivertHashPacket(seed, eth_header, ip_header, ipv6_header,
-        icmp_header, icmpv6_header, tcp_header, udp_header);
+    return WinDivertHashPacket(seed, eth_header, arp_header, ip_header,
+        ipv6_header, icmp_header, icmpv6_header, tcp_header, udp_header);
 }
 
 /*

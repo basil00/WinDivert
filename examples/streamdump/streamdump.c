@@ -1,6 +1,6 @@
 /*
  * streamdump.c
- * (C) 2019, all rights reserved,
+ * (C) 2023, all rights reserved,
  *
  * This file is part of WinDivert.
  *
@@ -193,7 +193,7 @@ int __cdecl main(int argc, char **argv)
             continue;
         }
 
-        WinDivertHelperParsePacket(packet, packet_len, addr.Layer, NULL,
+        WinDivertHelperParsePacket(packet, packet_len, addr.Layer, NULL, NULL,
             &ip_header, NULL, NULL, NULL, NULL, &tcp_header, NULL, NULL, NULL);
         if (ip_header == NULL || tcp_header == NULL)
         {
