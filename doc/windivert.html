@@ -2296,7 +2296,7 @@ UDP header definition.
 <table border="1" cellpadding="5"><tr><td>
 <pre>
 BOOL <b>WinDivertHelperParsePacket</b>(
-    __in PVOID pPacket,
+    __in const VOID *pPacket,
     __in UINT packetLen,
     __in WINDIVERT_LAYER layer,
     __out_opt PWINDIVERT_ETHHDR *ppEthHdr,
