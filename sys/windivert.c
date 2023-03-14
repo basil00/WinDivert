@@ -6448,6 +6448,8 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
                 break;
             case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
             case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
+            case WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR:
+            case WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR:
                 ub[0] = 0xFFFFFFFF;
                 ub[1] = 0x0000FFFF;
                 break;
@@ -6461,6 +6463,8 @@ static const WINDIVERT_FILTER *windivert_filter_compile(
             case WINDIVERT_FILTER_FIELD_PARENTENDPOINTID:
                 ub[0] = ub[1] = 0xFFFFFFFF;
                 break;
+            case WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR:
+            case WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR:
             case WINDIVERT_FILTER_FIELD_IPV6_SRCADDR:
             case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
             case WINDIVERT_FILTER_FIELD_LOCALADDR:

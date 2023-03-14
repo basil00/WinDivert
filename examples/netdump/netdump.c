@@ -65,7 +65,7 @@ int __cdecl main(int argc, char **argv)
     WINDIVERT_LAYER layer = WINDIVERT_LAYER_NETWORK;
     INT16 priority = 0;
     unsigned char packet[MAXBUF];
-    UINT packet_len;
+    UINT packet_len, arp_len;
     WINDIVERT_ADDRESS addr;
     PWINDIVERT_ETHHDR eth_header;
     PWINDIVERT_ARPHDR arp_header;
@@ -75,8 +75,8 @@ int __cdecl main(int argc, char **argv)
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     PWINDIVERT_TCPHDR tcp_header;
     PWINDIVERT_UDPHDR udp_header;
-    UINT8 src_mac[6], dst_mac[6];
-    UINT32 src_addr[4], dst_addr[4];
+    UINT8 src_mac[6], dst_mac[6], *mac_ptr;
+    UINT32 src_addr[4], dst_addr[4], *ip_ptr;
     UINT64 hash;
     char src_str[INET6_ADDRSTRLEN+1], dst_str[INET6_ADDRSTRLEN+1];
     const char *err_str;
@@ -136,8 +136,8 @@ int __cdecl main(int argc, char **argv)
     {
         err = GetLastError();
         if (err == ERROR_INVALID_PARAMETER &&
-            !WinDivertHelperCompileFilter(argv[1], WINDIVERT_LAYER_NETWORK,
-                NULL, 0, &err_str, NULL))
+            !WinDivertHelperCompileFilter(argv[1], layer, NULL, 0, &err_str,
+                NULL))
         {
             fprintf(stderr, "error: invalid filter \"%s\"\n", err_str);
             exit(EXIT_FAILURE);
@@ -213,13 +213,67 @@ int __cdecl main(int argc, char **argv)
                 src_str, dst_str, ntohs(eth_header->Type));
             if (arp_header != NULL)
             {
+                arp_len = packet_len - sizeof(WINDIVERT_ETHHDR);
                 SetConsoleTextAttribute(console,
                     FOREGROUND_GREEN);
                 printf("ARP [Hardware=%u Protocol=%u HardLength=%u "
-                    "ProtLength=%u Opcode=%u]\n",
+                    "ProtLength=%u Opcode=%u",
                     ntohs(arp_header->Hardware), ntohs(arp_header->Protocol),
                     arp_header->HardLength, arp_header->ProtLength,
                     ntohs(arp_header->Opcode));
+                mac_ptr = WINDIVERT_ARPHDR_GET_SRCMACADDR_PTR(arp_header,
+                    arp_len);
+                if (mac_ptr != NULL)
+                {
+                    WinDivertHelperNtohMACAddress(mac_ptr, src_mac);
+                    WinDivertHelperFormatMACAddress(src_mac, src_str,
+                        sizeof(src_str));
+                    printf(" SrcHardAddr=%s", src_str);
+                }
+                ip_ptr = WINDIVERT_ARPHDR_GET_SRCIPV4ADDR_PTR(arp_header,
+                    arp_len);
+                if (ip_ptr != NULL)
+                {
+                    WinDivertHelperFormatIPv4Address(ntohl(ip_ptr[0]),
+                        src_str, sizeof(src_str));
+                    printf(" SrcProtAddr=%s", src_str);
+                }
+                ip_ptr = WINDIVERT_ARPHDR_GET_SRCIPV6ADDR_PTR(arp_header,
+                    arp_len);
+                if (ip_ptr != NULL)
+                {
+                    WinDivertHelperNtohIPv6Address(ip_ptr, src_addr);
+                    WinDivertHelperFormatIPv6Address(src_addr, src_str,
+                        sizeof(src_str));
+                    printf(" SrcProtAddr=%s", src_str);
+                }
+                mac_ptr = WINDIVERT_ARPHDR_GET_DSTMACADDR_PTR(arp_header,
+                    arp_len);
+                if (mac_ptr != NULL)
+                {
+                    WinDivertHelperNtohMACAddress(mac_ptr, dst_mac);
+                    WinDivertHelperFormatMACAddress(dst_mac, dst_str,
+                        sizeof(dst_str));
+                    printf(" DstHardAddr=%s", dst_str);
+                }
+                ip_ptr = WINDIVERT_ARPHDR_GET_DSTIPV4ADDR_PTR(arp_header,
+                    arp_len);
+                if (ip_ptr != NULL)
+                {
+                    WinDivertHelperFormatIPv4Address(ntohl(ip_ptr[0]),
+                        dst_str, sizeof(dst_str));
+                    printf(" DstProtAddr=%s", dst_str);
+                }
+                ip_ptr = WINDIVERT_ARPHDR_GET_DSTIPV6ADDR_PTR(arp_header,
+                    arp_len);
+                if (ip_ptr != NULL)
+                {
+                    WinDivertHelperNtohIPv6Address(ip_ptr, dst_addr);
+                    WinDivertHelperFormatIPv6Address(dst_addr, dst_str,
+                        sizeof(dst_str));
+                    printf(" DstProtAddr=%s", dst_str);
+                }
+                printf("]\n");
             }
         }
         else

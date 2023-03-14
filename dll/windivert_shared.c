@@ -339,6 +339,8 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
         case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
         case WINDIVERT_FILTER_FIELD_LOCALADDR:
         case WINDIVERT_FILTER_FIELD_REMOTEADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR:
             for (i = 1; i < 4; i++)
             {
                 WinDivertSerializeNumber(stream, filter->arg[i]);
@@ -349,6 +351,8 @@ static void WinDivertSerializeTest(PWINDIVERT_STREAM stream,
         case WINDIVERT_FILTER_FIELD_TIMESTAMP:
         case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
         case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR:
             WinDivertSerializeNumber(stream, filter->arg[1]);
             break;
         case WINDIVERT_FILTER_FIELD_PACKET:
@@ -448,6 +452,12 @@ static BOOL WinDivertHelperParsePacketEx(const VOID *pPacket,
                         goto WinDivertHelperParsePacketExit;
                     }
                     arp_header  = (PWINDIVERT_ARPHDR)data;
+                    if (data_len < sizeof(WINDIVERT_ARPHDR) +
+                            2 * arp_header->HardLength +
+                            2 * arp_header->ProtLength)
+                    {
+                        goto WinDivertHelperParsePacketExit;
+                    }
                     data        = (PVOID)(arp_header + 1);
                     data_len   -= sizeof(WINDIVERT_ARPHDR);
                     header_len += sizeof(WINDIVERT_ARPHDR);
@@ -1062,6 +1072,10 @@ static BOOL WinDivertValidateField(WINDIVERT_LAYER layer, UINT32 field)
         LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_HARD_LENGTH */
         LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH */
         LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_OPCODE */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR */
+        LE_____,    /* WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR */
     };
 
     if (field > WINDIVERT_FILTER_FIELD_MAX)
@@ -1203,6 +1217,13 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
             case WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH:
             case WINDIVERT_FILTER_FIELD_ARP_OPCODE:
                 result = (arp_header != NULL);
+                break;
+            case WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR:
+            case WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR:
+            case WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR:
+            case WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR:
+                result = WINDIVERT_ARPHDR_VALIDATE(arp_header,
+                    packet_len - sizeof(WINDIVERT_ETHHDR));
                 break;
             case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
             case WINDIVERT_FILTER_FIELD_IP_TOS:
@@ -1506,6 +1527,56 @@ static WINDIVERT_INLINE int WinDivertExecuteFilter(
                     break;
                 case WINDIVERT_FILTER_FIELD_ARP_OPCODE:
                     val[0] = (UINT32)ntohs(arp_header->Opcode);
+                    break;
+                case WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR:
+                case WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR:
+                    big = TRUE;
+                    result = WINDIVERT_GET_DATA(packet, packet_len,
+                        0, packet_len,
+                        sizeof(WINDIVERT_ETHHDR) + (filter[ip].field ==
+                            WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR?
+                        WINDIVERT_ARPHDR_GET_SRCHARDADDR_OFFSET(arp_header):
+                        WINDIVERT_ARPHDR_GET_DSTHARDADDR_OFFSET(arp_header)),
+                        (UINT8 *)&val64, /*addr_len=*/6);
+                    val[0] = ((val64.HighPart >> 8) & 0x000000FF) |
+                             ((val64.HighPart << 8) & 0x0000FF00) |
+                             ((val64.LowPart >> 8) & 0x00FF0000) |
+                             ((val64.LowPart << 8) & 0xFF000000);
+                    val[1] = ((val64.LowPart << 8) & 0xFF00) |
+                             ((val64.LowPart >> 8) & 0x00FF);
+                    val[2] = val[3] = 0;
+                    break;
+                case WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR:
+                case WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR:
+                    big = TRUE;
+                    data16 = sizeof(WINDIVERT_ETHHDR) + (filter[ip].field ==
+                        WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR?
+                        WINDIVERT_ARPHDR_GET_SRCPROTADDR_OFFSET(arp_header):
+                        WINDIVERT_ARPHDR_GET_DSTPROTADDR_OFFSET(arp_header));
+                    switch (ntohs(arp_header->Protocol))
+                    {
+                        case ETHERTYPE_IP:
+                            val[3] = val[2] = 0;
+                            val[1] = 0x0000FFFF;
+                            result = WINDIVERT_GET_DATA(packet, packet_len,
+                                0, packet_len, /*offset=*/data16,
+                                (UINT8 *)&val[0], sizeof(val[0]));
+                            val[0] = (UINT32)ntohl(val[0]);
+                            break;
+                        case ETHERTYPE_IPV6:
+                            result = WINDIVERT_GET_DATA(packet, packet_len,
+                                0, packet_len, /*offset=*/data16,
+                                (UINT8 *)val, sizeof(val));
+                            data32 = ntohl(val[0]);
+                            val[0] = ntohl(val[3]);
+                            val[3] = data32;
+                            data32 = ntohl(val[1]);
+                            val[1] = ntohl(val[2]);
+                            val[2] = data32;
+                            break;
+                        default:
+                            return -1;
+                    }
                     break;
                 case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
                     val[0] = (UINT32)ip_header->HdrLength;

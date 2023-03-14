@@ -2095,6 +2095,7 @@ typedef struct
     UINT8 HardLength;
     UINT8 ProtLength;
     UINT16 Opcode;
+    ...
 } <b>WINDIVERT_ARPHDR</b>, *<b>PWINDIVERT_ARPHDR</b>;
 </pre>
 </td></tr></table>
@@ -2106,6 +2107,27 @@ for more information.
 </p><p>
 <b>Remarks</b><br>
 ARP header definition.
+</p><p>
+The following fields can only be accessed via pointers obtained from the following macro
+definitions:
+</p>
+<ul>
+<li><i>SrcHardAddr</i> with
+    <code>WINDIVERT_ARPHDR_GET_SRCMACADDR_PTR(<i>hdr</i>, <i>len</i>)</code></li>
+<li><i>SrcProtAddr</i> with
+    <code>WINDIVERT_ARPHDR_GET_SRCIPV4ADDR_PTR(<i>hdr</i>, <i>len</i>)</code> or
+    <code>WINDIVERT_ARPHDR_GET_SRCIPV6ADDR_PTR(<i>hdr</i>, <i>len</i>)</code></li>
+<li><i>DstHardAddr</i> with
+    <code>WINDIVERT_ARPHDR_GET_DSTMACADDR_PTR(<i>hdr</i>, <i>len</i>)</code></li>
+<li><i>DstProtAddr</i> with
+    <code>WINDIVERT_ARPHDR_GET_DSTIPV4ADDR_PTR(<i>hdr</i>, <i>len</i>)</code> or
+    <code>WINDIVERT_ARPHDR_GET_DSTIPV6ADDR_PTR(<i>hdr</i>, <i>len</i>)</code></li>
+</ul>
+<p>
+Here <i>hdr</i> points to the base of the ARP header, and <i>len</i> is the
+total header length.
+These macros evaluate to <code>NULL</code> if the header cannot be parsed or
+the type does not match.
 </p>
 </dl></dd>
 

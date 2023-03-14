@@ -368,6 +368,52 @@ typedef struct
     UINT16 Opcode;
 } WINDIVERT_ARPHDR, *PWINDIVERT_ARPHDR;
 
+#define WINDIVERT_ARPHDR_VALIDATE(hdr, len)                 \
+    ((hdr) != NULL &&                                       \
+     (len) >= sizeof(WINDIVERT_ARPHDR) &&                   \
+     (len) >= sizeof(WINDIVERT_ARPHDR) +                    \
+        2 * (hdr)->HardLength + 2 * (hdr)->ProtLength  &&   \
+     (hdr)->Hardware == 0x0100 &&                           \
+     (hdr)->HardLength == 6 &&                              \
+     (((hdr)->Protocol == 0x0008 &&                         \
+       (hdr)->ProtLength == 4) ||                           \
+      ((hdr)->Protocol == 0xDD86 &&                         \
+       (hdr)->ProtLength == 16)))
+
+#define WINDIVERT_ARPHDR_GET_SRCHARDADDR_OFFSET(hdr)        \
+    (sizeof(WINDIVERT_ARPHDR))
+#define WINDIVERT_ARPHDR_GET_SRCPROTADDR_OFFSET(hdr)        \
+    (sizeof(WINDIVERT_ARPHDR)+(hdr)->HardLength)
+#define WINDIVERT_ARPHDR_GET_DSTHARDADDR_OFFSET(hdr)        \
+    (sizeof(WINDIVERT_ARPHDR)+(hdr)->HardLength+(hdr)->ProtLength)
+#define WINDIVERT_ARPHDR_GET_DSTPROTADDR_OFFSET(hdr)        \
+    (sizeof(WINDIVERT_ARPHDR)+2*(hdr)->HardLength+(hdr)->ProtLength)
+
+#define WINDIVERT_ARPHDR_GET_SRCMACADDR_PTR(hdr, len)       \
+    (!WINDIVERT_ARPHDR_VALIDATE(hdr, len) ||                \
+        (hdr)->Hardware != 0x0100? NULL:                    \
+    (((UINT8 *)(hdr))+WINDIVERT_ARPHDR_GET_SRCHARDADDR_OFFSET(hdr)))
+#define WINDIVERT_ARPHDR_GET_SRCIPV4ADDR_PTR(hdr, len)      \
+    (!WINDIVERT_ARPHDR_VALIDATE(hdr, len) ||                \
+        (hdr)->Protocol != 0x0008? NULL:                    \
+    ((UINT32 *)(((UINT8 *)(hdr))+WINDIVERT_ARPHDR_GET_SRCPROTADDR_OFFSET(hdr))))
+#define WINDIVERT_ARPHDR_GET_SRCIPV6ADDR_PTR(hdr, len)      \
+    (!WINDIVERT_ARPHDR_VALIDATE(hdr, len) ||                \
+        (hdr)->Protocol != 0xDD86? NULL:                    \
+    ((UINT32 *)(((UINT8 *)(hdr))+WINDIVERT_ARPHDR_GET_SRCPROTADDR_OFFSET(hdr))))
+#define WINDIVERT_ARPHDR_GET_DSTMACADDR_PTR(hdr, len)       \
+    (!WINDIVERT_ARPHDR_VALIDATE(hdr, len) ||                \
+        (hdr)->Hardware != 0x0100? NULL:                    \
+    (((UINT8 *)(hdr))+WINDIVERT_ARPHDR_GET_DSTHARDADDR_OFFSET(hdr)))
+#define WINDIVERT_ARPHDR_GET_DSTIPV4ADDR_PTR(hdr, len)      \
+    (!WINDIVERT_ARPHDR_VALIDATE(hdr, len) ||                \
+        (hdr)->Protocol != 0x0008? NULL:                    \
+    ((UINT32 *)(((UINT8 *)(hdr))+WINDIVERT_ARPHDR_GET_DSTPROTADDR_OFFSET(hdr))))
+#define WINDIVERT_ARPHDR_GET_DSTIPV6ADDR_PTR(hdr, len)      \
+    (!WINDIVERT_ARPHDR_VALIDATE(hdr, len) ||                \
+        (hdr)->Protocol != 0xDD86? NULL:                    \
+    ((UINT32 *)(((UINT8 *)(hdr))+WINDIVERT_ARPHDR_GET_DSTPROTADDR_OFFSET(hdr))))
+
 typedef struct
 {
     UINT8  HdrLength:4;

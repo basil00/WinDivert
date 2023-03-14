@@ -155,6 +155,10 @@ typedef enum
     TOKEN_ARP_HARD_LENGTH,
     TOKEN_ARP_PROT_LENGTH,
     TOKEN_ARP_OPCODE,
+    TOKEN_ARP_SRC_HARD_ADDR,
+    TOKEN_ARP_SRC_PROT_ADDR,
+    TOKEN_ARP_DST_HARD_ADDR,
+    TOKEN_ARP_DST_PROT_ADDR,
     TOKEN_LAYER_FLOW,
     TOKEN_LAYER_SOCKET,
     TOKEN_LAYER_NETWORK,
@@ -732,11 +736,15 @@ static ERROR WinDivertTokenizeFilter(const char *filter, WINDIVERT_LAYER layer,
         {"UDP",                 TOKEN_MACRO_UDP            },
         {"and",                 TOKEN_AND                  },
         {"arp",                 TOKEN_ARP                  },
+        {"arp.DstHardAddr",     TOKEN_ARP_DST_HARD_ADDR    },
+        {"arp.DstProtAddr",     TOKEN_ARP_DST_PROT_ADDR    },
         {"arp.HardLength",      TOKEN_ARP_HARD_LENGTH      },
         {"arp.Hardware",        TOKEN_ARP_HARDWARE         },
+        {"arp.Opcode",          TOKEN_ARP_OPCODE           },
         {"arp.ProtLength",      TOKEN_ARP_PROT_LENGTH      },
         {"arp.Protocol",        TOKEN_ARP_PROTOCOL         },
-        {"arp.Opcode",          TOKEN_ARP_OPCODE           },
+        {"arp.SrcHardAddr",     TOKEN_ARP_SRC_HARD_ADDR    },
+        {"arp.SrcProtAddr",     TOKEN_ARP_SRC_PROT_ADDR    },
         {"b",                   TOKEN_BYTES                },
         {"endpointId",          TOKEN_ENDPOINT_ID          },
         {"eth.DstAddr",         TOKEN_ETH_DST_ADDR         },
@@ -1162,6 +1170,10 @@ static PEXPR WinDivertMakeVar(KIND kind, PERROR error)
         {{{0}}, TOKEN_ARP_HARD_LENGTH},
         {{{0}}, TOKEN_ARP_PROT_LENGTH},
         {{{0}}, TOKEN_ARP_OPCODE},
+        {{{0}}, TOKEN_ARP_SRC_HARD_ADDR},
+        {{{0}}, TOKEN_ARP_SRC_PROT_ADDR},
+        {{{0}}, TOKEN_ARP_DST_HARD_ADDR},
+        {{{0}}, TOKEN_ARP_DST_PROT_ADDR},
     };
 
     // Binary search:
@@ -1341,6 +1353,10 @@ static PEXPR WinDivertParseTest(HANDLE pool, TOKEN *toks, UINT *i, PERROR error)
         case TOKEN_ARP_HARD_LENGTH:
         case TOKEN_ARP_PROT_LENGTH:
         case TOKEN_ARP_OPCODE:
+        case TOKEN_ARP_SRC_HARD_ADDR:
+        case TOKEN_ARP_SRC_PROT_ADDR:
+        case TOKEN_ARP_DST_HARD_ADDR:
+        case TOKEN_ARP_DST_PROT_ADDR:
         case TOKEN_IP_HDR_LENGTH:
         case TOKEN_IP_TOS:
         case TOKEN_IP_LENGTH:
@@ -1623,6 +1639,7 @@ static PEXPR WinDivertParseFilter(HANDLE pool, TOKEN *toks, UINT *i, INT depth,
 /*
  * Simplify a test if possible.
  */
+#include <stdio.h>
 static void WinDivertSimplifyTest(PEXPR test)
 {
     PEXPR var = test->arg[0];
@@ -1799,12 +1816,17 @@ static void WinDivertSimplifyTest(PEXPR test)
             ub[0] = 0xFFFFFFFF;
             ub[1] = 0xFFFF;
             break;
+        case TOKEN_ARP_SRC_PROT_ADDR:
+        case TOKEN_ARP_DST_PROT_ADDR:
+            type = TOKEN_ARP;
+            goto ipv6_addr;
         case TOKEN_IPV6_SRC_ADDR:
         case TOKEN_IPV6_DST_ADDR:
             type = TOKEN_IPV6;
             // Fallthrough
         case TOKEN_LOCAL_ADDR:
         case TOKEN_REMOTE_ADDR:
+        ipv6_addr:
             lb[0] = lb[1] = lb[2] = lb[3] = 0;
             ub[0] = ub[1] = ub[2] = ub[3] = 0xFFFFFFFF;
             break;
@@ -1815,6 +1837,10 @@ static void WinDivertSimplifyTest(PEXPR test)
             ub[1] = 0x7FFFFFFF;
             neg_lb = TRUE;
             break;
+        case TOKEN_ARP_SRC_HARD_ADDR:
+        case TOKEN_ARP_DST_HARD_ADDR:
+            type = TOKEN_ARP;
+            // Fallthrough
         case TOKEN_ETH_DST_ADDR:
         case TOKEN_ETH_SRC_ADDR:
             lb[0] = lb[1] = 0;
@@ -2080,6 +2106,14 @@ static UINT32 WinDivertKindToField(KIND kind)
             return WINDIVERT_FILTER_FIELD_ARP_PROT_LENGTH;
         case TOKEN_ARP_OPCODE:
             return WINDIVERT_FILTER_FIELD_ARP_OPCODE;
+        case TOKEN_ARP_SRC_HARD_ADDR:
+            return WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR;
+        case TOKEN_ARP_SRC_PROT_ADDR:
+            return WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR;
+        case TOKEN_ARP_DST_HARD_ADDR:
+            return WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR;
+        case TOKEN_ARP_DST_PROT_ADDR:
+            return WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR;
         case TOKEN_IP_HDR_LENGTH:
             return WINDIVERT_FILTER_FIELD_IP_HDRLENGTH;
         case TOKEN_IP_TOS:
@@ -3026,6 +3060,8 @@ static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
         case WINDIVERT_FILTER_FIELD_IPV6_DSTADDR:
         case WINDIVERT_FILTER_FIELD_LOCALADDR:
         case WINDIVERT_FILTER_FIELD_REMOTEADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR:
             for (i = 1; i < 4; i++)
             {
                 if (!WinDivertDeserializeNumber(stream, 7, &filter->arg[i]))
@@ -3039,6 +3075,8 @@ static BOOL WinDivertDeserializeTest(PWINDIVERT_STREAM stream,
         case WINDIVERT_FILTER_FIELD_TIMESTAMP:
         case WINDIVERT_FILTER_FIELD_ETH_DST_ADDR:
         case WINDIVERT_FILTER_FIELD_ETH_SRC_ADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR:
+        case WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR:
             if (!WinDivertDeserializeNumber(stream, 7, &filter->arg[1]))
             {
                 return FALSE;
@@ -3251,6 +3289,14 @@ static PEXPR WinDivertDecompileTest(HANDLE pool, PWINDIVERT_FILTER test)
             kind = TOKEN_ARP_PROT_LENGTH; break;
         case WINDIVERT_FILTER_FIELD_ARP_OPCODE:
             kind = TOKEN_ARP_OPCODE; break;
+        case WINDIVERT_FILTER_FIELD_ARP_SRC_HARD_ADDR:
+            kind = TOKEN_ARP_SRC_HARD_ADDR; break;
+        case WINDIVERT_FILTER_FIELD_ARP_SRC_PROT_ADDR:
+            kind = TOKEN_ARP_SRC_PROT_ADDR; break;
+        case WINDIVERT_FILTER_FIELD_ARP_DST_HARD_ADDR:
+            kind = TOKEN_ARP_DST_HARD_ADDR; break;
+        case WINDIVERT_FILTER_FIELD_ARP_DST_PROT_ADDR:
+            kind = TOKEN_ARP_DST_PROT_ADDR; break;
         case WINDIVERT_FILTER_FIELD_IP_HDRLENGTH:
             kind = TOKEN_IP_HDR_LENGTH; break;
         case WINDIVERT_FILTER_FIELD_IP_TOS:
@@ -3980,6 +4026,8 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             break;
         case TOKEN_ETH_SRC_ADDR:
         case TOKEN_ETH_DST_ADDR:
+        case TOKEN_ARP_SRC_HARD_ADDR:
+        case TOKEN_ARP_DST_HARD_ADDR:
             if (val->val[2] != 0 || val->val[3] != 0 || val->val[1] > 0xFFFF)
             {
                 break;
@@ -3998,6 +4046,8 @@ static void WinDivertFormatTestExpr(PWINDIVERT_STREAM stream, PEXPR expr,
         case TOKEN_IPV6_DST_ADDR:
         case TOKEN_LOCAL_ADDR:
         case TOKEN_REMOTE_ADDR:
+        case TOKEN_ARP_SRC_PROT_ADDR:
+        case TOKEN_ARP_DST_PROT_ADDR:
             is_ipv6_addr = TRUE;
             break;
         case TOKEN_LAYER:
@@ -4313,6 +4363,14 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
             WinDivertPutString(stream, "arp.ProtLength"); return;
         case TOKEN_ARP_OPCODE:
             WinDivertPutString(stream, "arp.Opcode"); return;
+        case TOKEN_ARP_SRC_HARD_ADDR:
+            WinDivertPutString(stream, "arp.SrcHardAddr"); return;
+        case TOKEN_ARP_SRC_PROT_ADDR:
+            WinDivertPutString(stream, "arp.SrcProtAddr"); return;
+        case TOKEN_ARP_DST_HARD_ADDR:
+            WinDivertPutString(stream, "arp.DstHardAddr"); return;
+        case TOKEN_ARP_DST_PROT_ADDR:
+            WinDivertPutString(stream, "arp.DstProtAddr"); return;
         case TOKEN_IP_HDR_LENGTH:
             WinDivertPutString(stream, "ip.HdrLength"); return;
         case TOKEN_IP_TOS:
