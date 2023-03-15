@@ -1949,8 +1949,8 @@ static void WinDivertSimplifyTest(PEXPR test)
         default:
             return;
     }
-    test->arg[0] = WinDivertMakeVar(type, NULL);
-    test->arg[1] = (result? WinDivertMakeOne(): WinDivertMakeZero());
+    test->arg[0] = WinDivertMakeVar((result? type: TOKEN_ZERO), NULL);
+    test->arg[1] = WinDivertMakeOne();
     test->kind   = TOKEN_EQ;
 }
 
