@@ -2741,7 +2741,7 @@ windivert_write_invalid_packet:
         packet->object        = NULL;
         network_data =
             (PWINDIVERT_DATA_NETWORK)WINDIVERT_LAYER_DATA_PTR(packet);
-        RtlCopyMemory(network_data, &addr[i].Network, sizeof(network_data));
+        RtlCopyMemory(network_data, &addr[i].Network, sizeof(WINDIVERT_DATA_NETWORK));
         data_copy = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, packet);
         RtlCopyMemory(data_copy, data, packet_len);
         switch (version)
