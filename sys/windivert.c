@@ -32,16 +32,6 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#include <ntdef.h>
-
- // Required for a single driver binary to support multiple Windows versions using the POOL_NX_OPTIN opt-in mechanism.
- // (See: https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/single-binary-opt-in-pool-nx-optin)
-#define POOL_NX_OPTIN 1
-
-// Required for deprecation of ExAllocatePool
-// (See: https://learn.microsoft.com/en-us/windows-hardware/drivers/kernel/updating-deprecated-exallocatepool-calls)
-#define POOL_ZERO_DOWN_LEVEL_SUPPORT
-
 #include <ntifs.h>
 #include <ntddk.h>
 #include <fwpsk.h>
@@ -315,6 +305,7 @@ static NDIS_HANDLE nb_pool_handle = NULL;
 static HANDLE engine_handle = NULL;
 static LONG priority_counter = 0;
 static LONGLONG counts_per_ms = 0;
+static POOL_TYPE non_paged_pool = NonPagedPool;
 static MM_PAGE_PRIORITY no_write_flag = 0;
 static MM_PAGE_PRIORITY no_exec_flag  = 0;
 static LONG64 num_opens = 0;
@@ -942,20 +933,12 @@ static const struct layer_s windivert_layer_flow_established_ipv6 =
  */
 static PVOID windivert_malloc(SIZE_T size, BOOL paged)
 {
-    PVOID retval = NULL;
-    POOL_TYPE pool = (paged ? PagedPool : NonPagedPool);
+    POOL_TYPE pool = (paged? PagedPool: non_paged_pool);
     if (size == 0)
     {
         return NULL;
     }
-
-#if (NTDDI_VERSION >= NTDDI_WIN10_VB)
-    retval = ExAllocatePool2(pool, size, WINDIVERT_TAG);
-#else
-    retval = ExAllocatePoolZero(pool, size, WINDIVERT_TAG);
-#endif
-
-    return retval;
+    return ExAllocatePoolWithTag(pool, size, WINDIVERT_TAG);
 }
 static VOID windivert_free(PVOID ptr)
 {
@@ -984,10 +967,6 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
     RTL_OSVERSIONINFOW version;
     LARGE_INTEGER freq;
     NTSTATUS status;
-
-    // Must be called before any memory allocation occurs
-    ExInitializeDriverRuntime(DrvRtPoolNxOptIn);
-
     DECLARE_CONST_UNICODE_STRING(device_name,
         L"\\Device\\" WINDIVERT_DEVICE_NAME);
     DECLARE_CONST_UNICODE_STRING(dos_device_name,
@@ -1002,13 +981,14 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         if (version.dwMajorVersion > 6 ||
             (version.dwMajorVersion == 6 && version.dwMinorVersion >= 2))
         {
+            non_paged_pool = (POOL_TYPE)512;    // NonPagedPoolNx (documented)
             no_exec_flag   = (MM_PAGE_PRIORITY)0x40000000;
                                                 // MdlMappingNoExecute
             no_write_flag  = (MM_PAGE_PRIORITY)0x80000000;
                                                 // MdlMappingNoWrite
         }
     }
-    
+
     // Initialize timer info.
     KeQueryPerformanceCounter(&freq);
     counts_per_ms = freq.QuadPart / 1000;
@@ -6502,3 +6482,4 @@ static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
 
     IoWriteErrorLogEntry(packet);
 }
+

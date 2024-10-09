@@ -35,60 +35,59 @@
     
 -->
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
-  <ItemGroup Label="ProjectConfigurations">
-    <ProjectConfiguration Include="Release|Win32">
-      <Configuration>Release</Configuration>
-      <Platform>Win32</Platform>
-    </ProjectConfiguration>
-    <ProjectConfiguration Include="Release|x64">
-      <Configuration>Release</Configuration>
-      <Platform>x64</Platform>
-    </ProjectConfiguration>
-  </ItemGroup>
-  <ItemGroup>
-    <MessageCompile Include="windivert_log.mc">
-      <RCFilePath>.</RCFilePath>
-      <HeaderFilePath>.</HeaderFilePath>
-    </MessageCompile>
-  </ItemGroup>
-  <ItemGroup>
-    <ResourceCompile Include="windivert.rc" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="windivert.c">
-      <TreatWarningAsError>false</TreatWarningAsError>
-      <Optimization>MaxSpeed</Optimization>
-      <AdditionalIncludeDirectories>..\include;..\dll;.</AdditionalIncludeDirectories>
-    </ClCompile>
-  </ItemGroup>
-  <PropertyGroup Label="Globals">
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
-    <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
-    <RootNamespace>WinDivert</RootNamespace>
-    <ProjectName>WinDivert</ProjectName>
-    <ProjectGuid>{B549AE90-3CC3-420B-B5D9-6B8090555F29}</ProjectGuid>
-  </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
-  <PropertyGroup Label="Configuration">
-    <TargetVersion>Windows7</TargetVersion>
-    <UseDebugLibraries>true</UseDebugLibraries>
-    <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
-    <ConfigurationType>Driver</ConfigurationType>
-    <DriverType>KMDF</DriverType>
-    <DriverTargetPlatform>Desktop</DriverTargetPlatform>
-    <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
-    <EnableInf2cat>false</EnableInf2cat>
-  </PropertyGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <ItemDefinitionGroup>
-    <ClCompile>
-      <WppEnabled>false</WppEnabled>
-      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">_X86_=1;i386=1;STD_CALL;%(PreprocessorDefinitions);NDIS60;UNICODE;_UNICODE;NDIS_SUPPORT_NDIS60;NT;BINARY_COMPATIBLE=0</PreprocessorDefinitions>
-      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions);NDIS60;UNICODE;_UNICODE;NDIS_SUPPORT_NDIS60;NT;BINARY_COMPATIBLE=0</PreprocessorDefinitions>
-    </ClCompile>
-    <Link>
-      <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib;$(KMDF_LIB_PATH)$(KMDF_VER_PATH)\WdfLdr.lib;$(KMDF_LIB_PATH)$(KMDF_VER_PATH)\WdfDriverEntry.lib;$(DDK_LIB_PATH)\wdmsec.lib;$(DDK_LIB_PATH)\ndis.lib;$(DDK_LIB_PATH)\fwpkclnt.lib;$(SDK_LIB_PATH)\uuid.lib</AdditionalDependencies>
-    </Link>
-  </ItemDefinitionGroup>
-  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+ <ItemGroup Label="ProjectConfigurations">
+  <ProjectConfiguration Include="Release|Win32">
+   <Configuration>Release</Configuration>
+   <Platform>Win32</Platform>
+  </ProjectConfiguration>
+  <ProjectConfiguration Include="Release|x64">
+   <Configuration>Release</Configuration>
+   <Platform>x64</Platform>
+  </ProjectConfiguration>
+ </ItemGroup>
+ <ItemGroup>
+  <MessageCompile Include="windivert_log.mc">
+   <RCFilePath>.</RCFilePath>
+   <HeaderFilePath>.</HeaderFilePath>
+  </MessageCompile>
+ </ItemGroup>
+ <ItemGroup>
+  <ResourceCompile Include="windivert.rc" />
+ </ItemGroup>
+ <ItemGroup>
+  <ClCompile Include="windivert.c">
+   <TreatWarningAsError>false</TreatWarningAsError>
+   <Optimization>MaxSpeed</Optimization>
+   <AdditionalIncludeDirectories>..\include;..\dll;.</AdditionalIncludeDirectories>
+  </ClCompile>
+ </ItemGroup>
+ <PropertyGroup Label="Globals">
+  <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+  <MinimumVisualStudioVersion>12.0</MinimumVisualStudioVersion>
+  <RootNamespace>WinDivert</RootNamespace>
+  <ProjectName>WinDivert</ProjectName>
+ </PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+ <PropertyGroup Label="Configuration">
+  <TargetVersion>Windows7</TargetVersion>
+  <UseDebugLibraries>true</UseDebugLibraries>
+  <PlatformToolset>WindowsKernelModeDriver10.0</PlatformToolset>
+  <ConfigurationType>Driver</ConfigurationType>
+  <DriverType>KMDF</DriverType>
+  <DriverTargetPlatform>Desktop</DriverTargetPlatform>
+  <DebuggerFlavor>DbgengKernelDebugger</DebuggerFlavor>
+  <EnableInf2cat>false</EnableInf2cat>
+ </PropertyGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+ <ItemDefinitionGroup>
+  <ClCompile>
+   <WppEnabled>false</WppEnabled>
+   <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">_X86_=1;i386=1;STD_CALL;%(PreprocessorDefinitions);NDIS60;UNICODE;_UNICODE;NDIS_SUPPORT_NDIS60;NT;BINARY_COMPATIBLE=0</PreprocessorDefinitions>
+   <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">_WIN64;_AMD64_;AMD64;%(PreprocessorDefinitions);NDIS60;UNICODE;_UNICODE;NDIS_SUPPORT_NDIS60;NT;BINARY_COMPATIBLE=0</PreprocessorDefinitions>
+  </ClCompile>
+  <Link>
+   <AdditionalDependencies>%(AdditionalDependencies);$(KernelBufferOverflowLib);$(DDK_LIB_PATH)ntoskrnl.lib;$(DDK_LIB_PATH)hal.lib;$(DDK_LIB_PATH)wmilib.lib;$(KMDF_LIB_PATH)$(KMDF_VER_PATH)\WdfLdr.lib;$(KMDF_LIB_PATH)$(KMDF_VER_PATH)\WdfDriverEntry.lib;$(DDK_LIB_PATH)\wdmsec.lib;$(DDK_LIB_PATH)\ndis.lib;$(DDK_LIB_PATH)\fwpkclnt.lib;$(SDK_LIB_PATH)\uuid.lib</AdditionalDependencies>
+  </Link>
+ </ItemDefinitionGroup>
+ <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>
