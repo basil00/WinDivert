@@ -1,3 +1,11 @@
+Fixed project so it can be built with the latest version of WDK via Visual Studio 2022 & msvc-build.bat.
+
+Cannot get wddk-build.bat to work because build.exe does not appear to exist anymore.
+
+Windows Kit Version: 10.0.26100.0
+
+You can make your own .sys, but you must understand how digital signing works.
+
 WinDivert 2.2: Windows Packet Divert
 ====================================
 

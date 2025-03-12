@@ -35,50 +35,58 @@
     
 -->
 <Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
- <ItemGroup Label="ProjectConfigurations">
-  <ProjectConfiguration Include="Release|Win32">
-   <Configuration>Release</Configuration>
-   <Platform>Win32</Platform>
-  </ProjectConfiguration>
-  <ProjectConfiguration Include="Release|x64">
-   <Configuration>Release</Configuration>
-   <Platform>x64</Platform>
-  </ProjectConfiguration>
- </ItemGroup>
- <ItemGroup>
-  <ClCompile Include="windivert.c">
-   <TreatWarningAsError>false</TreatWarningAsError>
-   <Optimization>MinSpace</Optimization>
-   <IntrinsicFunctions>true</IntrinsicFunctions>
-   <BasicRuntimeChecks>Default</BasicRuntimeChecks>
-   <BufferSecurityCheck>false</BufferSecurityCheck>
-   <AdditionalIncludeDirectories>..\include</AdditionalIncludeDirectories>
-  </ClCompile>
- </ItemGroup>
- <PropertyGroup Label="Globals">
-  <RootNamespace>WinDivert</RootNamespace>
-  <ProjectName>WinDivert</ProjectName>
- </PropertyGroup>
- <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
- <PropertyGroup Label="Configuration">
-  <PlatformToolset>v140</PlatformToolset>
-  <UseDebugLibraries>true</UseDebugLibraries>
-  <ConfigurationType>DynamicLibrary</ConfigurationType>
- </PropertyGroup>
- <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
- <ItemDefinitionGroup>
-  <ClCompile>
-   <WppEnabled>false</WppEnabled>
-   <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">WIN32;NDEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-   <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">WIN32;NDEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-  </ClCompile>
-  <Link>
-   <EntryPointSymbol>WinDivertDllEntry</EntryPointSymbol>
-   <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
-   <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
-   <ModuleDefinitionFile>windivert.def</ModuleDefinitionFile>
-   <ImportLibrary>WinDivert.lib</ImportLibrary>
-  </Link>
- </ItemDefinitionGroup>
- <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|Win32">
+      <Configuration>Release</Configuration>
+      <Platform>Win32</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="windivert.c">
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <Optimization>MinSpace</Optimization>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <AdditionalIncludeDirectories>..\include</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <RootNamespace>WinDivert</RootNamespace>
+    <ProjectName>WinDivert</ProjectName>
+    <ProjectGuid>{92A2A492-FB82-C312-DAC0-F8A1135CD7FA}</ProjectGuid>
+    <WindowsTargetPlatformVersion>10.0.26100.0</WindowsTargetPlatformVersion>
+    <TargetFrameworkVersion>.NET 9.0</TargetFrameworkVersion>
+    <TargetFramework>net9.0</TargetFramework>
+    <WindowsTargetPlatformMinVersion>10.0.26100.0</WindowsTargetPlatformMinVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <PlatformToolset>v143</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+  </PropertyGroup>
+  <PropertyGroup Label="Configuration" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <CLRSupport>false</CLRSupport>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <WppEnabled>false</WppEnabled>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">WIN32;NDEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions Condition="'$(Configuration)|$(Platform)'=='Release|x64'">WIN32;NDEBUG;_WINDOWS;_USRDLL;DLL_EXPORTS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <EntryPointSymbol>WinDivertDllEntry</EntryPointSymbol>
+      <AdditionalDependencies>%(AdditionalDependencies)</AdditionalDependencies>
+      <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
+      <ModuleDefinitionFile>windivert.def</ModuleDefinitionFile>
+      <ImportLibrary>$(Platform)\$(Configuration)\WinDivert.lib</ImportLibrary>
+    </Link>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

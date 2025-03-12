@@ -202,7 +202,7 @@ typedef enum
  */
 typedef enum
 {
-    WINDIVERT_PARAM_QUEUE_LENGTH = 0,   /* Packet queue length. */
+    WINDIVERT_PARAM_QUEUE_LEN = 0,   /* Packet queue length. */
     WINDIVERT_PARAM_QUEUE_TIME = 1,     /* Packet queue time. */
     WINDIVERT_PARAM_QUEUE_SIZE = 2,     /* Packet queue size. */
     WINDIVERT_PARAM_VERSION_MAJOR = 3,  /* Driver version (major). */

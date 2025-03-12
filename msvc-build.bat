@@ -34,13 +34,6 @@
 
 msbuild sys\windivert.vcxproj ^
     /p:Configuration=Release ^
-    /p:platform=Win32 ^
-    /p:SignMode=Off ^
-    /p:OutDir=..\install\MSVC\i386\ ^
-    /p:AssemblyName=WinDivert32
-
-msbuild sys\windivert.vcxproj ^
-    /p:Configuration=Release ^
     /p:platform=x64 ^
     /p:SignMode=Off ^
     /p:OutDir=..\install\MSVC\amd64\ ^

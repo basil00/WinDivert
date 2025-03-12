@@ -1,0 +1,9 @@
+﻿  windivert.c
+windivert.rc(48): warning RC4005: 'VER_PRODUCTVERSION' : redefinition
+  
+windivert.rc(49): warning RC4005: 'VER_PRODUCTVERSION_STR' : redefinition
+  
+windivert.rc(50): warning RC4005: 'VER_COMPANYNAME_STR' : redefinition
+  
+windivert.rc(56): warning RC4005: 'VER_PRODUCTNAME_STR' : redefinition
+  

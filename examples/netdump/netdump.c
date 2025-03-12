@@ -118,7 +118,7 @@ int __cdecl main(int argc, char **argv)
     }
 
     // Max-out the packet queue:
-    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LENGTH, 
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LEN, 
             WINDIVERT_PARAM_QUEUE_LENGTH_MAX))
     {
         fprintf(stderr, "error: failed to set packet queue length (%d)\n",

@@ -1,0 +1,2 @@
+#TargetFrameworkVersion=:PlatformToolSet=v140:EnableManagedIncrementalBuild=false:VCToolArchitecture=Native32Bit:WindowsTargetPlatformVersion=8.1
+Release|Win32|C:\Users\kujax\OneDrive\Desktop\WinDivert-master\examples\streamdump\|

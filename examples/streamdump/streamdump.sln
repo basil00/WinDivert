@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.13.35825.156 d17.13
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "streamdump", "streamdump.vcxproj", "{CEC73179-C5E3-B758-76EC-AA5DDAEFEAAB}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{CEC73179-C5E3-B758-76EC-AA5DDAEFEAAB}.Release|x64.ActiveCfg = Release|x64
+		{CEC73179-C5E3-B758-76EC-AA5DDAEFEAAB}.Release|x64.Build.0 = Release|x64
+		{CEC73179-C5E3-B758-76EC-AA5DDAEFEAAB}.Release|x86.ActiveCfg = Release|Win32
+		{CEC73179-C5E3-B758-76EC-AA5DDAEFEAAB}.Release|x86.Build.0 = Release|Win32
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {771466CB-AF04-4BCA-9C00-1391DBA921B0}
+	EndGlobalSection
+EndGlobal

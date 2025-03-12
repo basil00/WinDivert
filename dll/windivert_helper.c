@@ -267,7 +267,7 @@ static void WinDivertFormatExpr(PWINDIVERT_STREAM stream, PEXPR expr,
 /*
  * Parse an IPv4 address.
  */
-BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
+BOOL WinDivertHelperParseIPv4Address(const char* str, UINT32* addr_ptr)
 {
     UINT32 addr = 0;
     UINT32 part, i;
@@ -280,7 +280,7 @@ BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
 
     for (i = 0; i < 4; i++)
     {
-        if (!WinDivertAToI(str, (char **)&str, &part, 1) || part > UINT8_MAX)
+        if (!WinDivertAToI(str, (char**)&str, &part, 1) || part > UINT8_MAX)
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
@@ -290,7 +290,7 @@ BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;
         }
-        addr |= part << (8*(3-i));
+        addr |= part << (8 * (3 - i));
     }
     if (*str != '\0')
     {
@@ -307,10 +307,10 @@ BOOL WinDivertHelperParseIPv4Address(const char *str, UINT32 *addr_ptr)
 /*
  * Parse an IPv6 address.
  */
-BOOL WinDivertHelperParseIPv6Address(const char *str, UINT32 *addr_ptr)
+BOOL WinDivertHelperParseIPv6Address(const char* str, UINT32* addr_ptr)
 {
-    UINT16 laddr[8] = {0};
-    UINT16 raddr[8] = {0};
+    UINT16 laddr[8] = { 0 };
+    UINT16 raddr[8] = { 0 };
     UINT32 addr[4];
     BOOL left = TRUE, ipv4 = FALSE;
     UINT32 ipv4_addr;
@@ -405,8 +405,8 @@ WinDivertHelperParseIPv6AddressSuccess:
     {
         k = 2 * i + j;
         l = k + 1;
-        k = (k >= 8? k - 8: k);
-        l = (l >= 8? l - 8: l);
+        k = (k >= 8 ? k - 8 : k);
+        l = (l >= 8 ? l - 8 : l);
         addr[3 - i] =
             (UINT32)laddr[2 * i + 1] |
             (UINT32)laddr[2 * i] << 16 |
@@ -417,7 +417,7 @@ WinDivertHelperParseIPv6AddressSuccess:
     {
         // Validate IPv4 address
         if (addr[3] != 0 || addr[2] != 0 || addr[0] != 0 ||
-                (addr[1] != 0x0000FFFF && addr[1] != 0))
+            (addr[1] != 0x0000FFFF && addr[1] != 0))
         {
             SetLastError(ERROR_INVALID_PARAMETER);
             return FALSE;

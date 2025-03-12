@@ -153,7 +153,7 @@ usage:
             GetLastError());
         return EXIT_FAILURE;
     }
-    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LENGTH,
+    if (!WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_LEN,
             WINDIVERT_PARAM_QUEUE_LENGTH_MAX) ||
         !WinDivertSetParam(handle, WINDIVERT_PARAM_QUEUE_SIZE,
             WINDIVERT_PARAM_QUEUE_SIZE_MAX) ||

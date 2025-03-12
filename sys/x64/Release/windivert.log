@@ -1,0 +1,7 @@
+﻿  Building 'WinDivert' with toolset 'WindowsKernelModeDriver10.0' and the 'Desktop' target platform.
+  MC: Compiling windivert_log.mc
+  windivert.c
+  windivert.vcxproj -> C:\WinDivert\sys\x64\Release\WinDivert.sys
+  Done Adding Additional Store
+  Successfully signed: C:\WinDivert\sys\x64\Release\WinDivert.sys
+  

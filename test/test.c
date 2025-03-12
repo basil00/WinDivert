@@ -1141,9 +1141,9 @@ static BOOL run_test(HANDLE inject_handle, const char *filter,
             "(err = %d)\n", GetLastError());
         goto failed;
     }
-    if (!WinDivertSetParam(handle[0], WINDIVERT_PARAM_QUEUE_LENGTH,
+    if (!WinDivertSetParam(handle[0], WINDIVERT_PARAM_QUEUE_LEN,
             WINDIVERT_PARAM_QUEUE_LENGTH_MAX) ||
-        !WinDivertGetParam(handle[0], WINDIVERT_PARAM_QUEUE_LENGTH, &val) ||
+        !WinDivertGetParam(handle[0], WINDIVERT_PARAM_QUEUE_LEN, &val) ||
         val != WINDIVERT_PARAM_QUEUE_LENGTH_MAX)
     {
         fprintf(stderr, "error: failed to set WINDIVERT_PARAM_QUEUE_LENGTH "
