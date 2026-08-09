@@ -1005,6 +1005,17 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         DEBUG_ERROR("failed to create WDF driver", status);
         goto driver_entry_exit;
     }
+    // Initialize the reflection layer before the device becomes openable.
+    // windivert_reflect_open_event() assumes the reflect spinlock/queues are
+    // initialized; with the device exposed first, a WinDivertOpen() racing
+    // with driver load can hit zeroed list heads at DISPATCH_LEVEL (#330,
+    // #408).  The work item is parented to the driver object and, as before,
+    // cleaned up implicitly when the parent is deleted on unload.
+    status = windivert_reflect_init((WDFOBJECT)driver);
+    if (!NT_SUCCESS(status))
+    {
+        goto driver_entry_exit;
+    }
     device_init = WdfControlDeviceInitAllocate(driver,
         &SDDL_DEVOBJ_SYS_ALL_ADM_ALL);
     if (device_init == NULL)
@@ -1285,12 +1296,6 @@ driver_entry_sublayer_error:
     {
         DEBUG_ERROR("failed to commit WFP transaction", status);
         FwpmTransactionAbort0(engine_handle);
-        goto driver_entry_exit;
-    }
-
-    status = windivert_reflect_init((WDFOBJECT)device);
-    if (!NT_SUCCESS(status))
-    {
         goto driver_entry_exit;
     }
 
