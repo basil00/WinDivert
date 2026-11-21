@@ -1060,8 +1060,6 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         DEBUG_ERROR("failed to create device symbolic link", status);
         goto driver_entry_exit;
     }
-    WdfControlFinishInitializing(device);
-
     // Create the packet injection handles.
     status = FwpsInjectionHandleCreate0(AF_INET,
         FWPS_INJECTION_TYPE_NETWORK | FWPS_INJECTION_TYPE_FORWARD,
@@ -1293,6 +1291,7 @@ driver_entry_sublayer_error:
     {
         goto driver_entry_exit;
     }
+    WdfControlFinishInitializing(device);
 
 driver_entry_exit:
 
