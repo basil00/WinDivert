@@ -933,12 +933,12 @@ static const struct layer_s windivert_layer_flow_established_ipv6 =
  */
 static PVOID windivert_malloc(SIZE_T size, BOOL paged)
 {
-    POOL_TYPE pool = (paged? PagedPool: non_paged_pool);
+    POOL_TYPE pool = (paged? POOL_FLAG_PAGED: POOL_FLAG_NON_PAGED);
     if (size == 0)
     {
         return NULL;
     }
-    return ExAllocatePoolWithTag(pool, size, WINDIVERT_TAG);
+    return ExAllocatePool2(pool, size, WINDIVERT_TAG);
 }
 static VOID windivert_free(PVOID ptr)
 {
@@ -5300,6 +5300,7 @@ static void windivert_inject_packet_too_big(packet_t packet)
     }
     ip_header = (PWINDIVERT_IPHDR)WINDIVERT_PACKET_DATA_PTR(
         WINDIVERT_DATA_NETWORK, packet);
+    ipv6_header = (PWINDIVERT_IPV6HDR)ip_header;
     version = ip_header->Version;
     switch (version)
     {
@@ -5311,7 +5312,6 @@ static void windivert_inject_packet_too_big(packet_t packet)
                 copy_len;
             break;
         case 6:
-            ipv6_header = (PWINDIVERT_IPV6HDR)ip_header;
             packet_len = RtlUshortByteSwap(ipv6_header->Length) +
                 sizeof(WINDIVERT_IPV6HDR);
             min_mtu = /*ipv6 min MTU=*/1280;
@@ -6427,7 +6427,7 @@ static void windivert_log_event(PEPROCESS process, PDRIVER_OBJECT driver,
     const wchar_t windivert_str[] = WINDIVERT_DEVICE_NAME
         WINDIVERT_VERSION_LSTR;
     wchar_t pid_str[16];
-    size_t windivert_size = sizeof(windivert_str), msg_size, pid_size, size;
+    size_t windivert_size = sizeof(windivert_str), msg_size, pid_size = 0, size;
     UNICODE_STRING string;
     UINT8 *str;
     PIO_ERROR_LOG_PACKET packet;
