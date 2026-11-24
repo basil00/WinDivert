@@ -286,10 +286,13 @@ typedef struct flow_s *flow_t;
 /*
  * Misc.
  */
-#define UINT8_MAX       0xFF
-#define UINT16_MAX      0xFFFF
-#define UINT32_MAX      0xFFFFFFFF
-#define IPPROTO_MH      135
+#define UINT8_MAX               0xFF
+#define UINT16_MAX              0xFFFF
+#define UINT32_MAX              0xFFFFFFFF
+#define IPPROTO_MH              135
+#define WINDIVERT_PMTU_BUCKETS  32
+#define WINDIVERT_PMTU_BURST    256
+#define WINDIVERT_PMTU_INTERVAL 10000000ull // One second in 100 ns units.
 
 /*
  * Global state.
@@ -309,6 +312,7 @@ static POOL_TYPE non_paged_pool = NonPagedPool;
 static MM_PAGE_PRIORITY no_write_flag = 0;
 static MM_PAGE_PRIORITY no_exec_flag  = 0;
 static LONG64 num_opens = 0;
+static KSPIN_LOCK pmtu_lock;
 
 /*
  * Priorities.
@@ -973,6 +977,7 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         L"\\??\\" WINDIVERT_DEVICE_NAME);
 
     DEBUG("LOAD: loading WinDivert driver");
+    KeInitializeSpinLock(&pmtu_lock);
 
     // Use the "no execute" pool if available:
     status = RtlGetVersion(&version);
@@ -1330,21 +1335,25 @@ static void windivert_driver_unload(void)
     {
         FwpsInjectionHandleDestroy0(injectv6_handle_forward);
     }
-    if (inject_handle_in != NULL)
-    {
-        FwpsInjectionHandleDestroy0(inject_handle_in);
-    }
+    // File cleanup has drained the handle workers. WFP handle destruction
+    // waits for pending injections. Drain both outbound handles before
+    // destroying either inbound handle: an outbound completion can still
+    // submit an inbound ICMP reply. The inbound drain then waits for replies.
     if (inject_handle_out != NULL)
     {
         FwpsInjectionHandleDestroy0(inject_handle_out);
     }
-    if (injectv6_handle_in != NULL)
-    {
-        FwpsInjectionHandleDestroy0(injectv6_handle_in);
-    }
     if (injectv6_handle_out != NULL)
     {
         FwpsInjectionHandleDestroy0(injectv6_handle_out);
+    }
+    if (inject_handle_in != NULL)
+    {
+        FwpsInjectionHandleDestroy0(inject_handle_in);
+    }
+    if (injectv6_handle_in != NULL)
+    {
+        FwpsInjectionHandleDestroy0(injectv6_handle_in);
     }
     if (nbl_pool_handle != NULL)
     {
@@ -2740,7 +2749,7 @@ windivert_write_invalid_packet:
         packet->object        = NULL;
         network_data =
             (PWINDIVERT_DATA_NETWORK)WINDIVERT_LAYER_DATA_PTR(packet);
-        RtlCopyMemory(network_data, &addr[i].Network, sizeof(network_data));
+        RtlCopyMemory(network_data, &addr[i].Network, sizeof(*network_data));
         data_copy = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, packet);
         RtlCopyMemory(data_copy, data, packet_len);
         switch (version)
@@ -5256,20 +5265,62 @@ static void NTAPI windivert_inject_complete(VOID *context,
     UNREFERENCED_PARAMETER(dispatch_level);
 
     packet = (packet_t)context;
-    if (buffers->Status == STATUS_INVALID_BUFFER_SIZE)
+    if (!NT_SUCCESS(buffers->Status))
     {
-        // STATUS_INVALID_BUFFER_SIZE indicates that the send failed because
-        // the packet was larger than the MTU.  We generate an ICMP
-        // Fragmentation Needed (for IPv4) or an ICMPV6 Packet Too Big (for
-        // IPv6) message to allow for PMTU discovery.
+        DEBUG_ERROR("injection completion failed", buffers->Status);
+    }
+    if (buffers->Status == NDIS_STATUS_INVALID_LENGTH &&
+        packet->layer == WINDIVERT_LAYER_NETWORK && packet->outbound &&
+        !packet->loopback)
+    {
         windivert_inject_packet_too_big(packet);
     }
 
     buffer = NET_BUFFER_LIST_FIRST_NB(buffers);
     mdl = NET_BUFFER_FIRST_MDL(buffer);
-    IoFreeMdl(mdl);
     FwpsFreeNetBufferList0(buffers);
+    IoFreeMdl(mdl);
     windivert_free_packet(packet);
+}
+
+/*
+ * Allow a small burst of PMTU replies per address-pair bucket.
+ */
+static BOOL windivert_pmtu_allow(const UINT32 *src, const UINT32 *dst,
+    UINT words)
+{
+    static struct
+    {
+        UINT64 expires;
+        UINT count;
+    } pmtu_buckets[WINDIVERT_PMTU_BUCKETS] = {0};
+    KLOCK_QUEUE_HANDLE lock_handle;
+    UINT64 hash = words;
+    UINT64 now;
+    UINT i, bucket;
+    BOOL allow;
+
+    for (i = 0; i < words; i++)
+    {
+        hash = WinDivertXXH64Round(hash,
+            ((UINT64)src[i] << /*bits per address word=*/32) | dst[i]);
+    }
+    bucket = (UINT)(WinDivertXXH64Avalanche(hash) % WINDIVERT_PMTU_BUCKETS);
+
+    KeAcquireInStackQueuedSpinLock(&pmtu_lock, &lock_handle);
+    now = KeQueryInterruptTime();
+    if (now >= pmtu_buckets[bucket].expires)
+    {
+        pmtu_buckets[bucket].expires = now + WINDIVERT_PMTU_INTERVAL;
+        pmtu_buckets[bucket].count = 0;
+    }
+    allow = (pmtu_buckets[bucket].count < WINDIVERT_PMTU_BURST);
+    if (allow)
+    {
+        pmtu_buckets[bucket].count++;
+    }
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
+    return allow;
 }
 
 /*
@@ -5277,137 +5328,196 @@ static void NTAPI windivert_inject_complete(VOID *context,
  */
 static void windivert_inject_packet_too_big(packet_t packet)
 {
-    const UINT mtus[] =
+    // Candidate MTU plateaus, in bytes, for the unknown-MTU fallback.
+    static const UINT mtus[] =
     {
-        568, 768, 1024, 1192, 1280, 1372, 1452, 1500, 4096, UINT16_MAX,
-            UINT32_MAX
+        /*IPv4 minimum MTU=*/68, 568, 768, 1024, 1192,
+        /*IPV6_MMTU=*/1280, 1372, 1452, 1500, 4096, UINT16_MAX
     };
+    static const UINT32 ipv6_unspecified[4] = {0};
+    WINDIVERT_PACKET info;
     PWINDIVERT_IPHDR ip_header, ip_header_2;
     PWINDIVERT_IPV6HDR ipv6_header, ipv6_header_2;
     PWINDIVERT_ICMPHDR icmp_header;
     PWINDIVERT_ICMPV6HDR icmpv6_header;
     packet_t icmp;
-    UINT version, packet_len, copy_len, icmp_len;
-    UINT icmp_size;
-    UINT i, min_mtu = /*ipv4 min MTU=*/568, mtu;
-    UINT32 flowlabel;
+    UINT packet_len, copy_len, icmp_len, icmp_size, mtu, min_mtu, i, src, dst;
+    BOOL allow;
     UINT8 *data;
+    NTSTATUS status;
 
-    if (packet->layer != WINDIVERT_LAYER_NETWORK || !packet->outbound ||
-            packet->loopback)
+    packet_len = packet->packet_len;
+    min_mtu = (packet->ipv6? /*IPV6_MMTU=*/1280: /*IPv4 minimum MTU=*/68);
+    if (packet->impostor || packet_len <= min_mtu)
     {
         return;
     }
-    ip_header = (PWINDIVERT_IPHDR)WINDIVERT_PACKET_DATA_PTR(
-        WINDIVERT_DATA_NETWORK, packet);
-    version = ip_header->Version;
-    switch (version)
+
+    data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, packet);
+    if (!WinDivertHelperParsePacketEx(data, packet_len, &info) ||
+        info.Truncated || info.Extended || info.FragOff != 0 ||
+        (packet->ipv6 != (info.IPv6Header != NULL)))
     {
-        case 4:
-            packet_len = RtlUshortByteSwap(ip_header->Length);
-            copy_len = ip_header->HdrLength * sizeof(UINT32) + 8;
-            copy_len = (packet_len < copy_len? packet_len: copy_len);
-            icmp_len = sizeof(WINDIVERT_IPHDR) + sizeof(WINDIVERT_ICMPHDR) +
-                copy_len;
-            break;
-        case 6:
-            ipv6_header = (PWINDIVERT_IPV6HDR)ip_header;
-            packet_len = RtlUshortByteSwap(ipv6_header->Length) +
-                sizeof(WINDIVERT_IPV6HDR);
-            min_mtu = /*ipv6 min MTU=*/1280;
-            copy_len = min_mtu - sizeof(WINDIVERT_IPV6HDR) -
-                sizeof(WINDIVERT_ICMPV6HDR);
-            copy_len = (packet_len < copy_len? packet_len: copy_len);
-            icmp_len = sizeof(WINDIVERT_IPV6HDR) +
-                sizeof(WINDIVERT_ICMPV6HDR) + copy_len;
-            break;
-        default:
+        return;
+    }
+
+    ip_header = info.IPHeader;
+    ipv6_header = info.IPv6Header;
+    if (ip_header != NULL)
+    {
+        if (!WINDIVERT_IPHDR_GET_DF(ip_header) || info.MF)
+        {
             return;
+        }
+        // Extract the first octet of each IPv4 address.
+        src = RtlUlongByteSwap(ip_header->SrcAddr) >> 24;
+        dst = RtlUlongByteSwap(ip_header->DstAddr) >> 24;
+        if (src == /*0.0.0.0/8=*/0 || src == /*loopback=*/127 ||
+            src >= /*multicast or reserved=*/224 ||
+            dst == /*0.0.0.0/8=*/0 || dst == /*loopback=*/127 ||
+            dst >= /*multicast or reserved=*/224)
+        {
+            return;
+        }
+        if (info.Protocol == IPPROTO_ICMP)
+        {
+            // Only respond to recognized informational messages.
+            if (info.ICMPHeader == NULL)
+            {
+                return;
+            }
+            switch (info.ICMPHeader->Type)
+            {
+                case /*ICMP_ECHOREPLY=*/0:
+                case /*ICMP_ECHO=*/8:
+                case /*ICMP_TSTAMP=*/13:
+                case /*ICMP_TSTAMPREPLY=*/14:
+                    break;
+                default:
+                    return;
+            }
+        }
+        icmp_len = sizeof(WINDIVERT_IPHDR) + sizeof(WINDIVERT_ICMPHDR);
+        copy_len = /*RFC 1812 ICMP datagram limit=*/576 - icmp_len;
     }
-    if (packet_len <= min_mtu)
+    else
+    {
+        // The synthetic reply needs two usable unicast addresses.
+        if (((const UINT8 *)ipv6_header->SrcAddr)[0] == /*IPv6 multicast prefix=*/0xFF ||
+            ((const UINT8 *)ipv6_header->DstAddr)[0] == /*IPv6 multicast prefix=*/0xFF ||
+            RtlCompareMemory(ipv6_header->SrcAddr, ipv6_unspecified,
+                sizeof(ipv6_unspecified)) == sizeof(ipv6_unspecified) ||
+            RtlCompareMemory(ipv6_header->DstAddr, ipv6_unspecified,
+                sizeof(ipv6_unspecified)) == sizeof(ipv6_unspecified))
+        {
+            return;
+        }
+        switch (info.Protocol)
+        {
+            case IPPROTO_ICMPV6:
+                if (info.ICMPv6Header == NULL ||
+                    info.ICMPv6Header->Type < /*ICMP6_INFOMSG_MASK=*/128 ||
+                    info.ICMPv6Header->Type == /*ND_REDIRECT=*/137)
+                {
+                    return;
+                }
+                break;
+            // A remaining extension header is incomplete or opaque.
+            case IPPROTO_HOPOPTS:
+            case IPPROTO_ROUTING:
+            case IPPROTO_FRAGMENT:
+            case IPPROTO_DSTOPTS:
+            case IPPROTO_AH:
+            case IPPROTO_ESP:
+            case IPPROTO_MH:
+                return;
+        }
+        icmp_len = sizeof(WINDIVERT_IPV6HDR) + sizeof(WINDIVERT_ICMPV6HDR);
+        copy_len = /*IPV6_MMTU=*/1280 - icmp_len;
+    }
+
+    allow = (ip_header != NULL?
+        windivert_pmtu_allow(&ip_header->SrcAddr, &ip_header->DstAddr, 1):
+        windivert_pmtu_allow(ipv6_header->SrcAddr, ipv6_header->DstAddr, 4));
+    if (!allow)
     {
         return;
     }
 
-    // We do not actually know the MTU value, so we make an educated guess.
-    for (i = 0; packet_len > mtus[i]; i++)
-        ;
-    mtu = (i == 0? min_mtu: mtus[i-1]);
-    mtu = (mtu < min_mtu? min_mtu: mtu);
+    // The completion status supplies no MTU. Keep the plateau estimate.
+    mtu = min_mtu;
+    for (i = 0; i < sizeof(mtus) / sizeof(mtus[0]) && mtus[i] < packet_len;
+        i++)
+    {
+        if (mtus[i] > mtu)
+        {
+            mtu = mtus[i];
+        }
+    }
 
+    copy_len = (packet_len < copy_len? packet_len: copy_len);
+    icmp_len += copy_len;
     icmp_size = WINDIVERT_PACKET_SIZE(WINDIVERT_DATA_NETWORK, icmp_len);
     icmp = (packet_t)windivert_malloc(icmp_size, FALSE);
     if (icmp == NULL)
     {
         return;
     }
-    icmp->layer         = WINDIVERT_LAYER_NETWORK;
-    icmp->event         = WINDIVERT_EVENT_NETWORK_PACKET;
-    icmp->sniffed       = 0;        // Unused
-    icmp->outbound      = 0;        // Inbound
-    icmp->loopback      = 0;        // Unused
-    icmp->impostor      = 0;        // Treat as non-impostor
-    icmp->ipv6          = (version == 6? 1: 0);
-    icmp->ip_checksum   = 0;        // IP checksum valid
-    icmp->tcp_checksum  = 0;        // Unused
-    icmp->udp_checksum  = 0;        // Unused
-    icmp->icmp_checksum = 0;        // ICMP(V6) checksum invalid
-    icmp->match         = 0;        // Unused
-    icmp->packet_size   = icmp_size;
-    icmp->packet_len    = icmp_len;
-    icmp->priority      = packet->priority;
-    icmp->timestamp     = 0;        // Unused
-    icmp->object        = NULL;
+    RtlZeroMemory(icmp, icmp_size);
+    icmp->layer          = WINDIVERT_LAYER_NETWORK;
+    icmp->event          = WINDIVERT_EVENT_NETWORK_PACKET;
+    icmp->ipv6           = packet->ipv6;
+    icmp->packet_size    = icmp_size;
+    icmp->packet_len     = icmp_len;
+    // Start at the top of inbound filtering, as for a new packet. The
+    // originating handle can then receive the reply if its filter matches.
+    icmp->priority       = UINT32_MAX;
     RtlCopyMemory(WINDIVERT_LAYER_DATA_PTR(icmp),
         WINDIVERT_LAYER_DATA_PTR(packet), sizeof(WINDIVERT_DATA_NETWORK));
     data = WINDIVERT_PACKET_DATA_PTR(WINDIVERT_DATA_NETWORK, icmp);
-    switch (version)
+    if (ip_header != NULL)
     {
-        case 4:
-            ip_header_2 = (PWINDIVERT_IPHDR)data;
-            ip_header_2->Version   = 4;
-            ip_header_2->HdrLength = sizeof(WINDIVERT_IPHDR) / sizeof(UINT32);
-            ip_header_2->TOS       = 0x0;
-            ip_header_2->Length    = RtlUshortByteSwap(icmp_len);
-            ip_header_2->Id        = 0x0;
-            ip_header_2->TTL       = 64;
-            ip_header_2->Protocol  = IPPROTO_ICMP;
-            ip_header_2->SrcAddr   = ip_header->DstAddr;
-            ip_header_2->DstAddr   = ip_header->SrcAddr;
-            WINDIVERT_IPHDR_SET_FRAGOFF(ip_header_2, 0x0);
-            WINDIVERT_IPHDR_SET_MF(ip_header_2, 0);
-            WINDIVERT_IPHDR_SET_DF(ip_header_2, 1);
-            WINDIVERT_IPHDR_SET_RESERVED(ip_header_2, 0x0);
-            icmp_header = (PWINDIVERT_ICMPHDR)(ip_header_2 + 1);
-            icmp_header->Type      = /*Destination Unreachable=*/3;
-            icmp_header->Code      = /*Fragmentation required=*/4;
-            icmp_header->Body      = ((UINT32)RtlUshortByteSwap(mtu)) << 16;
-            data = (UINT8 *)(icmp_header + 1);
-            RtlCopyMemory(data, ip_header, copy_len);
-            break;
-        case 6:
-            icmp_len -= sizeof(WINDIVERT_IPV6HDR);
-            ipv6_header_2 = (PWINDIVERT_IPV6HDR)data;
-            ipv6_header_2->Version  = 6;
-            ipv6_header_2->Length   = RtlUshortByteSwap(icmp_len);
-            ipv6_header_2->NextHdr  = IPPROTO_ICMPV6;
-            ipv6_header_2->HopLimit = 64;
-            RtlCopyMemory(ipv6_header_2->SrcAddr, ipv6_header->DstAddr,
-                sizeof(ipv6_header_2->SrcAddr));
-            RtlCopyMemory(ipv6_header_2->DstAddr, ipv6_header->SrcAddr,
-                sizeof(ipv6_header_2->DstAddr));
-            WINDIVERT_IPV6HDR_SET_TRAFFICCLASS(ipv6_header_2, 0x0);
-            flowlabel = WINDIVERT_IPV6HDR_GET_FLOWLABEL(ipv6_header);
-            WINDIVERT_IPV6HDR_SET_FLOWLABEL(ipv6_header_2, flowlabel);
-            icmpv6_header = (PWINDIVERT_ICMPV6HDR)(ipv6_header_2 + 1);
-            icmpv6_header->Type = /*Packet Too Big=*/2;
-            icmpv6_header->Code = 0;
-            icmpv6_header->Body = RtlUlongByteSwap(mtu);
-            data = (UINT8 *)(icmpv6_header + 1);
-            RtlCopyMemory(data, ipv6_header, copy_len);
-            break;
+        ip_header_2 = (PWINDIVERT_IPHDR)data;
+        ip_header_2->Version   = 4;
+        ip_header_2->HdrLength = sizeof(WINDIVERT_IPHDR) / sizeof(UINT32);
+        ip_header_2->Length    = RtlUshortByteSwap(icmp_len);
+        ip_header_2->TTL       = /*IPDEFTTL=*/64;
+        ip_header_2->Protocol  = IPPROTO_ICMP;
+        ip_header_2->SrcAddr   = ip_header->DstAddr;
+        ip_header_2->DstAddr   = ip_header->SrcAddr;
+        WINDIVERT_IPHDR_SET_DF(ip_header_2, 1);
+        icmp_header = (PWINDIVERT_ICMPHDR)(ip_header_2 + 1);
+        icmp_header->Type      = /*ICMP_UNREACH=*/3;
+        icmp_header->Code      = /*ICMP_UNREACH_NEEDFRAG=*/4;
+        icmp_header->Body      = ((UINT32)RtlUshortByteSwap(mtu)) << 16;
+        data = (UINT8 *)(icmp_header + 1);
+        RtlCopyMemory(data, ip_header, copy_len);
     }
-    windivert_inject_packet(icmp);
+    else
+    {
+        icmp_len -= sizeof(WINDIVERT_IPV6HDR);
+        ipv6_header_2 = (PWINDIVERT_IPV6HDR)data;
+        ipv6_header_2->Version  = 6;
+        ipv6_header_2->Length   = RtlUshortByteSwap(icmp_len);
+        ipv6_header_2->NextHdr  = IPPROTO_ICMPV6;
+        ipv6_header_2->HopLimit = /*IPV6_DEFHLIM=*/64;
+        RtlCopyMemory(ipv6_header_2->SrcAddr, ipv6_header->DstAddr,
+            sizeof(ipv6_header_2->SrcAddr));
+        RtlCopyMemory(ipv6_header_2->DstAddr, ipv6_header->SrcAddr,
+            sizeof(ipv6_header_2->DstAddr));
+        icmpv6_header = (PWINDIVERT_ICMPV6HDR)(ipv6_header_2 + 1);
+        icmpv6_header->Type = /*ICMP6_PACKET_TOO_BIG=*/2;
+        icmpv6_header->Code = /*unused=*/0;
+        icmpv6_header->Body = RtlUlongByteSwap(mtu);
+        data = (UINT8 *)(icmpv6_header + 1);
+        RtlCopyMemory(data, ipv6_header, copy_len);
+    }
+
+    status = windivert_inject_packet(icmp);
+    if (!NT_SUCCESS(status))
+    {
+        DEBUG_ERROR("PMTU injection failed", status);
+    }
 }
 
 /*
