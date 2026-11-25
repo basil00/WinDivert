@@ -312,3 +312,9 @@ WinDivert 2.2.0
     - Implement new packet parser that correctly handles IP fragments.
     - Add a new "fragment" filter field that matches IP fragments.
     - (Un)Loading the WinDivert driver will cause a system event to be logged.
+WinDivert 2.2.1
+    - Fix potential driver deadlock on user-mode program crash.
+    - Fix filter language simplification bug.
+    - Fix Flow.EndpointId containing junk data.
+WinDivert 2.2.2
+    - Fix potential WinDivertClose() BSOD for WINDIVERT_LAYER_FLOW handles.

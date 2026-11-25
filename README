@@ -5,7 +5,7 @@ WinDivert 2.2: Windows Packet Divert
 ---------------
 
 Windows Packet Divert (WinDivert) is a user-mode packet interception library
-for Windows 7, Windows 8 and Windows 10.
+for Windows 10, Windows 11, and Windows Server.
 
 WinDivert enables user-mode capturing/modifying/dropping of network packets
 sent to/from the Windows network stack.  In summary, WinDivert can:
